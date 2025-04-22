@@ -114,11 +114,11 @@ export default function AssetDetailPage() {
                 </div>
 
                 {/* Asset image */}
-                <div className="mb-8 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden">
+                <div className="mb-8 bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden flex justify-center">
                     <img
                         src={!imageError ? asset.image : placeholderImage}
                         alt={asset.name}
-                        className="w-full max-h-96 object-contain"
+                        className="h-64 w-auto object-contain"
                         onError={() => setImageError(true)}
                     />
                 </div>
@@ -153,11 +153,11 @@ export default function AssetDetailPage() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
                                 <div className="text-sm text-gray-500 dark:text-gray-400">Total Supply</div>
-                                <div className="text-2xl font-semibold">{asset.supply.toLocaleString()}</div>
+                                <div className="text-2xl font-semibold">{asset.supply ? asset.supply.toLocaleString() : '0'}</div>
                             </div>
                             <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
                                 <div className="text-sm text-gray-500 dark:text-gray-400">Remaining</div>
-                                <div className="text-2xl font-semibold">{asset.remaining.toLocaleString()}</div>
+                                <div className="text-2xl font-semibold">{asset.remaining ? asset.remaining.toLocaleString() : '0'}</div>
                             </div>
                         </div>
                     </div>
@@ -202,18 +202,7 @@ export default function AssetDetailPage() {
                 {/* Social stats */}
                 <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-6">
                     <div className="flex items-center space-x-6">
-                        <div className="flex items-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                            </svg>
-                            <span className="ml-2 text-gray-600 dark:text-gray-400">{asset.likes} likes</span>
-                        </div>
-                        <div className="flex items-center">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
-                            <span className="ml-2 text-gray-600 dark:text-gray-400">{asset.comments} comments</span>
-                        </div>
+
                     </div>
                     <Link
                         href={`/${asset.type === 'nft' ? 'nfts' : asset.type === 'token' ? 'tokens' : 'dapps'}`}

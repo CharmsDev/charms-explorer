@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: charms-explorer-api
+    environment:
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_URL=postgres://charms:charms@postgres:5432/charms_indexer
+      - RUST_LOG=info
+    ports:
+      - "3000:3000"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    networks:
+      - charms-network
+
+  postgres:
+    image: postgres:15
+    container_name: charms-indexer-db
+    environment:
+      POSTGRES_USER: charms
+      POSTGRES_PASSWORD: charms
+      POSTGRES_DB: charms_indexer
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../indexer/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - charms-network
+
+networks:
+  charms-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
