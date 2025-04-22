@@ -1,0 +1,28 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+
+# Git files
+.git/
+.gitignore
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files
+.env
+.env.*
+
+# Documentation
+README.md
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Misc
+*.log

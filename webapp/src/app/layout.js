@@ -18,12 +18,14 @@ export default function RootLayout({ children }) {
                     <div className="container mx-auto px-4">
                         <div className="flex flex-col md:flex-row justify-between items-center">
                             <div className="mb-4 md:mb-0">
-                                <img
-                                    src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
-                                    alt="Charms Logo"
-                                    className="h-8 w-8 inline-block mr-2"
-                                />
-                                <span className="text-lg font-bold">Charms Explorer</span>
+                                <div className="flex items-center">
+                                    <img
+                                        src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
+                                        alt="Charms Logo"
+                                        className="h-8 w-auto mr-2"
+                                    />
+                                    <span className="text-lg font-bold">Explorer</span>
+                                </div>
                             </div>
                             <div className="text-sm text-gray-400">
                                 &copy; {new Date().getFullYear()} Charms Explorer. All rights reserved.
