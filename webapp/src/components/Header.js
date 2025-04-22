@@ -23,13 +23,15 @@ export default function Header() {
                 <div className="flex justify-between items-center">
                     {/* Logo and site name */}
                     <div className="flex items-center space-x-4">
-                        <Link href="/" className="flex items-center">
-                            <img
-                                src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
-                                alt="Charms Logo"
-                                className="h-10 w-10"
-                            />
-                            <span className="ml-2 text-xl font-bold">Charms Explorer</span>
+                        <Link href="/">
+                            <div className="flex items-center">
+                                <img
+                                    src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
+                                    alt="Charms Logo"
+                                    className="h-10 w-auto"
+                                />
+                                <span className="ml-2 text-xl font-bold">Explorer</span>
+                            </div>
                         </Link>
                     </div>
 
