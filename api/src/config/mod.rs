@@ -1,10 +1,9 @@
-// Configuration Module
-// This module handles loading and accessing configuration from environment variables
+// Configuration management from environment variables
 
 use dotenv::dotenv;
 use std::env;
 
-/// Configuration for the Charms Explorer API
+/// Configuration settings for the Charms Explorer API server
 #[derive(Debug, Clone)]
 pub struct ApiConfig {
     // Server configuration
@@ -16,12 +15,10 @@ pub struct ApiConfig {
 }
 
 impl ApiConfig {
-    /// Load configuration from environment variables
+    /// Creates configuration instance from environment variables with defaults
     pub fn from_env() -> Self {
-        // Ensure .env file is loaded
         dotenv().ok();
 
-        // Load configuration from environment variables
         let host = env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
         let port = env::var("PORT")
             .unwrap_or_else(|_| "3000".to_string())
@@ -38,7 +35,7 @@ impl ApiConfig {
         }
     }
 
-    /// Get the server address
+    /// Returns formatted server address string (host:port)
     pub fn server_addr(&self) -> String {
         format!("{}:{}", self.host, self.port)
     }
