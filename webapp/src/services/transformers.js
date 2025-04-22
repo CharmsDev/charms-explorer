@@ -45,6 +45,7 @@ export const transformCharmData = (charm) => {
 
     const ticker = getNestedProperty(charm, 'data.data.ticker') || '';
 
+    const supply = getNestedProperty(charm, 'data.data.supply') || 0;
     const remaining = getNestedProperty(charm, 'data.data.remaining') || 0;
 
     const url = getNestedProperty(charm, 'data.data.url') || '';
@@ -67,6 +68,7 @@ export const transformCharmData = (charm) => {
         likes,
         comments,
         ticker,
+        supply,
         remaining,
         url,
         attributes
@@ -123,6 +125,7 @@ export const createDefaultCharm = (id) => {
         likes: 0,
         comments: 0,
         ticker: '',
+        supply: 0,
         remaining: 0,
         url: '',
         attributes: []
