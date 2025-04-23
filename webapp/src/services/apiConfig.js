@@ -3,7 +3,7 @@
 // API configuration and endpoints
 
 // Base API URL
-export const API_BASE_URL = 'http://localhost:5002';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_CHARMS_API_URL || 'http://localhost:5002';
 
 // API Endpoints
 export const ENDPOINTS = {
