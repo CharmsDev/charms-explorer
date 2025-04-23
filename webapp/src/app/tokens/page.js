@@ -34,10 +34,10 @@ export default function TokensPage() {
 
     return (
         <div>
-            <div className="bg-blue-700 text-white py-12">
+            <div className="bg-primary-600 bg-opacity-90 text-white pt-8 pb-6">
                 <div className="container mx-auto px-4 text-center">
-                    <h1 className="text-4xl font-bold mb-4">Charms Tokens</h1>
-                    <p className="text-xl max-w-2xl mx-auto">
+                    <h1 className="text-4xl font-bold mt-4 mb-3">Charms Tokens</h1>
+                    <p className="text-xl max-w-2xl mx-auto mb-2">
                         Fungible tokens and digital currencies on Bitcoin powered by Charms
                     </p>
                 </div>
@@ -48,7 +48,7 @@ export default function TokensPage() {
             <div className="container mx-auto px-4 py-6">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold">
-                        Found <span className="text-blue-600">{counts.token.toLocaleString()}</span> Tokens
+                        Found <span className="text-primary-500">{counts.token.toLocaleString()}</span> Tokens
                     </h2>
                     <div className="flex space-x-2">
                         <select className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md px-3 py-2 text-sm">

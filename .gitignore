@@ -71,3 +71,5 @@ yarn-error.log*
 *.pem
 /webapp/.next
 /webapp/server
+/indexer/target
+/webapp/.vercel
