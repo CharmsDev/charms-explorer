@@ -1,12 +1,28 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 export default function Header() {
     const [isConnecting, setIsConnecting] = useState(false);
+    const [isScrolled, setIsScrolled] = useState(false);
+    const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const pathname = usePathname();
+
+    // Handle scroll effect for header
+    useEffect(() => {
+        const handleScroll = () => {
+            if (window.scrollY > 10) {
+                setIsScrolled(true);
+            } else {
+                setIsScrolled(false);
+            }
+        };
+
+        window.addEventListener('scroll', handleScroll);
+        return () => window.removeEventListener('scroll', handleScroll);
+    }, []);
 
     const handleConnect = () => {
         setIsConnecting(true);
@@ -18,81 +34,136 @@ export default function Header() {
     };
 
     return (
-        <header className="bg-gray-900 text-white">
-            <div className="container mx-auto px-4 py-3">
+        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'bg-dark-900/80 backdrop-blur-md shadow-md' : 'bg-transparent'
+            }`}>
+            <div className="container mx-auto px-4 py-2">
                 <div className="flex justify-between items-center">
                     {/* Logo and site name */}
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center space-x-3">
                         <Link href="/">
-                            <div className="flex items-center">
-                                <img
-                                    src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
-                                    alt="Charms Logo"
-                                    className="h-10 w-auto"
-                                />
-                                <span className="ml-2 text-xl font-bold">Explorer</span>
+                            <div className="flex items-center group">
+                                <div className={`relative transition-all duration-300 ${isScrolled ? 'scale-90' : 'scale-100'}`}>
+                                    <img
+                                        src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
+                                        alt="Charms Logo"
+                                        className="h-7 w-auto group-hover:animate-pulse-slow"
+                                    />
+                                    <div className="absolute inset-0 rounded-full bg-primary-500/20 blur-md -z-10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                </div>
+                                <div className="ml-2">
+                                    <span className="text-xl font-bold gradient-text">Explorer</span>
+                                    <div className="h-0.5 w-0 bg-gradient-to-r from-primary-400 to-primary-600 group-hover:w-full transition-all duration-300"></div>
+                                </div>
                             </div>
                         </Link>
                     </div>
 
-                    {/* Navigation */}
-                    <nav className="hidden md:flex items-center space-x-6">
-                        <Link
-                            href="/"
-                            className={`hover:text-blue-400 transition-colors ${pathname === '/' ? 'text-blue-400 font-medium' : ''
-                                }`}
+                    {/* Navigation - Desktop */}
+                    <nav className="hidden md:flex items-center space-x-1">
+                        <a
+                            href="https://charms.dev/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-4 py-2 rounded-lg transition-all hover:bg-dark-800/50 text-dark-200 hover:text-white"
                         >
-                            All
-                        </Link>
-                        <Link
-                            href="/nfts"
-                            className={`hover:text-blue-400 transition-colors ${pathname === '/nfts' ? 'text-blue-400 font-medium' : ''
-                                }`}
-                        >
-                            NFTs
-                        </Link>
-                        <Link
-                            href="/tokens"
-                            className={`hover:text-blue-400 transition-colors ${pathname === '/tokens' ? 'text-blue-400 font-medium' : ''
-                                }`}
-                        >
-                            Tokens
-                        </Link>
-                        <Link
-                            href="/dapps"
-                            className={`hover:text-blue-400 transition-colors ${pathname === '/dapps' ? 'text-blue-400 font-medium' : ''
-                                }`}
-                        >
-                            dApps
-                        </Link>
+                            Charms
+                        </a>
                     </nav>
 
                     {/* Search bar */}
                     <div className="hidden md:block flex-grow mx-6 max-w-md">
-                        <div className="relative">
+                        <div className="relative group">
                             <input
                                 type="text"
                                 placeholder="Search Charms"
-                                className="w-full bg-gray-800 text-white rounded-full py-2 px-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                className="w-full bg-dark-800/70 text-white rounded-full py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-dark-800 transition-all"
                             />
-                            <button className="absolute right-3 top-2.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <div className="absolute left-3 top-2.5 text-dark-400 group-focus-within:text-primary-400 transition-colors">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
-                            </button>
+                            </div>
                         </div>
                     </div>
 
-                    {/* Connect wallet button */}
-                    <button
-                        onClick={handleConnect}
-                        disabled={isConnecting}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-2 px-4 rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-75"
-                    >
-                        {isConnecting ? 'Connecting...' : 'Connect Wallet'}
-                    </button>
+                    <div className="flex items-center space-x-3">
+                        {/* Connect wallet button */}
+                        <button
+                            onClick={handleConnect}
+                            disabled={isConnecting}
+                            className="btn btn-primary shadow-glow"
+                        >
+                            <span className="flex items-center">
+                                {isConnecting ? (
+                                    <>
+                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                        </svg>
+                                        Connecting...
+                                    </>
+                                ) : (
+                                    <>
+                                        <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                        </svg>
+                                        Connect Wallet
+                                    </>
+                                )}
+                            </span>
+                        </button>
+
+                        {/* Mobile menu button */}
+                        <button
+                            className="md:hidden p-2 rounded-lg bg-dark-800/70 hover:bg-dark-700/70 transition-colors"
+                            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                {isMobileMenuOpen ? (
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                ) : (
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                                )}
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
+
+            {/* Mobile menu */}
+            {isMobileMenuOpen && (
+                <div className="md:hidden bg-dark-900/95 backdrop-blur-md border-t border-dark-800">
+                    <div className="container mx-auto px-4 py-3">
+                        <nav className="flex flex-col space-y-2">
+                            <a
+                                href="https://charms.dev/"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 rounded-lg text-dark-200 hover:bg-dark-800/50 hover:text-white"
+                                onClick={() => setIsMobileMenuOpen(false)}
+                            >
+                                Charms
+                            </a>
+                        </nav>
+                        <div className="mt-4">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    placeholder="Search Charms"
+                                    className="w-full bg-dark-800/70 text-white rounded-full py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                />
+                                <div className="absolute left-3 top-2.5 text-dark-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Removed spacer - it will be added in the layout */}
         </header>
     );
 }
