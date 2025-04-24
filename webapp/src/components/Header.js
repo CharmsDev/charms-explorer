@@ -34,11 +34,14 @@ export default function Header() {
     };
 
     return (
-        <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${isScrolled ? 'bg-dark-900/80 backdrop-blur-md shadow-md' : 'bg-transparent'
+        <header className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${isScrolled
+                ? 'bg-dark-900/80 backdrop-blur-md shadow-md border-transparent'
+                : 'bg-transparent border-dark-800/50'
             }`}>
-            <div className="container mx-auto px-4 py-2">
-                <div className="flex justify-between items-center">
-                    {/* Logo and site name */}
+            <div className="container mx-auto px-4 py-4">
+                {/* Main header layout with 3 sections */}
+                <div className="grid grid-cols-3 items-center">
+                    {/* Left section - Logo and site name */}
                     <div className="flex items-center space-x-3">
                         <Link href="/">
                             <div className="flex items-center group">
@@ -58,21 +61,9 @@ export default function Header() {
                         </Link>
                     </div>
 
-                    {/* Navigation - Desktop */}
-                    <nav className="hidden md:flex items-center space-x-1">
-                        <a
-                            href="https://charms.dev/"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-4 py-2 rounded-lg transition-all hover:bg-dark-800/50 text-dark-200 hover:text-white"
-                        >
-                            Charms
-                        </a>
-                    </nav>
-
-                    {/* Search bar */}
-                    <div className="hidden md:block flex-grow mx-6 max-w-md">
-                        <div className="relative group">
+                    {/* Center section - Search bar */}
+                    <div className="hidden md:flex justify-center">
+                        <div className="relative group w-full max-w-md">
                             <input
                                 type="text"
                                 placeholder="Search Charms"
@@ -86,7 +77,8 @@ export default function Header() {
                         </div>
                     </div>
 
-                    <div className="flex items-center space-x-3">
+                    {/* Right section - Connect button and menu */}
+                    <div className="flex items-center justify-end space-x-3">
                         {/* Connect wallet button */}
                         <button
                             onClick={handleConnect}
@@ -107,7 +99,7 @@ export default function Header() {
                                         <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
                                         </svg>
-                                        Connect Wallet
+                                        Connect
                                     </>
                                 )}
                             </span>
@@ -135,15 +127,7 @@ export default function Header() {
                 <div className="md:hidden bg-dark-900/95 backdrop-blur-md border-t border-dark-800">
                     <div className="container mx-auto px-4 py-3">
                         <nav className="flex flex-col space-y-2">
-                            <a
-                                href="https://charms.dev/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-4 py-2 rounded-lg text-dark-200 hover:bg-dark-800/50 hover:text-white"
-                                onClick={() => setIsMobileMenuOpen(false)}
-                            >
-                                Charms
-                            </a>
+                            {/* Mobile navigation links can be added here */}
                         </nav>
                         <div className="mt-4">
                             <div className="relative">
