@@ -34,10 +34,10 @@ export default function HomePage() {
 
     return (
         <div>
-            <div className="bg-primary-600 bg-opacity-90 text-white pt-8 pb-6">
+            <div className="bg-dark-900 pt-8 pb-6">
                 <div className="container mx-auto px-4 text-center">
-                    <h1 className="text-4xl font-bold mt-4 mb-3">Explore Bitcoin Charms</h1>
-                    <p className="text-xl max-w-2xl mx-auto mb-2">
+                    <h1 className="text-4xl font-bold mt-4 mb-3 gradient-text">Explore Bitcoin Charms</h1>
+                    <p className="text-xl max-w-2xl mx-auto mb-2 text-dark-200">
                         Discover NFTs, Tokens, and dApps built with Charms technology on Bitcoin
                     </p>
                 </div>
