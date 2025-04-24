@@ -34,10 +34,10 @@ export default function NFTsPage() {
 
     return (
         <div>
-            <div className="bg-purple-700 text-white py-12">
+            <div className="bg-primary-600 bg-opacity-90 text-white pt-8 pb-6">
                 <div className="container mx-auto px-4 text-center">
-                    <h1 className="text-4xl font-bold mb-4">Charms NFTs</h1>
-                    <p className="text-xl max-w-2xl mx-auto">
+                    <h1 className="text-4xl font-bold mt-4 mb-3">Charms NFTs</h1>
+                    <p className="text-xl max-w-2xl mx-auto mb-2">
                         Unique digital collectibles on Bitcoin powered by Charms
                     </p>
                 </div>
@@ -48,7 +48,7 @@ export default function NFTsPage() {
             <div className="container mx-auto px-4 py-6">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold">
-                        Found <span className="text-purple-600">{counts.nft.toLocaleString()}</span> NFTs
+                        Found <span className="text-primary-500">{counts.nft.toLocaleString()}</span> NFTs
                     </h2>
                     <div className="flex space-x-2">
                         <select className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md px-3 py-2 text-sm">
