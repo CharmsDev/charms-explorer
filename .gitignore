@@ -73,3 +73,5 @@ yarn-error.log*
 /webapp/server
 /indexer/target
 /webapp/.vercel
+/_bkp
+indexer/pid.txt
