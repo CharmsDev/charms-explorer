@@ -34,23 +34,46 @@ export const transformCharmData = (charm) => {
 
     const detectedType = detectCharmType(charm);
 
-    const name = getNestedProperty(charm, 'data.data.name') ||
+    // Extract data from the new metadata structure
+    // First check for data in the standard metadata structure (outs[0].charms.$0000)
+    const charmData = getNestedProperty(charm, 'data.data.outs[0].charms.$0000') || {};
+
+    // If not found in the new structure, fall back to the old structure
+    const name = charmData.name ||
+        getNestedProperty(charm, 'data.data.name') ||
         `Charm ${charm.charmid?.substring(0, 8) || 'Unknown'}`;
 
-    const description = getNestedProperty(charm, 'data.data.description') ||
+    const description = charmData.description ||
+        getNestedProperty(charm, 'data.data.description') ||
         'No description available';
 
-    const image = getNestedProperty(charm, 'data.data.image') ||
+    const image = charmData.image ||
+        getNestedProperty(charm, 'data.data.image') ||
         'https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png';
 
-    const ticker = getNestedProperty(charm, 'data.data.ticker') || '';
+    const ticker = charmData.ticker ||
+        getNestedProperty(charm, 'data.data.ticker') || '';
 
     const supply = getNestedProperty(charm, 'data.data.supply') || 0;
-    const remaining = getNestedProperty(charm, 'data.data.remaining') || 0;
+    const remaining = charmData.remaining ||
+        getNestedProperty(charm, 'data.data.remaining') || 0;
 
-    const url = getNestedProperty(charm, 'data.data.url') || '';
+    const url = charmData.url ||
+        getNestedProperty(charm, 'data.data.url') || '';
 
     const attributes = getNestedProperty(charm, 'data.data.attributes') || [];
+
+    // Extract additional metadata from the new structure
+    const imageHash = charmData.image_hash || '';
+
+    // Extract UTXO ID from the inputs
+    const utxoId = getNestedProperty(charm, 'data.data.ins[0].utxo_id') || '';
+
+    // Extract app information
+    const appData = getNestedProperty(charm, 'data.data.apps.$0000') || '';
+
+    // Extract version
+    const version = getNestedProperty(charm, 'data.data.version') || '';
 
     const likes = Math.floor(Math.random() * 100);
     const comments = Math.floor(Math.random() * 20);
@@ -71,7 +94,14 @@ export const transformCharmData = (charm) => {
         supply,
         remaining,
         url,
-        attributes
+        attributes,
+        // New fields from the metadata standards
+        imageHash,
+        utxoId,
+        appData,
+        version,
+        // Store the raw charm data for debugging and future use
+        rawCharmData: charmData
     };
 };
 
@@ -128,6 +158,12 @@ export const createDefaultCharm = (id) => {
         supply: 0,
         remaining: 0,
         url: '',
-        attributes: []
+        attributes: [],
+        // New fields from the metadata standards
+        imageHash: '',
+        utxoId: '',
+        appData: '',
+        version: '',
+        rawCharmData: {}
     };
 };

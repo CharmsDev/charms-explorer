@@ -2,17 +2,46 @@
 
 export const runtime = 'edge';
 
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { getAssetById } from '../../../services/api';
+
+// Simple function to attempt hash verification
+// This is a simplified approach that just checks if verification is possible
+// and returns an appropriate status message
+async function attemptHashVerification(imageUrl) {
+    try {
+        // Try to fetch the image
+        const response = await fetch(imageUrl, {
+            cache: 'no-store',
+            mode: 'no-cors' // This will prevent CORS errors but also make response opaque
+        });
+
+        // If we get here, the image exists but we can't verify the hash due to CORS
+        return {
+            status: 'cors-error',
+            message: 'Cannot verify hash: Cross-origin resource sharing (CORS) restriction',
+            error: null
+        };
+    } catch (error) {
+        // If we can't even fetch the image
+        return {
+            status: 'fetch-error',
+            message: 'Cannot fetch image for verification',
+            error: error.message
+        };
+    }
+}
 
 export default function AssetDetailPage() {
     const { id } = useParams();
     const [asset, setAsset] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
     const [imageError, setImageError] = useState(false);
+    const [hashVerification, setHashVerification] = useState({ status: 'pending', computedHash: null });
     const placeholderImage = "https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png";
+    const imageRef = React.useRef(null);
 
     useEffect(() => {
         const loadAsset = async () => {
@@ -31,6 +60,40 @@ export default function AssetDetailPage() {
             loadAsset();
         }
     }, [id]);
+
+    // Attempt hash verification when asset is loaded and not in error state
+    useEffect(() => {
+        const verifyImageHash = async () => {
+            if (asset && asset.imageHash && asset.image && !imageError) {
+                try {
+                    setHashVerification({ status: 'verifying', computedHash: null, message: null });
+
+                    // Attempt verification
+                    const result = await attemptHashVerification(asset.image);
+
+                    // Update state based on result
+                    setHashVerification({
+                        status: 'cors-error',
+                        computedHash: null,
+                        message: result.message
+                    });
+
+                    console.log('Verification result:', result);
+                } catch (error) {
+                    console.error('Error verifying image hash:', error);
+                    setHashVerification({
+                        status: 'error',
+                        computedHash: null,
+                        message: 'Error verifying hash: ' + error.message
+                    });
+                }
+            } else if (!asset?.imageHash) {
+                setHashVerification({ status: 'not-available', computedHash: null, message: null });
+            }
+        };
+
+        verifyImageHash();
+    }, [asset, imageError]);
 
     if (isLoading) {
         return (
@@ -193,13 +256,126 @@ export default function AssetDetailPage() {
                                 <div className="text-sm text-gray-500 dark:text-gray-400">UTXO</div>
                                 <div className="font-mono text-sm break-all">{asset.txid}:{asset.outputIndex}</div>
                             </div>
+                            {asset.utxoId && (
+                                <div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">Input UTXO ID</div>
+                                    <div className="font-mono text-sm break-all">{asset.utxoId}</div>
+                                </div>
+                            )}
                             <div>
                                 <div className="text-sm text-gray-500 dark:text-gray-400">Address</div>
                                 <div className="font-mono text-sm break-all">{asset.address}</div>
                             </div>
+                            {asset.version && (
+                                <div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">Version</div>
+                                    <div className="font-mono text-sm">{asset.version}</div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
+
+                {/* Charm Metadata */}
+                {(asset.imageHash || asset.appData) && (
+                    <div className="mb-8">
+                        <h2 className="text-xl font-semibold mb-3">Additional Metadata</h2>
+                        <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+                            <div className="grid grid-cols-1 gap-4">
+                                {asset.imageHash && (
+                                    <div>
+                                        <div className="flex items-center justify-between">
+                                            <div className="text-sm text-gray-500 dark:text-gray-400">Image Hash</div>
+                                            {/* Hash verification status indicator */}
+                                            {hashVerification.status === 'pending' && (
+                                                <span className="px-2 py-1 text-xs bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded">
+                                                    Pending verification...
+                                                </span>
+                                            )}
+                                            {hashVerification.status === 'verifying' && (
+                                                <span className="px-2 py-1 text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded">
+                                                    Verifying...
+                                                </span>
+                                            )}
+                                            {hashVerification.status === 'verified' && (
+                                                <span className="px-2 py-1 text-xs bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 rounded flex items-center">
+                                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path>
+                                                    </svg>
+                                                    Verified
+                                                </span>
+                                            )}
+                                            {hashVerification.status === 'failed' && (
+                                                <span className="px-2 py-1 text-xs bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded flex items-center">
+                                                    <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12"></path>
+                                                    </svg>
+                                                    Hash mismatch
+                                                </span>
+                                            )}
+                                            {hashVerification.status === 'error' && (
+                                                <span className="px-2 py-1 text-xs bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 rounded">
+                                                    Verification error
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="font-mono text-sm break-all">{asset.imageHash}</div>
+
+                                        {/* Display verification message if available */}
+                                        {hashVerification.message && (
+                                            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400 italic">
+                                                {hashVerification.message}
+                                            </div>
+                                        )}
+
+                                        {/* Verify button to manually trigger verification */}
+                                        <button
+                                            onClick={async () => {
+                                                if (asset && asset.imageHash && asset.image && !imageError) {
+                                                    try {
+                                                        setHashVerification({
+                                                            status: 'verifying',
+                                                            computedHash: null,
+                                                            message: null
+                                                        });
+
+                                                        // Attempt verification
+                                                        const result = await attemptHashVerification(asset.image);
+
+                                                        // Update state based on result
+                                                        setHashVerification({
+                                                            status: result.status,
+                                                            computedHash: null,
+                                                            message: result.message
+                                                        });
+
+                                                        console.log('Manual verification result:', result);
+                                                    } catch (error) {
+                                                        console.error('Error verifying image hash:', error);
+                                                        setHashVerification({
+                                                            status: 'error',
+                                                            computedHash: null,
+                                                            message: 'Error verifying hash: ' + error.message
+                                                        });
+                                                    }
+                                                }
+                                            }}
+                                            className="mt-2 px-3 py-1 text-xs bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-colors"
+                                        >
+                                            Verify Hash
+                                        </button>
+                                    </div>
+                                )}
+                                {asset.appData && (
+                                    <div>
+                                        <div className="text-sm text-gray-500 dark:text-gray-400">App Data</div>
+                                        <div className="font-mono text-sm break-all">{asset.appData}</div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 {/* Social stats */}
                 <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-6">
