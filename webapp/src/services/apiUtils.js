@@ -35,7 +35,21 @@ export const getNestedProperty = (obj, path, defaultValue = undefined) => {
         if (current === null || current === undefined || typeof current !== 'object') {
             return defaultValue;
         }
-        current = current[key];
+
+        // Handle array access with [index] notation
+        if (key.includes('[') && key.includes(']')) {
+            const arrayKey = key.substring(0, key.indexOf('['));
+            const indexStr = key.substring(key.indexOf('[') + 1, key.indexOf(']'));
+            const index = parseInt(indexStr, 10);
+
+            if (current[arrayKey] && Array.isArray(current[arrayKey]) && !isNaN(index)) {
+                current = current[arrayKey][index];
+            } else {
+                return defaultValue;
+            }
+        } else {
+            current = current[key];
+        }
     }
 
     return current !== undefined ? current : defaultValue;

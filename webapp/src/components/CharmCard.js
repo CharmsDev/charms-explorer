@@ -170,6 +170,13 @@ export default function CharmCard({ charm }) {
                 <div className="mt-2 text-xs text-dark-500 font-mono truncate hover:text-primary-400 transition-colors cursor-pointer" title={`${charm.txid}:${charm.outputIndex}`}>
                     {charm.txid.substring(0, 8)}...:{charm.outputIndex}
                 </div>
+
+                {/* Version tag if available */}
+                {charm.version && (
+                    <div className="mt-1 text-xs text-dark-500">
+                        <span className="bg-dark-800 px-1.5 py-0.5 rounded">v{charm.version}</span>
+                    </div>
+                )}
             </div>
         </div>
     );
