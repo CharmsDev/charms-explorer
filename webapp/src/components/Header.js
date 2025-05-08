@@ -35,8 +35,8 @@ export default function Header() {
 
     return (
         <header className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${isScrolled
-                ? 'bg-dark-900/80 backdrop-blur-md shadow-md border-transparent'
-                : 'bg-transparent border-dark-800/50'
+            ? 'bg-dark-900/80 backdrop-blur-md shadow-md border-transparent'
+            : 'bg-transparent border-dark-800/50'
             }`}>
             <div className="container mx-auto px-4 py-4">
                 {/* Main header layout with 3 sections */}
@@ -77,8 +77,21 @@ export default function Header() {
                         </div>
                     </div>
 
-                    {/* Right section - Connect button and menu */}
+                    {/* Right section - Status button, Connect button and menu */}
                     <div className="flex items-center justify-end space-x-3">
+                        {/* Status page button */}
+                        <Link
+                            href="/status"
+                            className="btn btn-secondary"
+                        >
+                            <span className="flex items-center">
+                                <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                                Status
+                            </span>
+                        </Link>
+
                         {/* Connect wallet button */}
                         <button
                             onClick={handleConnect}
@@ -127,7 +140,16 @@ export default function Header() {
                 <div className="md:hidden bg-dark-900/95 backdrop-blur-md border-t border-dark-800">
                     <div className="container mx-auto px-4 py-3">
                         <nav className="flex flex-col space-y-2">
-                            {/* Mobile navigation links can be added here */}
+                            {/* Mobile navigation links */}
+                            <Link
+                                href="/status"
+                                className="flex items-center p-2 rounded-lg hover:bg-dark-800 transition-colors"
+                            >
+                                <svg className="mr-2 h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path>
+                                </svg>
+                                Indexer Status
+                            </Link>
                         </nav>
                         <div className="mt-4">
                             <div className="relative">
