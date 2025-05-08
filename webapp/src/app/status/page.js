@@ -6,15 +6,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Table, TableHeader, TableBody, TableRow, TableCell } from '@/components/ui/Table';
 import { API_BASE_URL } from '@/services/apiConfig';
-import { fetchIndexerStatus, resetIndexer } from '@/services/apiServices';
+import { fetchIndexerStatus } from '@/services/apiServices';
 
 export default function StatusPage() {
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [lastUpdated, setLastUpdated] = useState(new Date());
-    const [resetting, setResetting] = useState(false);
-    const [resetMessage, setResetMessage] = useState(null);
 
     const fetchData = async () => {
         try {
@@ -67,45 +65,10 @@ export default function StatusPage() {
 
     useEffect(() => {
         fetchData();
-        // Set up auto-refresh every 30 seconds
-        const interval = setInterval(fetchData, 30000);
+        // Set up auto-refresh every 10 seconds
+        const interval = setInterval(fetchData, 10000);
         return () => clearInterval(interval);
     }, []);
-
-    const handleRefresh = () => {
-        fetchData();
-    };
-
-    const handleReset = async () => {
-        try {
-            setResetting(true);
-            setResetMessage(null);
-
-            const result = await resetIndexer();
-
-            if (result.success) {
-                setResetMessage({
-                    type: 'success',
-                    text: result.message
-                });
-            } else {
-                setResetMessage({
-                    type: 'error',
-                    text: result.message || 'Failed to reset indexer'
-                });
-            }
-
-            // Refresh data after reset
-            fetchData();
-        } catch (error) {
-            setResetMessage({
-                type: 'error',
-                text: error.message || 'An error occurred while resetting the indexer'
-            });
-        } finally {
-            setResetting(false);
-        }
-    };
 
     const getStatusBadgeClass = (status) => {
         switch (status) {
@@ -145,7 +108,7 @@ export default function StatusPage() {
                     <p className="mt-2">
                         Could not connect to the indexer. Please make sure the indexer is running and accessible at {API_BASE_URL}.
                     </p>
-                    <Button onClick={handleRefresh} className="mt-4">
+                    <Button onClick={fetchData} className="mt-4">
                         Try Again
                     </Button>
                 </div>
@@ -159,48 +122,84 @@ export default function StatusPage() {
 
     return (
         <div className="container mx-auto px-4 py-8">
-            <div className="flex justify-between items-center mb-6">
+            <div className="mb-6">
                 <h1 className="text-3xl font-bold">Indexer Status</h1>
-                <div className="flex gap-2">
-                    <Button onClick={handleReset} className="flex items-center" variant="destructive" disabled={resetting}>
-                        {resetting ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-white mr-2"></div>
-                        ) : (
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                        )}
-                        Reset Indexer
-                    </Button>
-                    <Button onClick={handleRefresh} className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Refresh
-                    </Button>
-                </div>
             </div>
 
-            {resetMessage && (
-                <div className={`mb-6 p-4 rounded-md ${resetMessage.type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                    <div className="flex">
-                        <div className="flex-shrink-0">
-                            {resetMessage.type === 'success' ? (
-                                <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                                </svg>
-                            ) : (
-                                <svg className="h-5 w-5 text-red-400" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                                </svg>
-                            )}
-                        </div>
-                        <div className="ml-3">
-                            <p className="text-sm font-medium">{resetMessage.text}</p>
+            {/* Blockchain Visualization */}
+            <div className="mb-8 bg-transparent py-6">
+                <div className="blockchain-wrapper">
+                    <div className="relative">
+                        <div className="blockchain-blocks flex justify-center relative">
+                            {/* Current Processing Block */}
+                            <div className="bitcoin-block text-center mempool-block relative"
+                                style={{
+                                    width: '150px',
+                                    height: '150px',
+                                    margin: '0 15px',
+                                    borderRadius: '4px',
+                                    position: 'relative',
+                                    transform: 'perspective(800px) rotateY(-10deg) rotateX(5deg)',
+                                    transformStyle: 'preserve-3d',
+                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.3)',
+                                    background: 'linear-gradient(135deg, #554b45 0%, #554b45 60%, #3b82f6 60%, #3b82f6 100%)',
+                                    transition: 'transform 0.5s ease-in-out'
+                                }}>
+                                <div className="block-body p-4 text-white" style={{ transform: 'translateZ(10px)' }}>
+                                    <div className="text-2xl font-bold text-blue-500 mb-2">
+                                        {indexerStatus.last_processed_block || '?'}
+                                    </div>
+                                    <div className="text-sm mb-1">
+                                        {charmStats.total_charms ? `${charmStats.total_charms} charms` : 'No charms'}
+                                    </div>
+                                    <div className="text-sm mb-1">
+                                        {charmStats.total_transactions ? `${charmStats.total_transactions} txs` : 'No transactions'}
+                                    </div>
+                                    <div className="text-sm">
+                                        Processing...
+                                    </div>
+                                </div>
+                                <span className="animated-border absolute inset-0 border-2 border-yellow-400 rounded-md"
+                                    style={{
+                                        animation: 'pulse 2s infinite',
+                                        boxShadow: '0 0 10px rgba(250, 204, 21, 0.5)'
+                                    }}></span>
+                            </div>
+
+                            {/* Previous Blocks - Generate 5 blocks */}
+                            {Array.from({ length: 5 }).map((_, index) => {
+                                const blockHeight = indexerStatus.last_processed_block ? (indexerStatus.last_processed_block - (index + 1)) : '?';
+                                return (
+                                    <div key={index} className="bitcoin-block mined-block text-center relative"
+                                        style={{
+                                            width: '150px',
+                                            height: '150px',
+                                            margin: '0 15px',
+                                            background: 'linear-gradient(135deg, #1e293b 0%, #2d3748 100%)',
+                                            borderRadius: '4px',
+                                            transform: 'perspective(800px) rotateY(-10deg) rotateX(5deg)',
+                                            transformStyle: 'preserve-3d',
+                                            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.2)',
+                                            transition: 'transform 0.5s ease-in-out'
+                                        }}>
+                                        <div className="block-body p-4 text-white" style={{ transform: 'translateZ(5px)' }}>
+                                            <div className="text-2xl font-bold text-blue-500 mb-2">
+                                                {blockHeight}
+                                            </div>
+                                            <div className="text-sm mb-1">
+                                                Confirmed
+                                            </div>
+                                            <div className="text-sm">
+                                                {index === 0 ? 'Just now' : `${index * 10} min ago`}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
-            )}
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 {/* Indexer Status Card */}
