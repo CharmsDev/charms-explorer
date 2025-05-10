@@ -17,21 +17,8 @@ export default function StatusPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            // Try the diagnostic endpoint first
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/diagnostic`);
-                if (response.ok) {
-                    const result = await response.json();
-                    setData(result);
-                    setLastUpdated(new Date());
-                    setLoading(false);
-                    return;
-                }
-            } catch (e) {
-                console.log('Error fetching diagnostic data, falling back to status endpoint');
-            }
 
-            // Fallback to status endpoint
+            // Use only the status endpoint
             const statusData = await fetchIndexerStatus();
             console.log('Status data:', statusData);
 
