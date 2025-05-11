@@ -58,35 +58,37 @@ impl AppConfig {
 
         // Load Bitcoin configuration
         let bitcoin_config = BitcoinConfig {
-            host: env::var("BITCOIN_RPC_HOST").unwrap_or_else(|_| "localhost".to_string()),
-            port: env::var("BITCOIN_RPC_PORT").unwrap_or_else(|_| "48332".to_string()),
-            username: env::var("BITCOIN_RPC_USER").unwrap_or_else(|_| "hello".to_string()),
-            password: env::var("BITCOIN_RPC_PASSWORD").unwrap_or_else(|_| "world".to_string()),
+            host: env::var("BITCOIN_RPC_HOST")
+                .expect("BITCOIN_RPC_HOST environment variable is required"),
+            port: env::var("BITCOIN_RPC_PORT")
+                .expect("BITCOIN_RPC_PORT environment variable is required"),
+            username: env::var("BITCOIN_RPC_USER")
+                .expect("BITCOIN_RPC_USER environment variable is required"),
+            password: env::var("BITCOIN_RPC_PASSWORD")
+                .expect("BITCOIN_RPC_PASSWORD environment variable is required"),
         };
 
         // Load API configuration
         let api_config = ApiConfig {
             url: env::var("CHARMS_API_URL")
-                .unwrap_or_else(|_| "https://api-t4.charms.dev".to_string()),
+                .expect("CHARMS_API_URL environment variable is required"),
         };
 
         // Load database configuration
         let database_config = DatabaseConfig {
-            url: env::var("DATABASE_URL").unwrap_or_else(|_| {
-                "postgres://charms:charms@localhost:5432/charms_indexer".to_string()
-            }),
+            url: env::var("DATABASE_URL").expect("DATABASE_URL environment variable is required"),
         };
 
         // Load indexer configuration
         let indexer_config = IndexerConfig {
             genesis_block_height: env::var("GENESIS_BLOCK_HEIGHT")
-                .unwrap_or_else(|_| "57604".to_string())
+                .expect("GENESIS_BLOCK_HEIGHT environment variable is required")
                 .parse::<u64>()
-                .unwrap_or(57604),
+                .expect("GENESIS_BLOCK_HEIGHT must be a valid u64"),
             process_interval_ms: env::var("PROCESS_BLOCK_INTERVAL_MS")
-                .unwrap_or_else(|_| "120000".to_string())
+                .expect("PROCESS_BLOCK_INTERVAL_MS environment variable is required")
                 .parse::<u64>()
-                .unwrap_or(120000),
+                .expect("PROCESS_BLOCK_INTERVAL_MS must be a valid u64"),
         };
 
         Self {

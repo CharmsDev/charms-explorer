@@ -8,6 +8,7 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{BookmarkRepository, TransactionRepository};
+use crate::utils::logging;
 
 /// Block processor for finding charm transactions in Bitcoin blocks
 pub struct BlockProcessor {
@@ -44,16 +45,23 @@ impl BlockProcessor {
             Ok(Some(height)) => {
                 // Start from the next block after the last processed one
                 self.current_height = height + 1;
-                println!("Resuming from block height: {}", self.current_height);
+                logging::log_info(&format!(
+                    "Resuming from block height: {}",
+                    self.current_height
+                ));
             }
             Ok(None) => {
                 // No blocks processed yet, start from genesis
-                println!(
+                logging::log_info(&format!(
                     "Starting from genesis block height: {}",
                     self.current_height
-                );
+                ));
             }
             Err(e) => {
+                logging::log_error(&format!(
+                    "Database error getting last processed block: {}",
+                    e
+                ));
                 return Err(BlockProcessorError::DbError(e));
             }
         }
@@ -70,17 +78,17 @@ impl BlockProcessor {
 
                     // If we've processed all available blocks, wait for new ones
                     if self.current_height > latest_height {
-                        print!(
-                            "Waiting for new blocks... Current height: {}\r",
+                        logging::log_info(&format!(
+                            "Waiting for new blocks... Current height: {}",
                             latest_height
-                        );
+                        ));
                         thread::sleep(Duration::from_millis(
                             self.config.indexer.process_interval_ms,
                         ));
                     }
                 }
                 Err(e) => {
-                    println!("Error getting block count: {}", e);
+                    logging::log_error(&format!("Error getting block count: {}", e));
                     thread::sleep(Duration::from_millis(
                         self.config.indexer.process_interval_ms,
                     ));
@@ -91,7 +99,7 @@ impl BlockProcessor {
 
     /// Process a single block
     async fn process_block(&self, height: u64) -> Result<(), BlockProcessorError> {
-        print!("Processing block: {}\r", height);
+        logging::log_info(&format!("Processing block: {}", height));
 
         // Get block hash
         let block_hash = self.bitcoin_client.get_block_hash(height)?;
@@ -105,9 +113,27 @@ impl BlockProcessor {
         let confirmations = latest_height - height + 1;
         let is_confirmed = confirmations >= 6;
 
-        self.bookmark_repository
+        logging::log_info(&format!(
+            "Saving bookmark for block {} (hash: {}, confirmed: {})",
+            height, block_hash, is_confirmed
+        ));
+
+        match self
+            .bookmark_repository
             .save_bookmark(&block_hash.to_string(), height, is_confirmed)
-            .await?;
+            .await
+        {
+            Ok(_) => {
+                logging::log_info(&format!("Successfully saved bookmark for block {}", height));
+            }
+            Err(e) => {
+                logging::log_error(&format!(
+                    "Error saving bookmark for block {}: {}",
+                    height, e
+                ));
+                return Err(BlockProcessorError::DbError(e));
+            }
+        }
 
         // Collect transactions for batch processing
         let mut charm_batch = Vec::new();
@@ -128,10 +154,10 @@ impl BlockProcessor {
                         .await
                     {
                         Ok(Some(charm)) => {
-                            print!(
-                                "Block {}: Found charm tx: {} at pos {}\r",
+                            logging::log_info(&format!(
+                                "Block {}: Found charm tx: {} at pos {}",
                                 height, txid, tx_pos
-                            );
+                            ));
 
                             // Store the raw transaction data
                             let raw_json = json!({
@@ -163,21 +189,43 @@ impl BlockProcessor {
                             // Not a charm, skip
                         }
                         Err(e) => {
-                            println!("Error processing potential charm: {}", e);
+                            logging::log_error(&format!("Error processing potential charm: {}", e));
                         }
                     }
                 }
                 Err(e) => {
-                    println!("Error getting raw transaction: {}", e);
+                    logging::log_error(&format!("Error getting raw transaction: {}", e));
                 }
             }
         }
 
         // Save transactions in batch if any were found
         if !transaction_batch.is_empty() {
-            self.transaction_repository
+            logging::log_info(&format!(
+                "Saving batch of {} transactions for block {}",
+                transaction_batch.len(),
+                height
+            ));
+
+            match self
+                .transaction_repository
                 .save_batch(transaction_batch)
-                .await?;
+                .await
+            {
+                Ok(_) => {
+                    logging::log_info(&format!(
+                        "Successfully saved transaction batch for block {}",
+                        height
+                    ));
+                }
+                Err(e) => {
+                    logging::log_error(&format!(
+                        "Error saving transaction batch for block {}: {}",
+                        height, e
+                    ));
+                    return Err(BlockProcessorError::DbError(e));
+                }
+            }
         }
 
         Ok(())
