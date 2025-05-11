@@ -34,7 +34,7 @@ export function TableRow({ children, className = '' }) {
 
 export function TableCell({ children, className = '', colSpan }) {
     return (
-        <td className={`px-6 py-4 whitespace-nowrap text-sm ${className}`} colSpan={colSpan}>
+        <td className={`px-6 py-4 text-sm ${className}`} colSpan={colSpan}>
             {children}
         </td>
     );
