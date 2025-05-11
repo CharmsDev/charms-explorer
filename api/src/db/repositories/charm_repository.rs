@@ -16,6 +16,11 @@ impl CharmRepository {
         CharmRepository { conn }
     }
 
+    /// Returns a reference to the underlying database connection
+    pub fn get_connection(&self) -> &DatabaseConnection {
+        &self.conn
+    }
+
     /// Retrieves a charm by transaction ID
     pub async fn get_by_txid(&self, txid: &str) -> Result<Option<charms::Model>, DbError> {
         charms::Entity::find_by_id(txid.to_string())
