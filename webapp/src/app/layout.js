@@ -1,5 +1,6 @@
 import '../styles/globals.css';
 import Header from '../components/Header';
+import { NetworkProvider } from '../context/NetworkContext';
 
 export const metadata = {
     title: 'Charms Explorer',
@@ -14,17 +15,19 @@ export default function RootLayout({ children }) {
                 <div className="fixed inset-0 z-[-1] grid-bg opacity-10"></div>
                 <div className="fixed inset-0 z-[-2] bg-gradient-to-br from-dark-950 via-dark-900 to-primary-950/30"></div>
 
-                <Header />
+                <NetworkProvider>
+                    <Header />
 
-                {/* Background blur for header */}
-                <div className="h-16 fixed top-0 left-0 right-0 bg-dark-900/80 backdrop-blur-md z-40"></div>
+                    {/* Background blur for header */}
+                    <div className="h-24 fixed top-0 left-0 right-0 bg-dark-900/80 backdrop-blur-md z-40"></div>
 
-                {/* Actual spacer to create space in document flow */}
-                <div className="h-12"></div>
+                    {/* Actual spacer to create space in document flow */}
+                    <div className="h-24"></div>
 
-                <main className="relative z-10">
-                    {children}
-                </main>
+                    <main className="relative z-10">
+                        {children}
+                    </main>
+                </NetworkProvider>
 
                 <footer className="relative z-10 bg-dark-900/80 backdrop-blur-sm border-t border-dark-800 text-white py-8 mt-12">
                     <div className="container mx-auto px-4">
