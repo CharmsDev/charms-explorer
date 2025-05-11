@@ -23,3 +23,6 @@ chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2.0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Bitcoin
+bitcoincore-rpc = "0.18.0"
