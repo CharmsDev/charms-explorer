@@ -3,12 +3,16 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useNetwork } from '@/context/NetworkContext';
 
 export default function Header() {
     const [isConnecting, setIsConnecting] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const pathname = usePathname();
+
+    // Use the network context
+    const { selectedNetworks, toggleNetwork } = useNetwork();
 
     // Handle scroll effect for header
     useEffect(() => {
@@ -32,6 +36,8 @@ export default function Header() {
             alert('RJJ-TODO - Wallet connection');
         }, 1000);
     };
+
+    // No longer needed as we're using the context
 
     return (
         <header className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${isScrolled
@@ -92,31 +98,33 @@ export default function Header() {
                             </span>
                         </Link>
 
-                        {/* Connect wallet button */}
-                        <button
-                            onClick={handleConnect}
-                            disabled={isConnecting}
-                            className="btn btn-primary shadow-glow"
-                        >
-                            <span className="flex items-center">
-                                {isConnecting ? (
-                                    <>
-                                        <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                        </svg>
-                                        Connecting...
-                                    </>
-                                ) : (
-                                    <>
-                                        <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                        </svg>
-                                        Connect
-                                    </>
-                                )}
-                            </span>
-                        </button>
+                        {/* Connect wallet button - hidden on status page */}
+                        {pathname !== '/status' && (
+                            <button
+                                onClick={handleConnect}
+                                disabled={isConnecting}
+                                className="btn btn-primary shadow-glow"
+                            >
+                                <span className="flex items-center">
+                                    {isConnecting ? (
+                                        <>
+                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            </svg>
+                                            Connecting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                                            </svg>
+                                            Connect
+                                        </>
+                                    )}
+                                </span>
+                            </button>
+                        )}
 
                         {/* Mobile menu button */}
                         <button
@@ -131,6 +139,76 @@ export default function Header() {
                                 )}
                             </svg>
                         </button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Network selection row */}
+            <div className="hidden md:block border-t border-dark-800/50 bg-dark-900/30">
+                <div className="container mx-auto px-4 py-2">
+                    <div className="flex items-center justify-center">
+                        {/* Bitcoin section with network options */}
+                        <div className="flex items-center">
+                            {/* Bitcoin label (not clickable) */}
+                            <div className="px-4 py-1 text-sm font-medium text-white">
+                                Bitcoin
+                            </div>
+
+                            {/* Bitcoin network options */}
+                            <div className="flex items-center space-x-2 ml-2">
+                                <button
+                                    onClick={() => toggleNetwork('bitcoinMainnet')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinMainnet
+                                        ? 'bg-bitcoin-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Mainnet
+                                </button>
+                                <button
+                                    onClick={() => toggleNetwork('bitcoinTestnet4')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinTestnet4
+                                        ? 'bg-bitcoin-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Testnet4
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Space between blockchain buttons - 50px */}
+                        <div className="mx-6"></div> {/* mx-6 is 1.5rem on each side, so 3rem or ~48px total */}
+
+                        {/* Cardano section with network options */}
+                        <div className="flex items-center">
+                            {/* Cardano label (not clickable) */}
+                            <div className="px-4 py-1 text-sm font-medium text-white">
+                                Cardano
+                            </div>
+
+                            {/* Cardano network options */}
+                            <div className="flex items-center space-x-2 ml-2">
+                                <button
+                                    onClick={() => toggleNetwork('cardanoMainnet')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoMainnet
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Mainnet
+                                </button>
+                                <button
+                                    onClick={() => toggleNetwork('cardanoPreprod')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoPreprod
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Preprod
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -151,6 +229,64 @@ export default function Header() {
                                 Indexer Status
                             </Link>
                         </nav>
+
+                        {/* Mobile network selection */}
+                        <div className="mt-4 border-t border-dark-800 pt-4">
+                            <p className="text-xs text-dark-400 mb-2">Blockchain</p>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                                <div className="px-3 py-1 text-xs text-white">
+                                    Bitcoin
+                                </div>
+                                <div className="px-3 py-1 text-xs text-white">
+                                    Cardano
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-dark-400 mb-2">Bitcoin Network</p>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                                <button
+                                    onClick={() => toggleNetwork('bitcoinMainnet')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinMainnet
+                                        ? 'bg-bitcoin-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Mainnet
+                                </button>
+                                <button
+                                    onClick={() => toggleNetwork('bitcoinTestnet4')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinTestnet4
+                                        ? 'bg-bitcoin-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Testnet4
+                                </button>
+                            </div>
+
+                            <p className="text-xs text-dark-400 mb-2">Cardano Network</p>
+                            <div className="flex flex-wrap gap-2 mb-4">
+                                <button
+                                    onClick={() => toggleNetwork('cardanoMainnet')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoMainnet
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Mainnet
+                                </button>
+                                <button
+                                    onClick={() => toggleNetwork('cardanoPreprod')}
+                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoPreprod
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                        }`}
+                                >
+                                    Preprod
+                                </button>
+                            </div>
+                        </div>
+
                         <div className="mt-4">
                             <div className="relative">
                                 <input

@@ -53,11 +53,11 @@
     }
 
     .card {
-        @apply bg-dark-800 border border-dark-700 rounded-xl overflow-hidden shadow-md hover:shadow-lg transition-all;
+        @apply bg-dark-800 border border-dark-700 rounded-xl overflow-hidden transition-all;
     }
 
     .card-hover {
-        @apply hover:border-primary-600 hover:shadow-glow;
+        @apply hover:border-primary-600 hover:border-2 transition-all duration-300;
     }
 
     .glass-effect {

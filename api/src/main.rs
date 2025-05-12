@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::routing::{get, Router};
+use axum::routing::{get, post, Router};
 use http::{header, Method};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -21,7 +21,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_type, health_check,
+    diagnose_database, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_type,
+    health_check, reset_indexer, status, AppState,
 };
 
 fn load_env() {
@@ -49,9 +50,12 @@ async fn main() {
         .expect("Failed to connect to database");
     tracing::info!("Connected to database");
 
-    // Initialize data repositories
+    // Initialize application state with repositories and config
     let repositories = db_pool.repositories();
-    let app_state = Arc::new(repositories);
+    let app_state = AppState {
+        repositories: Arc::new(repositories),
+        config: config.clone(),
+    };
 
     // Configure CORS policy
     let cors = CorsLayer::new()
@@ -72,6 +76,9 @@ async fn main() {
     // Set up API routes
     let app = Router::new()
         .route("/health", get(health_check))
+        .route("/status", get(status))
+        .route("/diagnose", get(diagnose_database))
+        .route("/reset", post(reset_indexer))
         .route("/charms/count", get(get_charm_numbers))
         .route("/charms/by-type", get(get_charms_by_type))
         .route("/charms/{txid}", get(get_charm_by_txid))

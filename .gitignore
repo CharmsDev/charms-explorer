@@ -75,3 +75,11 @@ yarn-error.log*
 /webapp/.vercel
 /_bkp
 indexer/pid.txt
+/api/_bkp
+
+# Project-specific directories to ignore
+/api/_rjj
+/indexer/_rjj
+/webapp/_rjj
+/api/deploy
+/indexer/deploy

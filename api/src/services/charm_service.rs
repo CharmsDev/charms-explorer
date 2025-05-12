@@ -9,14 +9,18 @@ pub async fn get_charm_numbers_by_type(
     state: &AppState,
     asset_type: Option<&str>,
 ) -> ExplorerResult<CharmCountResponse> {
-    let charm_numbers = state.charm.get_charm_numbers_by_type(asset_type).await?;
+    let charm_numbers = state
+        .repositories
+        .charm
+        .get_charm_numbers_by_type(asset_type)
+        .await?;
     Ok(CharmCountResponse {
         count: charm_numbers.len(),
     })
 }
 
 pub async fn get_all_charms(state: &AppState) -> ExplorerResult<CharmsResponse> {
-    let charms = state.charm.get_all().await?;
+    let charms = state.repositories.charm.get_all().await?;
     let charm_data = charms
         .into_iter()
         .map(|charm| CharmData {
@@ -35,7 +39,11 @@ pub async fn get_charms_by_type(
     state: &AppState,
     asset_type: &str,
 ) -> ExplorerResult<CharmsResponse> {
-    let charms = state.charm.find_by_asset_type(asset_type).await?;
+    let charms = state
+        .repositories
+        .charm
+        .find_by_asset_type(asset_type)
+        .await?;
     let charm_data = charms
         .into_iter()
         .map(|charm| CharmData {
@@ -52,6 +60,7 @@ pub async fn get_charms_by_type(
 
 pub async fn get_charm_by_txid(state: &AppState, txid: &str) -> ExplorerResult<CharmData> {
     let charm = state
+        .repositories
         .charm
         .get_by_txid(txid)
         .await?
