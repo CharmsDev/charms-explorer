@@ -1,23 +1,20 @@
 // Indexer status endpoint handler implementation
 
 use axum::{extract::State, response::IntoResponse, Json};
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
 use serde_json::{json, Value};
-use std::sync::Arc;
 
-use crate::db::repositories::Repositories;
+use crate::handlers::AppState;
 
 /// Handler for GET /status - Returns the indexer status
-pub async fn get_indexer_status(
-    State(repositories): State<Arc<Repositories>>,
-) -> impl IntoResponse {
-    let conn = repositories.charm.get_connection();
-    let status = get_status(conn).await;
+pub async fn get_indexer_status(State(app_state): State<AppState>) -> impl IntoResponse {
+    let conn = app_state.repositories.charm.get_connection();
+    let status = get_status(conn, &app_state.config).await;
     Json(status)
 }
 
 /// Gets the current status of the indexer
-async fn get_status(conn: &DatabaseConnection) -> Value {
+async fn get_status(conn: &DatabaseConnection, config: &crate::config::ApiConfig) -> Value {
     // Get the last processed block
     let last_block = match get_last_processed_block(conn).await {
         Ok(Some(height)) => height,
@@ -27,6 +24,9 @@ async fn get_status(conn: &DatabaseConnection) -> Value {
 
     // Get the latest confirmed block
     let latest_confirmed_block = get_latest_confirmed_block(conn).await;
+
+    // Get Bitcoin node information
+    let bitcoin_node_info = get_bitcoin_node_info(config).await;
 
     // Get charm statistics
     let charm_stats = get_charm_statistics(conn).await;
@@ -49,21 +49,13 @@ async fn get_status(conn: &DatabaseConnection) -> Value {
         Err(_) => "Error".to_string(),
     };
 
-    // Calculate time since last update - try multiple sources
-    let time_since_update = match get_last_updated_timestamp(conn).await {
-        Ok(Some(timestamp)) => {
-            let now = chrono::Utc::now();
-            let duration = now.signed_duration_since(timestamp);
-            format!("{} seconds", duration.num_seconds())
-        }
+    // Get the last indexer loop time
+    let last_indexer_loop_time = match get_last_updated_timestamp(conn).await {
+        Ok(Some(timestamp)) => timestamp.to_rfc3339(),
         Ok(None) => {
             // If no transactions, try to get timestamp from charms
             match get_latest_charm_timestamp(conn).await {
-                Ok(Some(timestamp)) => {
-                    let now = chrono::Utc::now();
-                    let duration = now.signed_duration_since(timestamp);
-                    format!("{} seconds", duration.num_seconds())
-                }
+                Ok(Some(timestamp)) => timestamp.to_rfc3339(),
                 Ok(None) => "Never".to_string(),
                 Err(_) => "Error".to_string(),
             }
@@ -71,27 +63,29 @@ async fn get_status(conn: &DatabaseConnection) -> Value {
         Err(_) => "Error".to_string(),
     };
 
+    // Calculate time since last update for status determination
+    let time_since_update_seconds = match get_last_updated_timestamp(conn).await {
+        Ok(Some(timestamp)) => {
+            let now = chrono::Utc::now();
+            let duration = now.signed_duration_since(timestamp);
+            duration.num_seconds()
+        }
+        Ok(None) => -1, // No timestamp available
+        Err(_) => -2,   // Error getting timestamp
+    };
+
     // Determine status based on available data
     let status = if total_charms > 0 {
-        if time_since_update == "Never" || time_since_update == "Error" {
+        if time_since_update_seconds < 0 {
             "indexed" // We have charms but no recent updates
-        } else if time_since_update.starts_with("Error") {
+        } else if time_since_update_seconds == -2 {
             "error"
+        } else if time_since_update_seconds < 60 {
+            "active"
+        } else if time_since_update_seconds < 300 {
+            "idle"
         } else {
-            let seconds = time_since_update
-                .split_whitespace()
-                .next()
-                .unwrap_or("0")
-                .parse::<i64>()
-                .unwrap_or(0);
-
-            if seconds < 60 {
-                "active"
-            } else if seconds < 300 {
-                "idle"
-            } else {
-                "inactive"
-            }
+            "inactive"
         }
     } else if last_block > 0 {
         "processing" // We have blocks but no charms yet
@@ -103,8 +97,9 @@ async fn get_status(conn: &DatabaseConnection) -> Value {
         "last_processed_block": last_block,
         "last_updated_at": last_updated,
         "latest_confirmed_block": latest_confirmed_block,
-        "time_since_last_update": time_since_update,
+        "last_indexer_loop_time": last_indexer_loop_time,
         "status": status,
+        "bitcoin_node": bitcoin_node_info,
         "charm_stats": charm_stats
     })
 }
@@ -214,6 +209,79 @@ async fn get_latest_confirmed_block(conn: &DatabaseConnection) -> Value {
     }
 }
 
+/// Gets Bitcoin node information by directly connecting to the Bitcoin RPC
+async fn get_bitcoin_node_info(config: &crate::config::ApiConfig) -> Value {
+    use bitcoincore_rpc::{Auth, Client, RpcApi};
+
+    // Use Bitcoin RPC connection details from configuration
+    let host = &config.bitcoin_rpc_host;
+    let port = &config.bitcoin_rpc_port;
+    let username = &config.bitcoin_rpc_username;
+    let password = &config.bitcoin_rpc_password;
+
+    let rpc_url = format!("http://{}:{}", host, port);
+    let auth = Auth::UserPass(username.clone(), password.clone());
+
+    // Try to connect to the Bitcoin RPC server
+    match Client::new(&rpc_url, auth) {
+        Ok(client) => {
+            // Try to get the block count with a timeout to prevent hanging
+            let block_count_result =
+                tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                    client.get_block_count()
+                })
+                .await;
+
+            match block_count_result {
+                Ok(Ok(block_count)) => {
+                    // If block count succeeded, try to get the best block hash
+                    let best_block_hash = match client.get_best_block_hash() {
+                        Ok(hash) => hash.to_string(),
+                        Err(_) => "unknown".to_string(),
+                    };
+
+                    // Try to get network info to determine if mainnet or testnet
+                    let network = "testnet"; // Default to testnet for now
+
+                    json!({
+                        "status": "connected",
+                        "network": network,
+                        "block_count": block_count,
+                        "best_block_hash": best_block_hash
+                    })
+                }
+                Ok(Err(e)) => {
+                    tracing::error!("Failed to get block count: {}", e);
+                    json!({
+                        "status": "error",
+                        "network": "testnet",
+                        "block_count": 0,
+                        "best_block_hash": "unknown"
+                    })
+                }
+                Err(_) => {
+                    tracing::error!("Bitcoin RPC request timed out after 5 seconds");
+                    json!({
+                        "status": "timeout",
+                        "network": "testnet",
+                        "block_count": 0,
+                        "best_block_hash": "unknown"
+                    })
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to connect to Bitcoin RPC: {}", e);
+            json!({
+                "status": "error",
+                "network": "testnet",
+                "block_count": 0,
+                "best_block_hash": "unknown"
+            })
+        }
+    }
+}
+
 /// Gets statistics about indexed charms
 async fn get_charm_statistics(conn: &DatabaseConnection) -> Value {
     // Get total number of charms
@@ -277,13 +345,12 @@ async fn count_confirmed_transactions(conn: &DatabaseConnection) -> i64 {
     }
 }
 
-/// Gets charms grouped by asset type
+/// Gets charms grouped by asset type using frontend detection logic
 async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
+    // First, get all charms with their data
     let query = "
-        SELECT asset_type, COUNT(*) as count 
-        FROM charms 
-        GROUP BY asset_type 
-        ORDER BY count DESC
+        SELECT txid, charmid, data, asset_type
+        FROM charms
     ";
 
     match conn
@@ -294,25 +361,119 @@ async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
         .await
     {
         Ok(rows) => {
-            let result = rows
-                .iter()
-                .map(|row| {
-                    json!({
-                        "asset_type": row.try_get::<String>("", "asset_type").unwrap_or_default(),
-                        "count": row.try_get::<i64>("", "count").unwrap_or(0),
-                    })
-                })
-                .collect::<Vec<Value>>();
+            // Initialize counters for each type
+            let mut nft_count = 0;
+            let mut token_count = 0;
+            let mut dapp_count = 0;
+            let mut other_count = 0;
+
+            // Process each charm and detect its type
+            for row in rows.iter() {
+                let data_str = row.try_get::<String>("", "data").unwrap_or_default();
+                let asset_type = row.try_get::<String>("", "asset_type").unwrap_or_default();
+
+                // Try to parse the data as JSON
+                if let Ok(data) = serde_json::from_str::<Value>(&data_str) {
+                    // Apply the same detection logic as in the frontend
+                    let detected_type = detect_charm_type(&data, &asset_type);
+
+                    match detected_type.as_str() {
+                        "nft" => nft_count += 1,
+                        "token" => token_count += 1,
+                        "dapp" => dapp_count += 1,
+                        _ => other_count += 1,
+                    }
+                } else {
+                    // If we can't parse the data, use the asset_type
+                    if asset_type == "nft" {
+                        nft_count += 1;
+                    } else if asset_type == "token" {
+                        token_count += 1;
+                    } else if asset_type == "dapp" {
+                        dapp_count += 1;
+                    } else {
+                        other_count += 1;
+                    }
+                }
+            }
+
+            // Create the result array with the counts
+            let mut result = Vec::new();
+
+            if nft_count > 0 {
+                result.push(json!({
+                    "asset_type": "nft",
+                    "count": nft_count,
+                }));
+            }
+
+            if token_count > 0 {
+                result.push(json!({
+                    "asset_type": "token",
+                    "count": token_count,
+                }));
+            }
+
+            if dapp_count > 0 {
+                result.push(json!({
+                    "asset_type": "dapp",
+                    "count": dapp_count,
+                }));
+            }
+
+            if other_count > 0 {
+                result.push(json!({
+                    "asset_type": "other",
+                    "count": other_count,
+                }));
+            }
+
+            // Sort by count in descending order
+            result.sort_by(|a, b| {
+                let count_a = a.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
+                let count_b = b.get("count").and_then(|v| v.as_i64()).unwrap_or(0);
+                count_b.cmp(&count_a)
+            });
+
             json!(result)
         }
         _ => json!([]),
     }
 }
 
-/// Gets recent charms
+/// Detects the type of a charm based on its data (similar to frontend logic)
+fn detect_charm_type(data: &Value, default_type: &str) -> String {
+    // Check for apps data that might indicate the type
+    if let Some(data_obj) = data.get("data") {
+        if let Some(apps) = data_obj.get("apps") {
+            if apps.is_object() {
+                for (_, app_value) in apps.as_object().unwrap() {
+                    if let Some(app_str) = app_value.as_str() {
+                        if app_str.starts_with("n/") {
+                            return "nft".to_string();
+                        }
+                        if app_str.starts_with("t/") {
+                            return "token".to_string();
+                        }
+                        // Add rules for 'dapp' if they become available
+                    }
+                }
+            }
+        }
+    }
+
+    // If we couldn't detect a specific type, return the default
+    if default_type == "nft" || default_type == "token" || default_type == "dapp" {
+        default_type.to_string()
+    } else {
+        "other".to_string()
+    }
+}
+
+/// Gets recent charms with mempool links
 async fn get_recent_charms(conn: &DatabaseConnection) -> Value {
     let query = "
-        SELECT txid, charmid, block_height, asset_type, date_created
+        SELECT txid, charmid, block_height, asset_type, data
         FROM charms 
         ORDER BY date_created DESC 
         LIMIT 5
@@ -329,14 +490,53 @@ async fn get_recent_charms(conn: &DatabaseConnection) -> Value {
             let result = rows
                 .iter()
                 .map(|row| {
+                    let txid = row.try_get::<String>("", "txid").unwrap_or_default();
+                    let charmid = row.try_get::<String>("", "charmid").unwrap_or_default();
+                    let block_height = row.try_get::<i32>("", "block_height").unwrap_or(0);
+                    let asset_type = row.try_get::<String>("", "asset_type").unwrap_or_default();
+
+                    // Get the data to extract the real charm ID if available
+                    let data_str = row.try_get::<String>("", "data").unwrap_or_default();
+                    let real_charm_id = if !data_str.is_empty() {
+                        if let Ok(data) = serde_json::from_str::<Value>(&data_str) {
+                            // Try to extract the real charm ID from the data
+                            // First check for data in the standard metadata structure
+                            if let Some(data_obj) = data.get("data") {
+                                if let Some(id) = data_obj.get("id") {
+                                    id.as_str().unwrap_or(&charmid).to_string()
+                                } else {
+                                    charmid
+                                }
+                            } else {
+                                charmid
+                            }
+                        } else {
+                            charmid
+                        }
+                    } else {
+                        charmid
+                    };
+
+                    // Generate mempool link for the transaction
+                    let mempool_link = format!("https://mempool.space/testnet4/tx/{}", txid);
+
+                    // Detect the charm type
+                    let detected_type = if !data_str.is_empty() {
+                        if let Ok(data) = serde_json::from_str::<Value>(&data_str) {
+                            detect_charm_type(&data, &asset_type)
+                        } else {
+                            asset_type
+                        }
+                    } else {
+                        asset_type
+                    };
+
                     json!({
-                        "txid": row.try_get::<String>("", "txid").unwrap_or_default(),
-                        "charmid": row.try_get::<String>("", "charmid").unwrap_or_default(),
-                        "block_height": row.try_get::<i32>("", "block_height").unwrap_or(0),
-                        "asset_type": row.try_get::<String>("", "asset_type").unwrap_or_default(),
-                        "date_created": row.try_get::<chrono::DateTime<chrono::Utc>>("", "date_created")
-                            .map(|dt| dt.to_rfc3339())
-                            .unwrap_or_default(),
+                        "txid": txid,
+                        "mempool_link": mempool_link,
+                        "charmid": real_charm_id,
+                        "block_height": block_height,
+                        "asset_type": detected_type,
                     })
                 })
                 .collect::<Vec<Value>>();

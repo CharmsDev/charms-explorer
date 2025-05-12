@@ -71,19 +71,36 @@ export const fetchAssets = async (type = 'all', page = 1, limit = 20) => {
 // Gets a specific asset by ID
 export const getAssetById = async (id) => {
     try {
-        const data = await fetchRawCharmsData();
+        // Extract the charm ID from the URL format if needed
+        const charmId = id.startsWith('charm-') ? id : id;
 
-        // Find the charm with the matching ID
-        const charm = data.charms.find(charm => charm.charmid === id);
+        // Use the dedicated endpoint to fetch the charm by its ID
+        const response = await fetch(ENDPOINTS.CHARM_BY_CHARMID(charmId));
 
-        if (!charm) {
+        if (!response.ok) {
+            console.warn(`Charm not found with ID: ${charmId}, using default charm`);
             return createDefaultCharm(id);
         }
+
+        const charm = await response.json();
 
         // Transform the charm data
         return transformCharmsArray([charm])[0];
     } catch (error) {
-        throw handleApiError(error, 'fetch asset details');
+        console.error('Error fetching asset by ID:', error);
+        // Fallback to the old method if the new endpoint fails
+        try {
+            const data = await fetchRawCharmsData();
+            const charm = data.charms.find(charm => charm.charmid === id);
+
+            if (!charm) {
+                return createDefaultCharm(id);
+            }
+
+            return transformCharmsArray([charm])[0];
+        } catch (fallbackError) {
+            throw handleApiError(fallbackError, 'fetch asset details');
+        }
     }
 };
 

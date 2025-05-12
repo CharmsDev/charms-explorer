@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, QueryOrder, Set};
 
 use crate::infrastructure::persistence::entities::bookmark;
@@ -45,11 +46,24 @@ impl BookmarkRepository {
             hash: Set(hash.to_string()),
             height: Set(height as i32),
             status: Set(status),
+            last_updated_at: Set(Utc::now().into()),
         };
 
         // Insert or update the bookmark
         bookmark.insert(&self.conn).await?;
 
         Ok(())
+    }
+
+    /// Get the last updated timestamp
+    pub async fn get_last_updated_timestamp(&self) -> Result<Option<DateTime<Utc>>, DbError> {
+        // Query the database for the last updated bookmark
+        let result = bookmark::Entity::find()
+            .order_by_desc(bookmark::Column::LastUpdatedAt)
+            .one(&self.conn)
+            .await?;
+
+        // Return the timestamp if found
+        Ok(result.map(|b| b.last_updated_at.into()))
     }
 }
