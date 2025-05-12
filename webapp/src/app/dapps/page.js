@@ -45,6 +45,24 @@ export default function DAppsPage() {
 
             <FilterTabs counts={counts} />
 
+            {/* Validation Box */}
+            <div className="container mx-auto px-4 py-8">
+                <div className="max-w-2xl mx-auto bg-gradient-to-br from-purple-900/30 to-indigo-900/30 rounded-lg p-8 text-center shadow-lg border border-purple-500/20">
+                    <h3 className="text-2xl font-bold mb-4 text-purple-300">Submit and validate your Charms DApp</h3>
+                    <p className="text-gray-300 mb-6">
+                        Join the growing ecosystem of decentralized applications built on Bitcoin with Charms technology.
+                        Submit your DApp for validation and showcase it to the community.
+                    </p>
+                    <button
+                        className="px-8 py-3 bg-gray-600 text-white rounded-md font-medium opacity-60 cursor-not-allowed"
+                        disabled
+                    >
+                        Start
+                    </button>
+                    <p className="text-gray-500 text-sm mt-3">Validation process is not yet available</p>
+                </div>
+            </div>
+
             <div className="container mx-auto px-4 py-6">
                 <div className="flex justify-between items-center mb-6">
                     <h2 className="text-2xl font-bold">

@@ -1,13 +1,18 @@
 'use client';
 
-export default function BlockchainVisualization({ indexerStatus, charmStats }) {
+export default function BlockchainVisualization({ indexerStatus, charmStats, recentBlocks }) {
     return (
         <div className="mb-8 bg-dark-900/50 rounded-lg p-6 shadow-lg">
             <div className="blockchain-wrapper overflow-x-auto">
                 <div className="blockchain-blocks flex space-x-4 pb-4 min-w-max">
-                    {/* Blockchain Blocks - Generate 6 blocks */}
+                    {/* Blockchain Blocks - Use recent blocks data or generate placeholders */}
                     {Array.from({ length: 6 }).map((_, index) => {
-                        const blockHeight = indexerStatus.last_processed_block ? (indexerStatus.last_processed_block - (index + 1)) : '?';
+                        // Get block data from recentBlocks if available, otherwise use placeholder
+                        const blockData = recentBlocks[index];
+                        const blockHeight = blockData ? blockData.height :
+                            (indexerStatus.last_processed_block ? (indexerStatus.last_processed_block - (index + 1)) : '?');
+                        const blockStatus = blockData ? blockData.status : 'confirmed';
+                        const charmCount = blockData ? blockData.charm_count : 0;
                         const opacity = 1 - (index * 0.15);
                         return (
                             <div key={index} className="bitcoin-block text-center relative"
@@ -27,7 +32,7 @@ export default function BlockchainVisualization({ indexerStatus, charmStats }) {
                                 <div className="absolute inset-0 border border-blue-500/20 rounded-lg"></div>
                                 <div className="block-body p-4 text-white relative h-full flex flex-col justify-between">
                                     <div>
-                                        <div className="text-xs text-blue-400 mb-1">CONFIRMED</div>
+                                        <div className="text-xs text-blue-400 mb-1">{blockStatus.toUpperCase()}</div>
                                         <div className="text-3xl font-bold text-white mb-2">
                                             {blockHeight}
                                         </div>
@@ -38,10 +43,7 @@ export default function BlockchainVisualization({ indexerStatus, charmStats }) {
                                                 Charms
                                             </div>
                                             <div className="text-lg font-bold text-blue-400">
-                                                {/* TODO: Update API to provide charms per block */}
-                                                <span title="Placeholder data - API update needed">
-                                                    {Math.floor(Math.random() * 5)} <small className="text-xs text-dark-400">(demo)</small>
-                                                </span>
+                                                {charmCount}
                                             </div>
                                         </div>
                                         <div className="text-xs text-dark-500 mt-2">
