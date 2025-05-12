@@ -4,14 +4,14 @@ import { useState, useEffect } from 'react';
 import { fetchIndexerStatus } from '@/services/apiServices';
 
 // Import components
-import PageHeader from './components/PageHeader';
-import LoadingState from './components/LoadingState';
-import ErrorState from './components/ErrorState';
-import BlockStatusCards from './components/BlockStatusCards';
-import BlockchainVisualization from './components/BlockchainVisualization';
-import StatusCards from './components/StatusCards';
-import CharmStatistics from './components/CharmStatistics';
-import RecentCharms from './components/RecentCharms';
+import PageHeader from '@/components/status/PageHeader';
+import LoadingState from '@/components/status/LoadingState';
+import ErrorState from '@/components/status/ErrorState';
+import BlockStatusCards from '@/components/status/BlockStatusCards';
+import BlockchainVisualization from '@/components/status/BlockchainVisualization';
+import StatusCards from '@/components/status/StatusCards';
+import CharmStatistics from '@/components/status/CharmStatistics';
+import RecentCharms from '@/components/status/RecentCharms';
 
 export default function StatusPage() {
     const [data, setData] = useState(null);
@@ -36,7 +36,8 @@ export default function StatusPage() {
                         last_indexer_loop_time: statusData.last_indexer_loop_time
                     },
                     bitcoin_node: statusData.bitcoin_node || {},
-                    charm_stats: statusData.charm_stats
+                    charm_stats: statusData.charm_stats,
+                    recent_blocks: statusData.recent_blocks || []
                 });
             } else {
                 setData({
@@ -111,6 +112,7 @@ export default function StatusPage() {
             <BlockchainVisualization
                 indexerStatus={indexerStatus}
                 charmStats={charmStats}
+                recentBlocks={data?.recent_blocks || []}
             />
 
             <StatusCards
