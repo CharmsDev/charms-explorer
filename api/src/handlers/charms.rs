@@ -45,3 +45,12 @@ pub async fn get_charm_by_txid(
     let charm_data = charm_service::get_charm_by_txid(&state, &txid).await?;
     Ok(Json(charm_data))
 }
+
+/// Handler for GET /charms/by-charmid/{charmid} - Returns a specific charm by its charm ID
+pub async fn get_charm_by_charmid(
+    State(state): State<AppState>,
+    Path(charmid): Path<String>,
+) -> ExplorerResult<Json<CharmData>> {
+    let charm_data = charm_service::get_charm_by_charmid(&state, &charmid).await?;
+    Ok(Json(charm_data))
+}
