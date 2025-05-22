@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from 'react';
 import { fetchIndexerStatus } from '@/services/apiServices';
+import { useNetwork } from '@/context/NetworkContext';
 
 // Import components
-import PageHeader from '@/components/status/PageHeader';
 import LoadingState from '@/components/status/LoadingState';
 import ErrorState from '@/components/status/ErrorState';
 import BlockStatusCards from '@/components/status/BlockStatusCards';
@@ -20,31 +20,60 @@ export default function StatusPage() {
     const [lastUpdated, setLastUpdated] = useState(new Date());
     const [isHovered, setIsHovered] = useState(null);
 
+    // Use the network context
+    const { selectedNetworks } = useNetwork();
+
     const fetchData = async () => {
         try {
             setLoading(true);
             const statusData = await fetchIndexerStatus();
             console.log('Status data:', statusData);
 
-            if (statusData.charm_stats) {
-                setData({
-                    indexer_status: {
-                        status: statusData.status,
-                        last_processed_block: statusData.last_processed_block,
-                        latest_confirmed_block: statusData.latest_confirmed_block,
-                        last_updated_at: statusData.last_updated_at,
-                        last_indexer_loop_time: statusData.last_indexer_loop_time
-                    },
-                    bitcoin_node: statusData.bitcoin_node || {},
-                    charm_stats: statusData.charm_stats,
-                    recent_blocks: statusData.recent_blocks || []
-                });
+            // Process and organize data by network
+            const processedData = {
+                testnet4: {
+                    indexer_status: {},
+                    bitcoin_node: {},
+                    charm_stats: {},
+                    recent_blocks: []
+                },
+                mainnet: {
+                    indexer_status: {},
+                    bitcoin_node: {},
+                    charm_stats: {},
+                    recent_blocks: []
+                }
+            };
+
+            // Process data for each network
+            if (statusData.networks) {
+                // If the API returns data already organized by networks
+                processedData.testnet4 = statusData.networks.testnet4 || {};
+                processedData.mainnet = statusData.networks.mainnet || {};
             } else {
-                setData({
-                    indexer_status: statusData,
-                    bitcoin_node: {}
-                });
+                // If the API still returns data in the old format (assume it's testnet4)
+                if (statusData.charm_stats) {
+                    processedData.testnet4 = {
+                        indexer_status: {
+                            status: statusData.status,
+                            last_processed_block: statusData.last_processed_block,
+                            latest_confirmed_block: statusData.latest_confirmed_block,
+                            last_updated_at: statusData.last_updated_at,
+                            last_indexer_loop_time: statusData.last_indexer_loop_time
+                        },
+                        bitcoin_node: statusData.bitcoin_node || {},
+                        charm_stats: statusData.charm_stats,
+                        recent_blocks: statusData.recent_blocks || []
+                    };
+                } else {
+                    processedData.testnet4 = {
+                        indexer_status: statusData,
+                        bitcoin_node: {}
+                    };
+                }
             }
+
+            setData(processedData);
             setLastUpdated(new Date());
         } catch (err) {
             setError(err.message);
@@ -81,51 +110,142 @@ export default function StatusPage() {
         return <ErrorState error={error} fetchData={fetchData} />;
     }
 
-    const indexerStatus = data?.indexer_status || {};
-    const bitcoinStatus = data?.bitcoin_node || {};
-    const charmStats = data?.charm_stats || {};
+    // Helper function to calculate sync progress and blocks behind
+    const calculateSyncInfo = (networkData) => {
+        const indexerStatus = networkData?.indexer_status || {};
+        const bitcoinNode = networkData?.bitcoin_node || {};
 
-    // Calculate sync progress
-    const syncProgress = indexerStatus.latest_confirmed_block && indexerStatus.last_processed_block
-        ? Math.min(100, Math.round((indexerStatus.last_processed_block / indexerStatus.latest_confirmed_block) * 100))
-        : 0;
+        // Get the latest Bitcoin block from the Bitcoin node
+        const latestBitcoinBlock = bitcoinNode.block_count || 0;
+        const lastProcessedBlock = indexerStatus.last_processed_block || 0;
 
-    // Calculate blocks behind
-    const blocksBehind = indexerStatus.latest_confirmed_block && indexerStatus.last_processed_block
-        ? indexerStatus.latest_confirmed_block - indexerStatus.last_processed_block
-        : 0;
+        // Calculate sync progress based on the latest Bitcoin block
+        const syncProgress = latestBitcoinBlock > 0 && lastProcessedBlock > 0
+            ? Math.min(100, Math.round((lastProcessedBlock / latestBitcoinBlock) * 100))
+            : 0;
+
+        // Calculate blocks behind based on the latest Bitcoin block
+        const blocksBehind = latestBitcoinBlock > 0 && lastProcessedBlock > 0
+            ? latestBitcoinBlock - lastProcessedBlock
+            : 0;
+
+        return { syncProgress, blocksBehind };
+    };
+
+    // Get data for testnet4 and mainnet
+    const testnet4Data = data?.testnet4 || {};
+    const mainnetData = data?.mainnet || {};
+
+    // Calculate sync info for both networks
+    const testnet4SyncInfo = calculateSyncInfo(testnet4Data);
+    const mainnetSyncInfo = calculateSyncInfo(mainnetData);
+
+    // Determine which networks to display based on selectedNetworks from context
+    const showTestnet4 = selectedNetworks.bitcoinTestnet4;
+    const showMainnet = selectedNetworks.bitcoinMainnet;
 
     return (
         <div className="container mx-auto px-4 py-8">
-            <PageHeader />
+            {/* Network Status Sections */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                {/* Testnet4 Column */}
+                {showTestnet4 && (
+                    <div className={`${showMainnet ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
+                        <div className="mb-6">
+                            <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-blue-600 bg-clip-text text-transparent">
+                                Bitcoin Testnet 4 Status
+                            </h2>
+                            <div className="h-1 w-20 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full mt-2"></div>
+                        </div>
 
-            <BlockStatusCards
-                indexerStatus={indexerStatus}
-                bitcoinStatus={bitcoinStatus}
-                blocksBehind={blocksBehind}
-                syncProgress={syncProgress}
-                lastUpdated={lastUpdated}
-                isHovered={isHovered}
-                setIsHovered={setIsHovered}
-            />
+                        <BlockStatusCards
+                            indexerStatus={testnet4Data.indexer_status || {}}
+                            bitcoinStatus={testnet4Data.bitcoin_node || {}}
+                            blocksBehind={testnet4SyncInfo.blocksBehind}
+                            syncProgress={testnet4SyncInfo.syncProgress}
+                            lastUpdated={lastUpdated}
+                            isHovered={isHovered}
+                            setIsHovered={setIsHovered}
+                            networkType="testnet4"
+                        />
 
-            <BlockchainVisualization
-                indexerStatus={indexerStatus}
-                charmStats={charmStats}
-                recentBlocks={data?.recent_blocks || []}
-            />
+                        <BlockchainVisualization
+                            indexerStatus={testnet4Data.indexer_status || {}}
+                            charmStats={testnet4Data.charm_stats || {}}
+                            recentBlocks={testnet4Data.recent_blocks || []}
+                            networkType="testnet4"
+                        />
 
-            <StatusCards
-                indexerStatus={indexerStatus}
-                bitcoinStatus={bitcoinStatus}
-                getStatusBadgeClass={getStatusBadgeClass}
-                getConnectionStatusBadgeClass={getConnectionStatusBadgeClass}
-                lastUpdated={lastUpdated}
-            />
+                        <StatusCards
+                            indexerStatus={testnet4Data.indexer_status || {}}
+                            bitcoinStatus={testnet4Data.bitcoin_node || {}}
+                            getStatusBadgeClass={getStatusBadgeClass}
+                            getConnectionStatusBadgeClass={getConnectionStatusBadgeClass}
+                            lastUpdated={lastUpdated}
+                            networkType="testnet4"
+                        />
 
-            <CharmStatistics charmStats={charmStats} />
+                        <CharmStatistics
+                            charmStats={testnet4Data.charm_stats || {}}
+                            networkType="testnet4"
+                        />
 
-            <RecentCharms charmStats={charmStats} />
+                        <RecentCharms
+                            charmStats={testnet4Data.charm_stats || {}}
+                            networkType="testnet4"
+                        />
+                    </div>
+                )}
+
+                {/* Mainnet Column */}
+                {showMainnet && (
+                    <div className={`${showTestnet4 ? 'lg:col-span-1' : 'lg:col-span-2'}`}>
+                        <div className="mb-6">
+                            <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">
+                                Bitcoin Mainnet Status
+                            </h2>
+                            <div className="h-1 w-20 bg-gradient-to-r from-orange-400 to-orange-600 rounded-full mt-2"></div>
+                        </div>
+
+                        <BlockStatusCards
+                            indexerStatus={mainnetData.indexer_status || {}}
+                            bitcoinStatus={mainnetData.bitcoin_node || {}}
+                            blocksBehind={mainnetSyncInfo.blocksBehind}
+                            syncProgress={mainnetSyncInfo.syncProgress}
+                            lastUpdated={lastUpdated}
+                            isHovered={isHovered}
+                            setIsHovered={setIsHovered}
+                            networkType="mainnet"
+                        />
+
+                        <BlockchainVisualization
+                            indexerStatus={mainnetData.indexer_status || {}}
+                            charmStats={mainnetData.charm_stats || {}}
+                            recentBlocks={mainnetData.recent_blocks || []}
+                            networkType="mainnet"
+                        />
+
+                        <StatusCards
+                            indexerStatus={mainnetData.indexer_status || {}}
+                            bitcoinStatus={mainnetData.bitcoin_node || {}}
+                            getStatusBadgeClass={getStatusBadgeClass}
+                            getConnectionStatusBadgeClass={getConnectionStatusBadgeClass}
+                            lastUpdated={lastUpdated}
+                            networkType="mainnet"
+                        />
+
+                        <CharmStatistics
+                            charmStats={mainnetData.charm_stats || {}}
+                            networkType="mainnet"
+                        />
+
+                        <RecentCharms
+                            charmStats={mainnetData.charm_stats || {}}
+                            networkType="mainnet"
+                        />
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

@@ -1,6 +1,21 @@
 'use client';
 
-export default function BlockchainVisualization({ indexerStatus, charmStats, recentBlocks }) {
+export default function BlockchainVisualization({ indexerStatus, charmStats, recentBlocks, networkType = 'testnet4' }) {
+    // Define color schemes based on network type
+    const colorScheme = networkType === 'mainnet'
+        ? {
+            background: 'from-orange-500/20 to-red-600/10',
+            border: 'border-orange-500/20',
+            text: 'text-orange-400',
+            blockGradient: 'from-orange-400 to-red-500'
+        }
+        : {
+            background: 'from-blue-500/20 to-indigo-600/10',
+            border: 'border-blue-500/20',
+            text: 'text-blue-400',
+            blockGradient: 'from-blue-400 to-indigo-500'
+        };
+
     return (
         <div className="mb-8 bg-dark-900/50 rounded-lg p-6 shadow-lg">
             <div className="blockchain-wrapper overflow-x-auto">
@@ -28,11 +43,11 @@ export default function BlockchainVisualization({ indexerStatus, charmStats, rec
                                     transition: 'all 0.3s ease-in-out',
                                     opacity: opacity
                                 }}>
-                                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-indigo-600/10 rounded-lg" style={{ opacity: opacity }}></div>
-                                <div className="absolute inset-0 border border-blue-500/20 rounded-lg"></div>
+                                <div className={`absolute inset-0 bg-gradient-to-br ${colorScheme.background} rounded-lg`} style={{ opacity: opacity }}></div>
+                                <div className={`absolute inset-0 border ${colorScheme.border} rounded-lg`}></div>
                                 <div className="block-body p-4 text-white relative h-full flex flex-col justify-between">
                                     <div>
-                                        <div className="text-xs text-blue-400 mb-1">{blockStatus.toUpperCase()}</div>
+                                        <div className={`text-xs ${colorScheme.text} mb-1`}>{blockStatus.toUpperCase()}</div>
                                         <div className="text-3xl font-bold text-white mb-2">
                                             {blockHeight}
                                         </div>
@@ -42,7 +57,7 @@ export default function BlockchainVisualization({ indexerStatus, charmStats, rec
                                             <div className="text-sm text-dark-300 mb-1">
                                                 Charms
                                             </div>
-                                            <div className="text-lg font-bold text-blue-400">
+                                            <div className={`text-lg font-bold ${colorScheme.text}`}>
                                                 {charmCount}
                                             </div>
                                         </div>
@@ -54,7 +69,7 @@ export default function BlockchainVisualization({ indexerStatus, charmStats, rec
                                         </div>
                                     </div>
                                     <span className="absolute top-2 right-2">
-                                        <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                                        <svg className={`w-6 h-6 ${colorScheme.text}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
                                         </svg>
                                     </span>
