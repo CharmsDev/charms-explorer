@@ -2,11 +2,32 @@
 
 import { Table, TableHeader, TableBody, TableRow, TableCell } from '@/components/ui/Table';
 
-export default function RecentCharms({ charmStats }) {
+export default function RecentCharms({ charmStats, networkType = 'testnet4' }) {
+    // Generate the appropriate mempool URL based on network type
+    const getMempoolUrl = (txid) => {
+        return networkType === 'mainnet'
+            ? `https://mempool.space/tx/${txid}`
+            : `https://mempool.space/testnet4/tx/${txid}`;
+    };
+
+    // Define color schemes based on network type
+    const colorScheme = networkType === 'mainnet'
+        ? {
+            link: 'text-orange-500 hover:text-orange-700'
+        }
+        : {
+            link: 'text-blue-500 hover:text-blue-700'
+        };
+
     return (
         <div className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-lg overflow-hidden shadow-lg mb-8">
             <div className="p-6">
-                <h2 className="text-xl font-semibold text-white mb-4">Recent Charms</h2>
+                <h2 className="text-xl font-semibold text-white mb-4">
+                    Recent Charms
+                    <span className="ml-2 text-sm font-normal text-dark-400">
+                        {networkType === 'mainnet' ? '(Mainnet)' : '(Testnet 4)'}
+                    </span>
+                </h2>
                 <div className="overflow-x-auto">
                     <Table>
                         <TableHeader>
@@ -23,10 +44,10 @@ export default function RecentCharms({ charmStats }) {
                                     <TableRow key={index}>
                                         <TableCell className="w-[40%] truncate">
                                             <a
-                                                href={charm.mempool_link}
+                                                href={charm.mempool_link || getMempoolUrl(charm.txid)}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="text-blue-500 hover:text-blue-700 underline"
+                                                className={`${colorScheme.link} underline`}
                                                 title={charm.txid}
                                             >
                                                 {charm.txid}

@@ -17,6 +17,10 @@ pub struct Model {
     pub date_created: NaiveDateTime,
     #[sea_orm(column_type = "Text")]
     pub asset_type: String,
+    #[sea_orm(column_type = "Text")]
+    pub blockchain: String,
+    #[sea_orm(column_type = "Text")]
+    pub network: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
