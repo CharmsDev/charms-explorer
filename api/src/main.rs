@@ -21,8 +21,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    diagnose_database, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_type,
-    health_check, reset_indexer, status, AppState,
+    diagnose_database, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms,
+    get_charms_by_type, health_check, reset_indexer, status, AppState,
 };
 
 fn load_env() {
@@ -81,6 +81,7 @@ async fn main() {
         .route("/reset", post(reset_indexer))
         .route("/charms/count", get(get_charm_numbers))
         .route("/charms/by-type", get(get_charms_by_type))
+        .route("/charms/by-charmid/{charmid}", get(get_charm_by_charmid))
         .route("/charms/{txid}", get(get_charm_by_txid))
         .route("/charms", get(get_charms))
         .layer(cors)

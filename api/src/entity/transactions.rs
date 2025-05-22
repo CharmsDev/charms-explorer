@@ -18,6 +18,10 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub status: String,
     pub confirmations: i32,
+    #[sea_orm(column_type = "Text")]
+    pub blockchain: String,
+    #[sea_orm(column_type = "Text")]
+    pub network: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -28,6 +28,9 @@ async fn get_status(conn: &DatabaseConnection, config: &crate::config::ApiConfig
     // Get Bitcoin node information
     let bitcoin_node_info = get_bitcoin_node_info(config).await;
 
+    // Get recent processed blocks with charm counts
+    let recent_blocks = get_recent_processed_blocks(conn).await;
+
     // Get charm statistics
     let charm_stats = get_charm_statistics(conn).await;
     let total_charms = charm_stats
@@ -100,7 +103,8 @@ async fn get_status(conn: &DatabaseConnection, config: &crate::config::ApiConfig
         "last_indexer_loop_time": last_indexer_loop_time,
         "status": status,
         "bitcoin_node": bitcoin_node_info,
-        "charm_stats": charm_stats
+        "charm_stats": charm_stats,
+        "recent_blocks": recent_blocks
     })
 }
 
@@ -287,11 +291,11 @@ async fn get_charm_statistics(conn: &DatabaseConnection) -> Value {
     // Get total number of charms
     let total_charms = count_table_rows(conn, "charms").await;
 
-    // Get total number of transactions
-    let total_transactions = count_table_rows(conn, "transactions").await;
+    // Get total number of transactions associated with valid charms
+    let total_transactions = count_valid_transactions(conn).await;
 
-    // Get confirmed transactions count
-    let confirmed_transactions = count_confirmed_transactions(conn).await;
+    // Get confirmed transactions count (only for valid charms)
+    let confirmed_transactions = count_confirmed_valid_transactions(conn).await;
 
     // Calculate confirmation rate
     let confirmation_rate = if total_transactions > 0 {
@@ -316,16 +320,111 @@ async fn get_charm_statistics(conn: &DatabaseConnection) -> Value {
     })
 }
 
-/// Counts rows in a table
-async fn count_table_rows(conn: &DatabaseConnection, table: &str) -> i64 {
-    let query = format!("SELECT COUNT(*) as count FROM {}", table);
+/// Counts transactions associated with valid charms
+async fn count_valid_transactions(conn: &DatabaseConnection) -> i64 {
+    let query = "
+        SELECT COUNT(DISTINCT t.txid) as count
+        FROM transactions t
+        JOIN charms c ON t.txid = c.txid
+        WHERE NOT (
+            c.data::jsonb -> 'data' = '{}'::jsonb AND 
+            c.data::jsonb ->> 'type' = 'spell' AND 
+            (c.data::jsonb ->> 'detected')::boolean = true
+        )
+    ";
 
     match conn
-        .query_one(Statement::from_string(conn.get_database_backend(), query))
+        .query_one(Statement::from_string(
+            conn.get_database_backend(),
+            query.to_string(),
+        ))
         .await
     {
         Ok(Some(row)) => row.try_get::<i64>("", "count").unwrap_or(0),
         _ => 0,
+    }
+}
+
+/// Counts confirmed transactions associated with valid charms
+async fn count_confirmed_valid_transactions(conn: &DatabaseConnection) -> i64 {
+    let query = "
+        SELECT COUNT(DISTINCT t.txid) as count
+        FROM transactions t
+        JOIN charms c ON t.txid = c.txid
+        WHERE t.status = 'confirmed'
+        AND NOT (
+            c.data::jsonb -> 'data' = '{}'::jsonb AND 
+            c.data::jsonb ->> 'type' = 'spell' AND 
+            (c.data::jsonb ->> 'detected')::boolean = true
+        )
+    ";
+
+    match conn
+        .query_one(Statement::from_string(
+            conn.get_database_backend(),
+            query.to_string(),
+        ))
+        .await
+    {
+        Ok(Some(row)) => row.try_get::<i64>("", "count").unwrap_or(0),
+        _ => 0,
+    }
+}
+
+/// Counts rows in a table
+async fn count_table_rows(conn: &DatabaseConnection, table: &str) -> i64 {
+    // For the charms table, we need to filter out empty spell charms
+    if table == "charms" {
+        // First try a simpler query to get all charms
+        let all_charms_query = "SELECT COUNT(*) as count FROM charms";
+        let all_charms_count = match conn
+            .query_one(Statement::from_string(
+                conn.get_database_backend(),
+                all_charms_query.to_string(),
+            ))
+            .await
+        {
+            Ok(Some(row)) => row.try_get::<i64>("", "count").unwrap_or(0),
+            _ => 0,
+        };
+
+        // If we have charms, try to filter out empty spell charms
+        if all_charms_count > 0 {
+            // Try a more specific query to filter out empty spell charms
+            let query = "
+                SELECT COUNT(*) as count 
+                FROM charms 
+                WHERE NOT (
+                    data::jsonb -> 'data' = '{}'::jsonb AND 
+                    data::jsonb ->> 'type' = 'spell' AND 
+                    (data::jsonb ->> 'detected')::boolean = true
+                )
+            ";
+
+            match conn
+                .query_one(Statement::from_string(
+                    conn.get_database_backend(),
+                    query.to_string(),
+                ))
+                .await
+            {
+                Ok(Some(row)) => row.try_get::<i64>("", "count").unwrap_or(all_charms_count),
+                _ => all_charms_count, // Fallback to all charms if the filter query fails
+            }
+        } else {
+            0 // No charms at all
+        }
+    } else {
+        // For other tables, use the standard count
+        let query = format!("SELECT COUNT(*) as count FROM {}", table);
+
+        match conn
+            .query_one(Statement::from_string(conn.get_database_backend(), query))
+            .await
+        {
+            Ok(Some(row)) => row.try_get::<i64>("", "count").unwrap_or(0),
+            _ => 0,
+        }
     }
 }
 
@@ -345,12 +444,17 @@ async fn count_confirmed_transactions(conn: &DatabaseConnection) -> i64 {
     }
 }
 
-/// Gets charms grouped by asset type using frontend detection logic
+/// Gets charms grouped by asset type using improved backend detection logic
 async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
-    // First, get all charms with their data
+    // First, get all charms with their data, excluding empty spell charms
     let query = "
         SELECT txid, charmid, data, asset_type
         FROM charms
+        WHERE NOT (
+            data::jsonb -> 'data' = '{}'::jsonb AND 
+            data::jsonb ->> 'type' = 'spell' AND 
+            (data::jsonb ->> 'detected')::boolean = true
+        )
     ";
 
     match conn
@@ -367,15 +471,22 @@ async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
             let mut dapp_count = 0;
             let mut other_count = 0;
 
+            // Debug: Log the number of rows
+            tracing::info!("Processing {} charms for asset type detection", rows.len());
+
             // Process each charm and detect its type
             for row in rows.iter() {
+                let txid = row.try_get::<String>("", "txid").unwrap_or_default();
                 let data_str = row.try_get::<String>("", "data").unwrap_or_default();
                 let asset_type = row.try_get::<String>("", "asset_type").unwrap_or_default();
 
                 // Try to parse the data as JSON
                 if let Ok(data) = serde_json::from_str::<Value>(&data_str) {
-                    // Apply the same detection logic as in the frontend
+                    // Apply improved detection logic
                     let detected_type = detect_charm_type(&data, &asset_type);
+
+                    // Debug: Log the detected type for each charm
+                    tracing::info!("Charm {} detected as type: {}", txid, detected_type);
 
                     match detected_type.as_str() {
                         "nft" => nft_count += 1,
@@ -385,6 +496,11 @@ async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
                     }
                 } else {
                     // If we can't parse the data, use the asset_type
+                    tracing::warn!(
+                        "Failed to parse data for charm {}, using asset_type: {}",
+                        txid,
+                        asset_type
+                    );
                     if asset_type == "nft" {
                         nft_count += 1;
                     } else if asset_type == "token" {
@@ -396,6 +512,15 @@ async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
                     }
                 }
             }
+
+            // Debug: Log the final counts
+            tracing::info!(
+                "Final counts - NFT: {}, Token: {}, dApp: {}, Other: {}",
+                nft_count,
+                token_count,
+                dapp_count,
+                other_count
+            );
 
             // Create the result array with the counts
             let mut result = Vec::new();
@@ -441,21 +566,39 @@ async fn get_charms_by_asset_type(conn: &DatabaseConnection) -> Value {
     }
 }
 
-/// Detects the type of a charm based on its data (similar to frontend logic)
+/// Detects the type of a charm based on its data, matching the webapp's logic
 fn detect_charm_type(data: &Value, default_type: &str) -> String {
-    // Check for apps data that might indicate the type
+    // First check if this is a spell with empty data
     if let Some(data_obj) = data.get("data") {
-        if let Some(apps) = data_obj.get("apps") {
-            if apps.is_object() {
-                for (_, app_value) in apps.as_object().unwrap() {
-                    if let Some(app_str) = app_value.as_str() {
-                        if app_str.starts_with("n/") {
-                            return "nft".to_string();
+        if data_obj.is_object() && data_obj.as_object().unwrap().is_empty() {
+            if let Some(type_value) = data.get("type") {
+                if type_value.is_string() && type_value.as_str().unwrap() == "spell" {
+                    if let Some(detected) = data.get("detected") {
+                        if detected.is_boolean() && detected.as_bool().unwrap() {
+                            return "other".to_string(); // Classify empty spells as "other"
                         }
-                        if app_str.starts_with("t/") {
-                            return "token".to_string();
+                    }
+                }
+            }
+        }
+
+        // Check for apps in the data.data path (matching webapp logic)
+        if let Some(inner_data) = data_obj.get("data") {
+            if let Some(apps) = inner_data.get("apps") {
+                if apps.is_object() {
+                    for (_, app_value) in apps.as_object().unwrap() {
+                        if let Some(app_str) = app_value.as_str() {
+                            // This is the key logic from the webapp's detectCharmType function
+                            if app_str.starts_with("n/") {
+                                return "nft".to_string();
+                            }
+                            if app_str.starts_with("t/") {
+                                return "token".to_string();
+                            }
+                            if app_str.starts_with("d/") {
+                                return "dapp".to_string();
+                            }
                         }
-                        // Add rules for 'dapp' if they become available
                     }
                 }
             }
@@ -463,10 +606,57 @@ fn detect_charm_type(data: &Value, default_type: &str) -> String {
     }
 
     // If we couldn't detect a specific type, return the default
+    // This matches the webapp's logic of returning the original asset_type
     if default_type == "nft" || default_type == "token" || default_type == "dapp" {
         default_type.to_string()
     } else {
         "other".to_string()
+    }
+}
+
+/// Gets recent processed blocks with charm counts
+async fn get_recent_processed_blocks(conn: &DatabaseConnection) -> Value {
+    let query = "
+        SELECT b.height, b.hash, b.status, 
+        COUNT(CASE WHEN c.txid IS NOT NULL AND NOT (
+            c.data::jsonb -> 'data' = '{}'::jsonb AND 
+            c.data::jsonb ->> 'type' = 'spell' AND 
+            (c.data::jsonb ->> 'detected')::boolean = true
+        ) THEN 1 ELSE NULL END) as charm_count
+        FROM bookmark b
+        LEFT JOIN charms c ON b.height = c.block_height
+        GROUP BY b.height, b.hash, b.status
+        ORDER BY b.height DESC
+        LIMIT 10
+    ";
+
+    match conn
+        .query_all(Statement::from_string(
+            conn.get_database_backend(),
+            query.to_string(),
+        ))
+        .await
+    {
+        Ok(rows) => {
+            let result = rows
+                .iter()
+                .map(|row| {
+                    let height = row.try_get::<i32>("", "height").unwrap_or(0);
+                    let hash = row.try_get::<String>("", "hash").unwrap_or_default();
+                    let status = row.try_get::<String>("", "status").unwrap_or_default();
+                    let charm_count = row.try_get::<i64>("", "charm_count").unwrap_or(0);
+
+                    json!({
+                        "height": height,
+                        "hash": hash,
+                        "status": status,
+                        "charm_count": charm_count
+                    })
+                })
+                .collect::<Vec<Value>>();
+            json!(result)
+        }
+        _ => json!([]),
     }
 }
 
@@ -475,6 +665,11 @@ async fn get_recent_charms(conn: &DatabaseConnection) -> Value {
     let query = "
         SELECT txid, charmid, block_height, asset_type, data
         FROM charms 
+        WHERE NOT (
+            data::jsonb -> 'data' = '{}'::jsonb AND 
+            data::jsonb ->> 'type' = 'spell' AND 
+            (data::jsonb ->> 'detected')::boolean = true
+        )
         ORDER BY date_created DESC 
         LIMIT 5
     ";
