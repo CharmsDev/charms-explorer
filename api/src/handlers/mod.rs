@@ -12,7 +12,9 @@ use crate::config::ApiConfig;
 use crate::db::Repositories;
 
 // Handler function re-exports
-pub use charms::{get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_type};
+pub use charms::{
+    get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_type,
+};
 pub use diagnostic::diagnose_database;
 pub use health::health_check;
 pub use reset::reset_indexer;

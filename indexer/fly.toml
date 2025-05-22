@@ -7,12 +7,11 @@ primary_region = "sjc"
 
 [env]
   RUST_LOG = "info"  # Logging level for Rust app
+  ENABLE_BITCOIN_MAINNET = "false"  # Temporarily disable mainnet
+  ENABLE_BITCOIN_TESTNET4 = "true"  # Ensure testnet4 is enabled
 
-[deploy]
-  release_command = "/usr/local/bin/migrate"  # Runs migrations before app start
-
-[processes]
-  indexer = "charms-indexer"  # Background process, runs continuously
+#[processes]
+#  indexer = "charms-indexer"  # Background process, runs continuously
 
 [[vm]]
   memory = "1gb"

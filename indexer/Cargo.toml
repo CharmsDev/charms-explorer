@@ -3,10 +3,8 @@ name = "charms-indexer"
 version = "0.1.0"
 edition = "2021"
 
-[workspace]
-members = [".", "migration"]
-
 [dependencies]
+async-trait = "0.1.74"
 bitcoincore-rpc = "0.17.0"
 dotenv = "0.15.0"
 env_logger = "0.10.0"
@@ -21,5 +19,3 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # SeaORM dependencies
 sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono", "with-json"] }
-sea-orm-migration = "0.12"
-migration = { path = "migration" }

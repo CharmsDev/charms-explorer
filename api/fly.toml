@@ -4,7 +4,7 @@
 #
 
 app = 'charms-explorer-api'
-primary_region = 'cdg'
+primary_region = 'sjc'
 
 [build]
 
