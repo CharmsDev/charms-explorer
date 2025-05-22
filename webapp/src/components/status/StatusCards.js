@@ -2,7 +2,18 @@
 
 import { Badge } from '@/components/ui/Badge';
 
-export default function StatusCards({ indexerStatus, bitcoinStatus, getStatusBadgeClass, getConnectionStatusBadgeClass, lastUpdated }) {
+export default function StatusCards({ indexerStatus, bitcoinStatus, getStatusBadgeClass, getConnectionStatusBadgeClass, lastUpdated, networkType = 'testnet4' }) {
+    // Define color schemes based on network type
+    const colorScheme = networkType === 'mainnet'
+        ? {
+            accent: 'from-orange-400 to-red-500',
+            highlight: 'text-orange-400'
+        }
+        : {
+            accent: 'from-blue-400 to-indigo-500',
+            highlight: 'text-blue-400'
+        };
+
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
             {/* Indexer Status Card */}
@@ -16,12 +27,18 @@ export default function StatusCards({ indexerStatus, bitcoinStatus, getStatusBad
                     </div>
                     <div className="space-y-4">
                         <div className="bg-dark-800/50 p-3 rounded-lg">
+                            <div className="text-sm text-dark-400 mb-1">Network</div>
+                            <div className={`text-lg font-semibold ${colorScheme.highlight}`}>
+                                {networkType === 'mainnet' ? 'Bitcoin Mainnet' : 'Bitcoin Testnet 4'}
+                            </div>
+                        </div>
+                        <div className="bg-dark-800/50 p-3 rounded-lg">
                             <div className="text-sm text-dark-400 mb-1">Last Processed Block</div>
-                            <div className="text-lg font-semibold text-white">{indexerStatus.last_processed_block || '-'}</div>
+                            <div className="text-lg font-semibold text-white">{indexerStatus.last_processed_block || '0'}</div>
                         </div>
                         <div className="bg-dark-800/50 p-3 rounded-lg">
                             <div className="text-sm text-dark-400 mb-1">Latest Confirmed Block</div>
-                            <div className="text-lg font-semibold text-white">{indexerStatus.latest_confirmed_block || '-'}</div>
+                            <div className="text-lg font-semibold text-white">{indexerStatus.latest_confirmed_block || '0'}</div>
                         </div>
                         <div className="bg-dark-800/50 p-3 rounded-lg">
                             <div className="text-sm text-dark-400 mb-1">Last Updated</div>
@@ -43,11 +60,13 @@ export default function StatusCards({ indexerStatus, bitcoinStatus, getStatusBad
                     <div className="space-y-4">
                         <div className="bg-dark-800/50 p-3 rounded-lg">
                             <div className="text-sm text-dark-400 mb-1">Network</div>
-                            <div className="text-lg font-semibold text-white">{bitcoinStatus.network || '-'}</div>
+                            <div className={`text-lg font-semibold ${colorScheme.highlight}`}>
+                                {networkType === 'mainnet' ? 'Bitcoin Mainnet' : 'Bitcoin Testnet 4'}
+                            </div>
                         </div>
                         <div className="bg-dark-800/50 p-3 rounded-lg">
                             <div className="text-sm text-dark-400 mb-1">Current Block Height</div>
-                            <div className="text-lg font-semibold text-white">{bitcoinStatus.block_count || '-'}</div>
+                            <div className="text-lg font-semibold text-white">{bitcoinStatus.block_count || '0'}</div>
                         </div>
                         <div className="bg-dark-800/50 p-3 rounded-lg">
                             <div className="text-sm text-dark-400 mb-1">Best Block Hash</div>
