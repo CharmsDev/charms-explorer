@@ -233,11 +233,11 @@ impl DiagnosticService {
 
     /// Tests the Bitcoin RPC connection
     async fn test_bitcoin_rpc_connection(&self) -> Value {
-        // Use Bitcoin RPC connection details from configuration
-        let host = &self.config.bitcoin_rpc_host;
-        let port = &self.config.bitcoin_rpc_port;
-        let username = &self.config.bitcoin_rpc_username;
-        let password = &self.config.bitcoin_rpc_password;
+        // Use Bitcoin Testnet4 RPC connection details from configuration
+        let host = &self.config.bitcoin_testnet4_rpc_host;
+        let port = &self.config.bitcoin_testnet4_rpc_port;
+        let username = &self.config.bitcoin_testnet4_rpc_username;
+        let password = &self.config.bitcoin_testnet4_rpc_password;
 
         let rpc_url = format!("http://{}:{}", host, port);
         let auth = Auth::UserPass(username.clone(), password.clone());
