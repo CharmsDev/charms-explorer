@@ -2,6 +2,8 @@
 /api/target
 /api/Cargo.lock
 **/*.rs.bk
+# Rust compiler ICE (Internal Compiler Error) files
+**/rustc-ice-*.txt
 
 # Svelte (Webapp project)
 /webapp/node_modules/

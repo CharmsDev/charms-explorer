@@ -4,7 +4,7 @@ mod charms;
 mod diagnostic;
 mod health;
 mod reset;
-mod status;
+pub mod status;
 
 use std::sync::Arc;
 
@@ -18,7 +18,7 @@ pub use charms::{
 pub use diagnostic::diagnose_database;
 pub use health::health_check;
 pub use reset::reset_indexer;
-pub use status::get_indexer_status as status;
+pub use status::get_indexer_status;
 
 /// Application state containing repositories and configuration
 #[derive(Clone)]

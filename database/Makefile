@@ -1,22 +1,7 @@
-.PHONY: setup build run start stop migrate reset status clean deploy
+.PHONY: start stop restart fresh help
 
 # Default target
-all: setup build
-
-# Setup environment
-setup:
-	@if [ ! -f .env ]; then \
-		cp .env.example .env; \
-		echo ".env file created from .env.example"; \
-	fi
-
-# Build the application
-build:
-	cargo build
-
-# Run the application
-run:
-	cargo run
+all: start
 
 # Start the database container
 start:
@@ -27,44 +12,21 @@ start:
 stop:
 	docker-compose down
 
-# Run database migrations
-migrate:
-	cargo run -- migrate
+# Restart the database container
+restart: stop start
 
-# Reset the database
-reset:
-	cargo run -- reset
-
-# Show database status
-status:
-	cargo run -- status
-
-# Create a new database
-create:
-	cargo run -- create
-
-# Clean build artifacts
-clean:
-	cargo clean
-	rm -rf target/
-
-# Deploy to fly.io
-deploy:
-	@echo "Deploying database service to fly.io..."
-	fly deploy
-	@echo "Database service deployed successfully!"
+# Fresh start - remove all volumes and restart
+fresh:
+	docker-compose down -v
+	docker volume prune -f
+	docker-compose up -d
+	@echo "Database started fresh on port 5432"
 
 # Help
 help:
 	@echo "Available targets:"
-	@echo "  setup        - Create .env file from .env.example if it doesn't exist"
-	@echo "  build        - Build the application"
-	@echo "  run          - Run the application"
 	@echo "  start        - Start the database container"
 	@echo "  stop         - Stop the database container"
-	@echo "  migrate      - Run database migrations"
-	@echo "  reset        - Reset the database"
-	@echo "  status       - Show database status"
-	@echo "  create       - Create a new database"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  deploy       - Deploy to fly.io"
+	@echo "  restart      - Restart the database container"
+	@echo "  fresh        - Remove all volumes and start fresh"
+	@echo "  help         - Show this help message"

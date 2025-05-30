@@ -22,7 +22,7 @@ use config::ApiConfig;
 use db::DbPool;
 use handlers::{
     diagnose_database, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms,
-    get_charms_by_type, health_check, reset_indexer, status, AppState,
+    get_charms_by_type, get_indexer_status, health_check, reset_indexer, AppState,
 };
 
 fn load_env() {
@@ -76,7 +76,7 @@ async fn main() {
     // Set up API routes
     let app = Router::new()
         .route("/health", get(health_check))
-        .route("/status", get(status))
+        .route("/status", get(get_indexer_status))
         .route("/diagnose", get(diagnose_database))
         .route("/reset", post(reset_indexer))
         .route("/charms/count", get(get_charm_numbers))
