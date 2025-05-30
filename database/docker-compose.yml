@@ -1,11 +1,9 @@
 version: '3.8'
 
 services:
-  database:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: charms-database
+  postgres:
+    image: postgres:15
+    container_name: charms-postgres
     environment:
       - POSTGRES_USER=${POSTGRES_USER}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
@@ -14,7 +12,20 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+
+  database:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: charms-database
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - RUST_LOG=info
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
     restart: unless-stopped
 
 volumes:
