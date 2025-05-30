@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS bookmark (
     last_updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     network VARCHAR NOT NULL DEFAULT 'Bitcoin-testnet4',
     blockchain VARCHAR NOT NULL DEFAULT 'Bitcoin',
-    PRIMARY KEY (hash, network)
+    PRIMARY KEY (hash, network, blockchain)
 );
 
 CREATE INDEX IF NOT EXISTS bookmark_height ON bookmark (height);

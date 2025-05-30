@@ -20,8 +20,37 @@ export default function StatusPage() {
     const [lastUpdated, setLastUpdated] = useState(new Date());
     const [isHovered, setIsHovered] = useState(null);
 
+    // Store previous valid block counts to prevent regression on RPC failures
+    const [previousBlockCounts, setPreviousBlockCounts] = useState({
+        testnet4: 0,
+        mainnet: 0
+    });
+
     // Use the network context
     const { selectedNetworks } = useNetwork();
+
+    // Helper function to preserve valid block counts
+    const preserveValidBlockCount = (networkType, newBlockCount, bitcoinNodeData) => {
+        const currentPrevious = previousBlockCounts[networkType];
+
+        // If new block count is 0 or less than previous, keep the previous value
+        if (newBlockCount <= 0 || (currentPrevious > 0 && newBlockCount < currentPrevious)) {
+            return {
+                ...bitcoinNodeData,
+                block_count: currentPrevious
+            };
+        }
+
+        // Update previous block count if new value is valid and greater
+        if (newBlockCount > currentPrevious) {
+            setPreviousBlockCounts(prev => ({
+                ...prev,
+                [networkType]: newBlockCount
+            }));
+        }
+
+        return bitcoinNodeData;
+    };
 
     const fetchData = async () => {
         try {
@@ -48,11 +77,41 @@ export default function StatusPage() {
             // Process data for each network
             if (statusData.networks) {
                 // If the API returns data already organized by networks
-                processedData.testnet4 = statusData.networks.testnet4 || {};
-                processedData.mainnet = statusData.networks.mainnet || {};
+                const testnet4Raw = statusData.networks.testnet4 || {};
+                const mainnetRaw = statusData.networks.mainnet || {};
+
+                // Preserve valid block counts for testnet4
+                if (testnet4Raw.bitcoin_node) {
+                    testnet4Raw.bitcoin_node = preserveValidBlockCount(
+                        'testnet4',
+                        testnet4Raw.bitcoin_node.block_count || 0,
+                        testnet4Raw.bitcoin_node
+                    );
+                }
+
+                // Preserve valid block counts for mainnet
+                if (mainnetRaw.bitcoin_node) {
+                    mainnetRaw.bitcoin_node = preserveValidBlockCount(
+                        'mainnet',
+                        mainnetRaw.bitcoin_node.block_count || 0,
+                        mainnetRaw.bitcoin_node
+                    );
+                }
+
+                processedData.testnet4 = testnet4Raw;
+                processedData.mainnet = mainnetRaw;
             } else {
                 // If the API still returns data in the old format (assume it's testnet4)
                 if (statusData.charm_stats) {
+                    const bitcoinNodeData = statusData.bitcoin_node || {};
+
+                    // Preserve valid block count for testnet4 in old format
+                    const preservedBitcoinNode = preserveValidBlockCount(
+                        'testnet4',
+                        bitcoinNodeData.block_count || 0,
+                        bitcoinNodeData
+                    );
+
                     processedData.testnet4 = {
                         indexer_status: {
                             status: statusData.status,
@@ -61,7 +120,7 @@ export default function StatusPage() {
                             last_updated_at: statusData.last_updated_at,
                             last_indexer_loop_time: statusData.last_indexer_loop_time
                         },
-                        bitcoin_node: statusData.bitcoin_node || {},
+                        bitcoin_node: preservedBitcoinNode,
                         charm_stats: statusData.charm_stats,
                         recent_blocks: statusData.recent_blocks || []
                     };
@@ -85,7 +144,7 @@ export default function StatusPage() {
 
     useEffect(() => {
         fetchData();
-        const interval = setInterval(fetchData, 10000);
+        const interval = setInterval(fetchData, 30000);
         return () => clearInterval(interval);
     }, []);
 

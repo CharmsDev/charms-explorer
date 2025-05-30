@@ -6,6 +6,7 @@ mod m20250508_000001_add_timestamp_to_bookmark;
 mod m20250514_000001_add_network_to_bookmark;
 mod m20250518_000001_add_blockchain_network_fields;
 mod m20250519_000001_add_blockchain_to_bookmark;
+mod m20250524_000001_fix_bookmark_primary_key;
 
 pub struct Migrator;
 
@@ -19,6 +20,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250514_000001_add_network_to_bookmark::Migration),
             Box::new(m20250518_000001_add_blockchain_network_fields::Migration),
             Box::new(m20250519_000001_add_blockchain_to_bookmark::Migration),
+            Box::new(m20250524_000001_fix_bookmark_primary_key::Migration),
         ]
     }
 }

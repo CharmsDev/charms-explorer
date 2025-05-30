@@ -20,3 +20,16 @@ primary_region = 'sjc'
   memory = '1gb'
   cpu_kind = 'shared'
   cpus = 1
+
+[env]
+  # Network Configuration
+  ENABLE_BITCOIN_TESTNET4 = "true"
+  ENABLE_BITCOIN_MAINNET = "true"
+  ENABLE_CARDANO = "false"
+
+  # Non-sensitive configuration
+  BITCOIN_TESTNET4_RPC_HOST = "localhost"
+  BITCOIN_TESTNET4_RPC_PORT = "48332"
+  BITCOIN_MAINNET_RPC_PORT = "8332"
+
+  # Note: Sensitive credentials are set via Fly.io secrets
