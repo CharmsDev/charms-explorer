@@ -86,3 +86,5 @@ indexer/pid.txt
 /api/deploy
 /indexer/deploy
 /database/target
+/database/_rjj
+/database/deploy

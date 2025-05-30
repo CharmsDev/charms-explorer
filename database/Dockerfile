@@ -1,15 +1,21 @@
-FROM postgres:15
+FROM rust:1.77 as builder
 
-# Copy initialization scripts
-COPY init/ /docker-entrypoint-initdb.d/
+WORKDIR /app
+COPY . .
 
-# Create a subdirectory for PostgreSQL data
-RUN mkdir -p /var/lib/postgresql/data/pgdata && \
-    chown -R postgres:postgres /var/lib/postgresql/data/pgdata && \
-    chmod 700 /var/lib/postgresql/data/pgdata
+RUN cargo build --release
 
-# Set the data directory
-ENV PGDATA=/var/lib/postgresql/data/pgdata
+FROM debian:bullseye-slim
 
-# Expose PostgreSQL port
-EXPOSE 5432
+WORKDIR /app
+
+# Install required dependencies
+RUN apt-get update && \
+    apt-get install -y libssl-dev ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/target/release/charms-database /usr/local/bin/charms-database
+
+EXPOSE 8080
+
+CMD ["charms-database"]
