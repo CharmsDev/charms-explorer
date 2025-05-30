@@ -1,38 +1,9 @@
-use clap::{Parser, Subcommand};
 use std::error::Error;
+use tracing::info;
 
-mod config;
 mod commands;
-
-/// Charms Explorer Database Management CLI
-#[derive(Parser)]
-#[command(author, version, about, long_about = None)]
-struct Cli {
-    /// Command to execute
-    #[command(subcommand)]
-    command: Commands,
-}
-
-/// Available commands for database management
-#[derive(Subcommand)]
-enum Commands {
-    /// Create a new database
-    Create {
-        /// Database name
-        #[arg(short, long)]
-        name: Option<String>,
-    },
-    /// Run database migrations
-    Migrate {
-        /// Number of migrations to run (all if not specified)
-        #[arg(short, long)]
-        steps: Option<u32>,
-    },
-    /// Reset database (drop all tables and run migrations)
-    Reset,
-    /// Show database status
-    Status,
-}
+mod config;
+mod migration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -42,24 +13,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Load environment variables
     dotenv::dotenv().ok();
 
-    // Parse command line arguments
-    let cli = Cli::parse();
+    info!("Starting Charms Explorer Database Service");
 
-    // Execute command
-    match cli.command {
-        Commands::Create { name } => {
-            commands::create::execute(name).await?;
-        }
-        Commands::Migrate { steps } => {
-            commands::migrate::execute(steps).await?;
-        }
-        Commands::Reset => {
-            commands::migrate::reset().await?;
-        }
-        Commands::Status => {
-            commands::migrate::status().await?;
-        }
+    // Create database if it doesn't exist
+    info!("Ensuring database exists...");
+    commands::create::execute(None).await?;
+
+    // Run all pending migrations
+    info!("Running migrations...");
+    commands::migrate::execute(None).await?;
+
+    info!("Database setup completed successfully");
+
+    // Keep the service running
+    loop {
+        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+        info!("Database service is running...");
     }
-
-    Ok(())
 }
