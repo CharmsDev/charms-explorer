@@ -88,3 +88,4 @@ indexer/pid.txt
 /database/target
 /database/_rjj
 /database/deploy
+/indexer/test
