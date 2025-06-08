@@ -7,7 +7,7 @@ primary_region = "sjc"
 
 [env]
   RUST_LOG = "info"  # Logging level for Rust app
-  ENABLE_BITCOIN_MAINNET = "false"  # Temporarily disable mainnet
+  ENABLE_BITCOIN_MAINNET = "true"   # Enable mainnet
   ENABLE_BITCOIN_TESTNET4 = "true"  # Ensure testnet4 is enabled
 
 #[processes]
