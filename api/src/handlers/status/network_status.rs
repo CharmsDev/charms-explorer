@@ -1,22 +1,14 @@
-// Network status module for status handler
+// Simplified network status module that uses the Summary table
 
-use sea_orm::DatabaseConnection;
+use sea_orm::{DatabaseConnection, EntityTrait, ColumnTrait, QueryFilter};
 use serde_json::{json, Value};
 
-use super::bitcoin_node::get_bitcoin_node_info;
-use super::charm_stats::get_charm_statistics;
-use super::db_queries::{
-    calculate_time_since_update, get_last_processed_block, get_last_updated_timestamp,
-    get_latest_charm_timestamp, get_latest_confirmed_block, get_recent_processed_blocks,
-};
+use crate::entity::prelude::*;
+use crate::entity::summary;
 
-/// Gets the current status for a specific network
+/// Gets the current status for a specific network using Summary table
 pub async fn get_network_status(
     conn: &DatabaseConnection,
-    _host: &str,
-    _port: &str,
-    _username: &str,
-    _password: &str,
     network_type: &str,
 ) -> Value {
     // Map network_type to database network value
@@ -25,79 +17,97 @@ pub async fn get_network_status(
         _ => "testnet4", // Default to testnet4 for any other value
     };
 
-    // Get the last processed block
-    let last_block = match get_last_processed_block(conn, db_network).await {
-        Ok(Some(height)) => height,
-        Ok(None) => 0,
-        Err(_) => 0,
-    };
+    // Get summary data from the Summary table
+    let summary_result = Summary::find()
+        .filter(summary::Column::Network.eq(db_network))
+        .one(conn)
+        .await;
 
-    // Get the latest confirmed block
-    let latest_confirmed_block = get_latest_confirmed_block(conn, db_network).await;
-
-    // Get Bitcoin node information
-    // We're passing empty values for host, port, username, password since we now use the config directly
-    let bitcoin_node_info = get_bitcoin_node_info("", "", "", "", network_type).await;
-
-    // Get recent processed blocks with charm counts
-    let recent_blocks = get_recent_processed_blocks(conn, db_network).await;
-
-    // Get charm statistics
-    let charm_stats = get_charm_statistics(conn, db_network).await;
-    let total_charms = charm_stats
-        .get("total_charms")
-        .and_then(|v| v.as_i64())
-        .unwrap_or(0);
-
-    // Get the last updated timestamp - try multiple sources
-    let last_updated = match get_last_updated_timestamp(conn, db_network).await {
-        Ok(Some(timestamp)) => timestamp.to_rfc3339(),
-        Ok(None) => {
-            // If no transactions, try to get timestamp from charms
-            match get_latest_charm_timestamp(conn, db_network).await {
-                Ok(Some(timestamp)) => timestamp.to_rfc3339(),
-                Ok(None) => "Never".to_string(),
-                Err(_) => "Error".to_string(),
-            }
+    match summary_result {
+        Ok(Some(summary)) => {
+            // Build asset type breakdown
+            let asset_types = json!([
+                {
+                    "asset_type": "nft",
+                    "count": summary.nft_count
+                },
+                {
+                    "asset_type": "token", 
+                    "count": summary.token_count
+                },
+                {
+                    "asset_type": "dapp",
+                    "count": summary.dapp_count
+                },
+                {
+                    "asset_type": "other",
+                    "count": summary.other_count
+                }
+            ]);
+            
+            // Construct the final response
+            json!({
+                "indexer_status": {
+                    "status": determine_status(&summary.last_updated),
+                    "last_processed_block": summary.last_processed_block,
+                    "latest_confirmed_block": summary.latest_confirmed_block,
+                    "last_updated_at": summary.last_updated.to_string(),
+                    "last_indexer_loop_time": summary.last_updated.to_string()
+                },
+                "bitcoin_node": {
+                    "status": summary.bitcoin_node_status,
+                    "network": network_type,
+                    "block_count": summary.bitcoin_node_block_count,
+                    "best_block_hash": summary.bitcoin_node_best_block_hash
+                },
+                "charm_stats": {
+                    "total_charms": summary.total_charms,
+                    "total_transactions": summary.total_transactions,
+                    "confirmed_transactions": summary.confirmed_transactions,
+                    "confirmation_rate": summary.confirmation_rate,
+                    "charms_by_asset_type": asset_types
+                }
+            })
         }
-        Err(_) => "Error".to_string(),
-    };
-
-    // Get the last indexer loop time (same as last updated for now)
-    let last_indexer_loop_time = last_updated.clone();
-
-    // Calculate time since last update for status determination
-    let time_since_update_seconds = calculate_time_since_update(conn, db_network).await;
-
-    // Determine status based on available data
-    let status = if total_charms > 0 {
-        if time_since_update_seconds < 0 {
-            "indexed" // We have charms but no recent updates
-        } else if time_since_update_seconds == -2 {
-            "error"
-        } else if time_since_update_seconds < 60 {
-            "active"
-        } else if time_since_update_seconds < 300 {
-            "idle"
-        } else {
-            "inactive"
+        _ => {
+            // Fallback to default values if query fails
+            json!({
+                "indexer_status": {
+                    "status": "unknown",
+                    "last_processed_block": 0,
+                    "latest_confirmed_block": 0,
+                    "last_updated_at": "Never",
+                    "last_indexer_loop_time": "Never"
+                },
+                "bitcoin_node": {
+                    "status": "unknown",
+                    "network": network_type,
+                    "block_count": 0,
+                    "best_block_hash": "unknown"
+                },
+                "charm_stats": {
+                    "total_charms": 0,
+                    "total_transactions": 0,
+                    "confirmed_transactions": 0,
+                    "confirmation_rate": 0,
+                    "charms_by_asset_type": []
+                }
+            })
         }
-    } else if last_block > 0 {
-        "processing" // We have blocks but no charms yet
+    }
+}
+
+/// Helper function to determine status based on last_updated timestamp
+fn determine_status(last_updated: &chrono::DateTime<chrono::Utc>) -> &'static str {
+    let now = chrono::Utc::now();
+    let duration = now.signed_duration_since(*last_updated);
+    let seconds = duration.num_seconds();
+    
+    if seconds < 60 {
+        "active"
+    } else if seconds < 300 {
+        "idle"
     } else {
-        "unknown"
-    };
-
-    json!({
-        "indexer_status": {
-            "status": status,
-            "last_processed_block": last_block,
-            "latest_confirmed_block": latest_confirmed_block,
-            "last_updated_at": last_updated,
-            "last_indexer_loop_time": last_indexer_loop_time
-        },
-        "bitcoin_node": bitcoin_node_info,
-        "charm_stats": charm_stats,
-        "recent_blocks": recent_blocks
-    })
+        "inactive"
+    }
 }

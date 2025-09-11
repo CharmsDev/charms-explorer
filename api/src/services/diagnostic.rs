@@ -34,11 +34,84 @@ impl DiagnosticService {
         let tables_info = self.get_tables_with_counts().await;
         result.insert("tables", tables_info);
 
+        // Get summary table content
+        let summary_content = self.get_summary_table_content().await;
+        result.insert("summary_table", summary_content);
+
         // Test Bitcoin RPC connection
         let bitcoin_rpc_test = self.test_bitcoin_rpc_connection().await;
         result.insert("bitcoin_rpc", bitcoin_rpc_test);
 
         json!(result)
+    }
+
+    /// Gets the content of the summary table
+    async fn get_summary_table_content(&self) -> Value {
+        let query = "SELECT * FROM summary";
+
+        match self
+            .conn
+            .query_all(Statement::from_string(
+                self.conn.get_database_backend(),
+                query.to_string(),
+            ))
+            .await
+        {
+            Ok(rows) => {
+                if rows.is_empty() {
+                    return json!({
+                        "status": "warning",
+                        "message": "Summary table exists but is empty",
+                        "rows": []
+                    });
+                }
+
+                let mut summary_rows = Vec::new();
+                for row in rows {
+                    let mut row_data = HashMap::new();
+                    
+                    // Extract all fields from the row
+                    if let Ok(id) = row.try_get::<i32>("", "id") {
+                        row_data.insert("id", json!(id));
+                    }
+                    
+                    if let Ok(network) = row.try_get::<String>("", "network") {
+                        row_data.insert("network", json!(network));
+                    }
+                    
+                    if let Ok(last_processed_block) = row.try_get::<i32>("", "last_processed_block") {
+                        row_data.insert("last_processed_block", json!(last_processed_block));
+                    }
+                    
+                    if let Ok(latest_confirmed_block) = row.try_get::<i32>("", "latest_confirmed_block") {
+                        row_data.insert("latest_confirmed_block", json!(latest_confirmed_block));
+                    }
+                    
+                    if let Ok(total_charms) = row.try_get::<i64>("", "total_charms") {
+                        row_data.insert("total_charms", json!(total_charms));
+                    }
+                    
+                    if let Ok(bitcoin_node_status) = row.try_get::<String>("", "bitcoin_node_status") {
+                        row_data.insert("bitcoin_node_status", json!(bitcoin_node_status));
+                    }
+                    
+                    summary_rows.push(json!(row_data));
+                }
+
+                json!({
+                    "status": "success",
+                    "count": summary_rows.len(),
+                    "rows": summary_rows
+                })
+            }
+            Err(e) => {
+                json!({
+                    "status": "error",
+                    "message": format!("Failed to query summary table: {}", e),
+                    "rows": []
+                })
+            }
+        }
     }
 
     /// Gets database connection information
@@ -70,9 +143,34 @@ impl DiagnosticService {
             _ => "Unknown".to_string(),
         };
 
+        // Get database name
+        let db_name = match self
+            .conn
+            .query_one(Statement::from_string(
+                self.conn.get_database_backend(),
+                match self.conn.get_database_backend() {
+                    DbBackend::Postgres => "SELECT current_database();",
+                    DbBackend::MySql => "SELECT DATABASE();",
+                    DbBackend::Sqlite => "PRAGMA database_list;",
+                }
+                .to_string(),
+            ))
+            .await
+        {
+            Ok(Some(row)) => {
+                if self.conn.get_database_backend() == DbBackend::Sqlite {
+                    row.try_get::<String>("", "file").unwrap_or_default()
+                } else {
+                    row.try_get_by_index::<String>(0).unwrap_or_default()
+                }
+            },
+            _ => "Unknown".to_string(),
+        };
+
         json!({
             "type": backend,
             "version": version,
+            "database_name": db_name,
             "status": "connected"
         })
     }
@@ -126,6 +224,8 @@ impl DiagnosticService {
             "bookmark".to_string(),
             "charms".to_string(),
             "transactions".to_string(),
+            "summary".to_string(),
+            "seaql_migrations".to_string(),
         ];
 
         // Check if we can access at least one of the expected tables
