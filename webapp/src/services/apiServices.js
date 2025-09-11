@@ -11,11 +11,7 @@ export const fetchRawCharmsData = async () => {
     try {
         const response = await fetch(ENDPOINTS.CHARMS);
 
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
-        }
-
-        // Get the response text
+        // Even if response is not OK, try to parse it for error details
         const responseText = await response.text();
         console.log('Raw API response:', responseText);
 
@@ -23,6 +19,14 @@ export const fetchRawCharmsData = async () => {
             // Try to parse the JSON directly first
             const data = JSON.parse(responseText);
             console.log('Parsed JSON data:', data);
+
+            // Check if the response contains an error message
+            if (!response.ok) {
+                console.warn(`API error (${response.status}): ${data.error || 'Unknown error'}`);
+                // Return empty data structure instead of throwing
+                return { charms: [] };
+            }
+
             return data;
         } catch (parseError) {
             console.error('JSON parse error:', parseError);
@@ -35,36 +39,107 @@ export const fetchRawCharmsData = async () => {
                 // Parse the fixed JSON
                 const data = JSON.parse(fixedJson);
                 console.log('Parsed fixed JSON data:', data);
+
+                // Check if the response contains an error message
+                if (!response.ok) {
+                    console.warn(`API error (${response.status}): ${data.error || 'Unknown error'}`);
+                    // Return empty data structure instead of throwing
+                    return { charms: [] };
+                }
+
                 return data;
             } catch (error) {
                 console.error('Error fixing JSON:', error);
-                throw new Error('Failed to parse API response');
+                // Return empty data structure instead of throwing
+                return { charms: [] };
             }
         }
     } catch (error) {
-        throw handleApiError(error, 'fetch charms data');
+        console.error('Error fetching charms data:', error);
+        // Return empty data structure instead of throwing
+        return { charms: [] };
     }
 };
 
-// Fetches and transforms charm assets with pagination
-export const fetchAssets = async (type = 'all', page = 1, limit = 20) => {
+// Fetches and transforms charm assets with pagination and sorting
+export const fetchAssets = async (type = 'all', page = 1, limit = 12, sort = 'newest') => {
     try {
-        const data = await fetchRawCharmsData();
-
-        // Filter by type using the detection logic if needed
-        let filteredCharms = data.charms;
-        if (type !== 'all') {
-            // Use detectCharmType for filtering
-            filteredCharms = data.charms.filter(charm => detectCharmType(charm) === type);
+        let endpoint;
+        if (type === 'all') {
+            endpoint = ENDPOINTS.buildPaginatedUrl(ENDPOINTS.CHARMS, page, limit, sort);
+        } else {
+            // For type-specific endpoints, we need to handle the query params differently
+            const baseUrl = ENDPOINTS.CHARMS_BY_TYPE(type).split('?')[0];
+            const typeParam = `type=${encodeURIComponent(type)}`;
+            const paginationParams = new URLSearchParams({
+                page,
+                limit,
+                sort
+            }).toString();
+            endpoint = `${baseUrl}?${typeParam}&${paginationParams}`;
         }
 
-        // Transform the *filtered* data
-        const transformedCharms = transformCharmsArray(filteredCharms);
+        const response = await fetch(endpoint);
 
-        // Paginate the results
-        return paginateItems(transformedCharms, page, limit);
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        console.log('Raw API response data:', data);
+
+        // Transform the charms data
+        const transformedCharms = transformCharmsArray(data.data.charms);
+
+        // Ensure pagination metadata is properly structured
+        const paginationData = data.pagination || {
+            total: data.data.charms.length,
+            page: page,
+            limit: limit,
+            total_pages: Math.ceil(data.data.charms.length / limit) || 1
+        };
+
+        console.log('Pagination data:', paginationData);
+        console.log('Transformed charms count:', transformedCharms.length);
+
+        // Return with pagination metadata
+        return {
+            data: transformedCharms,
+            pagination: paginationData
+        };
     } catch (error) {
-        throw handleApiError(error, 'fetch assets');
+        console.error('Error in fetchAssets:', error);
+
+        // Fallback to client-side filtering if the API call fails
+        try {
+            const data = await fetchRawCharmsData();
+
+            // Filter by type using the detection logic if needed
+            let filteredCharms = data.charms;
+            if (type !== 'all') {
+                // Use detectCharmType for filtering
+                filteredCharms = data.charms.filter(charm => detectCharmType(charm) === type);
+            }
+
+            // Sort the charms
+            filteredCharms.sort((a, b) => {
+                if (sort === 'oldest') {
+                    return a.block_height - b.block_height;
+                } else {
+                    return b.block_height - a.block_height;
+                }
+            });
+
+            // Transform the *filtered* data
+            const transformedCharms = transformCharmsArray(filteredCharms);
+
+            // Paginate the results
+            const paginatedResult = paginateItems(transformedCharms, page, limit);
+            console.log('Client-side pagination result:', paginatedResult);
+            return paginatedResult;
+        } catch (fallbackError) {
+            throw handleApiError(fallbackError, 'fetch assets (fallback)');
+        }
     }
 };
 
@@ -108,9 +183,11 @@ export const getAssetById = async (id) => {
 export const getAssetCounts = async () => {
     try {
         const data = await fetchRawCharmsData();
-        return countCharmsByType(data.charms);
+        return countCharmsByType(data.charms || []);
     } catch (error) {
-        throw handleApiError(error, 'fetch asset counts');
+        console.error('Error getting asset counts:', error);
+        // Return default counts instead of throwing
+        return { total: 0, nft: 0, token: 0, dapp: 0 };
     }
 };
 
@@ -148,5 +225,57 @@ export const resetIndexer = async () => {
         return data;
     } catch (error) {
         throw handleApiError(error, 'reset indexer');
+    }
+};
+
+// Likes a charm
+export const likeCharm = async (charmId, userId = 1) => {
+    try {
+        const response = await fetch(ENDPOINTS.LIKE_CHARM, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                charm_id: charmId,
+                user_id: userId
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error liking charm:', error);
+        throw handleApiError(error, 'like charm');
+    }
+};
+
+// Unlikes a charm
+export const unlikeCharm = async (charmId, userId = 1) => {
+    try {
+        const response = await fetch(ENDPOINTS.LIKE_CHARM, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                charm_id: charmId,
+                user_id: userId
+            })
+        });
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error unliking charm:', error);
+        throw handleApiError(error, 'unlike charm');
     }
 };
