@@ -1,117 +1,103 @@
-use charms_indexer::application::indexer::BlockProcessor;
+use charms_indexer::application::indexer::NetworkManager;
 use charms_indexer::config::AppConfig;
-use charms_indexer::domain::services::CharmService;
-use charms_indexer::infrastructure::api::ApiClient;
-use charms_indexer::infrastructure::bitcoin::BitcoinClient;
 use charms_indexer::infrastructure::persistence::{DbPool, RepositoryFactory};
 use charms_indexer::utils::logging;
-use migration::{Migrator, MigratorTrait};
-use sea_orm::Database;
 
 #[tokio::main]
 async fn main() {
-    // Initialize logger
     logging::init_logger();
-    logging::log_info("Bitcoin Testnet 4 Block Parser");
-    logging::log_info("Waiting for new blocks and looking for charm transactions...");
+    
+    // Log version information for deployment tracking
+    let version = env!("CARGO_PKG_VERSION");
+    logging::log_info(&format!("🚀 Charms Indexer v{} Starting", version));
 
-    // Load configuration from environment variables
     let config = AppConfig::from_env();
 
-    logging::log_info(&format!(
-        "Connecting to Bitcoin node at {}:{}",
-        config.bitcoin.host, config.bitcoin.port
-    ));
+    // Log connection details
     logging::log_info(&format!("Charms API URL: {}", config.api.url));
-    logging::log_info(&format!("Database URL: {}", config.database.url));
+    logging::log_database_connection_details(&config.database.url);
 
-    // Run migrations
-    logging::log_info("Running database migrations...");
-    match Database::connect(&config.database.url).await {
-        Ok(connection) => {
-            if let Err(e) = Migrator::up(&connection, None).await {
-                logging::log_error(&format!("Error running migrations: {}", e));
-                return;
-            }
-            logging::log_info("Migrations completed successfully!");
-        }
-        Err(e) => {
-            logging::log_error(&format!(
-                "Failed to connect to database for migrations: {}",
-                e
+    // Network configuration logging
+    if config.indexer.enable_bitcoin_testnet4 {
+        if let Some(btc_config) = config.get_bitcoin_config("testnet4") {
+            logging::log_info("Bitcoin Testnet4 indexing is enabled");
+            logging::log_bitcoin_connection_details(
+                &btc_config.host,
+                &btc_config.port,
+                &btc_config.username,
+                &btc_config.password,
+                "testnet4",
+            );
+            logging::log_info(&format!(
+                "Testnet4 genesis block height: {}",
+                btc_config.genesis_block_height
             ));
-            return;
         }
     }
 
-    // Create Bitcoin RPC client
-    match BitcoinClient::new(&config) {
-        Ok(bitcoin_client) => {
-            logging::log_info("Successfully connected to Bitcoin node");
+    if config.indexer.enable_bitcoin_mainnet {
+        if let Some(btc_config) = config.get_bitcoin_config("mainnet") {
+            logging::log_info("Bitcoin Mainnet indexing is enabled");
+            logging::log_bitcoin_connection_details(
+                &btc_config.host,
+                &btc_config.port,
+                &btc_config.username,
+                &btc_config.password,
+                "mainnet",
+            );
+            logging::log_info(&format!(
+                "Mainnet genesis block height: {}",
+                btc_config.genesis_block_height
+            ));
+        }
+    }
 
-            // Create database pool
-            match DbPool::new(&config).await {
-                Ok(db_pool) => {
-                    logging::log_info("Successfully connected to database");
+    if config.indexer.enable_cardano {
+        logging::log_info("Cardano indexing is enabled (not yet implemented)");
+    }
 
-                    // Create repositories
-                    let repositories = RepositoryFactory::create_repositories(&db_pool);
+    // Database connection and processor initialization
+    match DbPool::new(&config).await {
+        Ok(db_pool) => {
+            logging::log_info(&format!(
+                "Successfully connected to database: {}",
+                config.database.url
+            ));
 
-                    // Create API client
-                    match ApiClient::new(&config) {
-                        Ok(api_client) => {
-                            // Create charm service
-                            let charm_service = CharmService::new(
-                                bitcoin_client.clone(),
-                                api_client,
-                                repositories.charm.clone(),
-                            );
+            let repositories = RepositoryFactory::create_repositories(&db_pool);
 
-                            // Get current block count
-                            match bitcoin_client.get_block_count() {
-                                Ok(initial_height) => {
-                                    logging::log_info(&format!(
-                                        "Current block height: {}",
-                                        initial_height
-                                    ));
+            let mut network_manager = NetworkManager::new(config.clone());
 
-                                    // Create block processor
-                                    let mut processor = BlockProcessor::new(
-                                        bitcoin_client,
-                                        charm_service,
-                                        repositories.bookmark,
-                                        repositories.transaction,
-                                        config,
-                                    );
+            logging::log_info("Initializing blockchain processors");
+            match network_manager
+                .initialize(
+                    repositories.bookmark,
+                    repositories.charm,
+                    repositories.transaction,
+                    repositories.summary,
+                )
+                .await
+            {
+                Ok(_) => {
+                    // Start processors and handle shutdown
+                    logging::log_info("Starting all blockchain processors");
 
-                                    // Start processing blocks
-                                    logging::log_info("Starting block processor...");
-                                    logging::log_info("This will index Bitcoin blocks and look for charm transactions");
-                                    logging::log_info(
-                                        "Blocks will be marked as confirmed after 6 confirmations",
-                                    );
-                                    logging::log_info("Transactions will be tracked with their confirmation status");
-
-                                    if let Err(e) = processor.start_processing().await {
-                                        logging::log_error(&format!(
-                                            "Error processing blocks: {}",
-                                            e
-                                        ));
-                                    }
-                                }
-                                Err(e) => {
-                                    logging::log_error(&format!("Error getting block count: {}", e))
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            logging::log_error(&format!("Failed to create API client: {}", e))
-                        }
+                    if let Err(e) = network_manager.start_all().await {
+                        logging::log_error(&format!("Error starting processors: {}", e));
                     }
+
+                    tokio::signal::ctrl_c()
+                        .await
+                        .expect("Failed to listen for Ctrl+C");
+                    logging::log_info("Received shutdown signal, stopping processors...");
+                    network_manager.stop_all().await;
+                    logging::log_info("All processors stopped, exiting...");
                 }
-                Err(e) => logging::log_error(&format!("Failed to connect to database: {}", e)),
+                Err(e) => {
+                    logging::log_error(&format!("Error initializing processors: {}", e));
+                }
             }
         }
-        Err(e) => logging::log_error(&format!("Failed to connect to Bitcoin node: {}", e)),
+        Err(e) => logging::log_error(&format!("Failed to connect to database: {}", e)),
     }
 }
