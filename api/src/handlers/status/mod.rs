@@ -1,8 +1,5 @@
-// Status handler module exports
+// Simplified status handler module exports
 
-pub mod bitcoin_node;
-pub mod charm_stats;
-pub mod db_queries;
 pub mod handler;
 pub mod network_status;
 
