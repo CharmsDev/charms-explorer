@@ -2,4 +2,5 @@
 
 pub use super::bookmark::Entity as Bookmark;
 pub use super::charms::Entity as Charms;
+pub use super::summary::Entity as Summary;
 pub use super::transactions::Entity as Transactions;

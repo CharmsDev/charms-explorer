@@ -1,3 +1,6 @@
 //! Prelude module for convenient imports
 
-// Reserved for future re-export of common entity types
+pub use super::bookmark::Entity as Bookmark;
+pub use super::charms::Entity as Charms;
+pub use super::likes::Entity as Likes;
+pub use super::summary::Entity as Summary;

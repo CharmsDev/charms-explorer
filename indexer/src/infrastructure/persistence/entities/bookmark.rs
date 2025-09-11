@@ -13,6 +13,10 @@ pub struct Model {
     pub status: String,
     #[sea_orm(column_type = "TimestampWithTimeZone")]
     pub last_updated_at: DateTimeWithTimeZone,
+    #[sea_orm(column_type = "Text")]
+    pub network: String,
+    #[sea_orm(column_type = "Text")]
+    pub blockchain: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
