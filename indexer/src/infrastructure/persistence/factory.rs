@@ -2,7 +2,7 @@ use sea_orm::DatabaseConnection;
 
 use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
-    BookmarkRepository, CharmRepository, Repositories, TransactionRepository,
+    BookmarkRepository, CharmRepository, Repositories, SummaryRepository, TransactionRepository,
 };
 
 /// Factory for creating repositories
@@ -16,6 +16,7 @@ impl RepositoryFactory {
         Repositories::new(
             Self::create_bookmark_repository(conn.clone()),
             Self::create_charm_repository(conn.clone()),
+            Self::create_summary_repository(conn.clone()),
             Self::create_transaction_repository(conn),
         )
     }
@@ -28,6 +29,11 @@ impl RepositoryFactory {
     /// Create a charm repository
     pub fn create_charm_repository(conn: DatabaseConnection) -> CharmRepository {
         CharmRepository::new(conn)
+    }
+
+    /// Create a summary repository
+    pub fn create_summary_repository(conn: DatabaseConnection) -> SummaryRepository {
+        SummaryRepository::new(conn)
     }
 
     /// Create a transaction repository

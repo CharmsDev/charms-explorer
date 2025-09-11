@@ -1,5 +1,6 @@
 use reqwest::Client;
 use serde_json::Value;
+use std::time::Duration;
 
 use crate::config::AppConfig;
 use crate::infrastructure::api::error::ApiClientError;
@@ -13,7 +14,13 @@ pub struct ApiClient {
 impl ApiClient {
     /// Create a new API client
     pub fn new(config: &AppConfig) -> Result<Self, ApiClientError> {
-        let client = Client::new();
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10)) // 10 second timeout
+            .connect_timeout(Duration::from_secs(5)) // 5 second connection timeout
+            .build()
+            .map_err(|e| {
+                ApiClientError::ResponseError(format!("Failed to create HTTP client: {}", e))
+            })?;
         let api_url = config.api.url.clone();
 
         Ok(ApiClient { client, api_url })
@@ -25,28 +32,39 @@ impl ApiClient {
 
         // Make the request
         let response = self.client.get(&url).send().await?;
+        let status = response.status();
 
         // Check if the request was successful
-        if response.status().as_u16() == 404 {
+        if status.as_u16() == 404 {
             // Not found is a valid response, return an empty object
-            println!("API returned 404 for tx: {}", txid);
             return Ok(serde_json::json!({}));
-        } else if !response.status().is_success() {
+        } else if status.as_u16() == 400 {
+            // Bad request - likely not a valid charm transaction
+            return Ok(serde_json::json!({}));
+        } else if !status.is_success() {
+            // Only log errors, not successful requests
+            eprintln!("API returned error status {} for tx: {}", status, txid);
             return Err(ApiClientError::ApiError(format!(
                 "API returned error status: {}",
-                response.status()
+                status
             )));
         }
 
         // Parse the response as JSON
         match response.json::<Value>().await {
-            Ok(json) => Ok(json),
+            Ok(json) => {
+                // Only log if we actually found charm data
+                if !json.is_null() && !(json.is_object() && json.as_object().unwrap().is_empty()) {
+                    println!("✅ Found charm data for tx: {}", txid);
+                }
+                Ok(json)
+            }
             Err(e) => {
                 // If we can't parse the JSON, return an empty object
                 if e.to_string().contains("EOF while parsing") {
-                    println!("Empty response body for tx: {}", txid);
                     Ok(serde_json::json!({}))
                 } else {
+                    eprintln!("Error decoding response for tx {}: {}", txid, e);
                     Err(ApiClientError::ResponseError(format!(
                         "Error decoding response: {}",
                         e
