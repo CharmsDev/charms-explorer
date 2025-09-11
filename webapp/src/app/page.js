@@ -4,31 +4,141 @@ import { useState, useEffect } from 'react';
 import FilterTabs from '../components/FilterTabs';
 import AssetGrid from '../components/AssetGrid';
 import { fetchAssets, getAssetCounts } from '../services/api';
+import { Button } from '../components/ui/Button';
 
 export default function HomePage() {
     const [assets, setAssets] = useState([]);
     const [counts, setCounts] = useState({ total: 0, nft: 0, token: 0, dapp: 0 });
     const [isLoading, setIsLoading] = useState(true);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [sortOrder, setSortOrder] = useState('newest');
+    const [activeType, setActiveType] = useState('all');
 
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                setIsLoading(true);
+    const ITEMS_PER_PAGE = 12; // Changed from 20 to 12 items per page
 
-                // Fetch asset counts
+    const loadData = async (type = activeType, page = currentPage, sort = sortOrder) => {
+        try {
+            setIsLoading(true);
+
+            // Fetch asset counts if needed
+            if (counts.total === 0) {
                 const countsData = await getAssetCounts();
                 setCounts(countsData);
-
-                // Fetch all assets
-                const response = await fetchAssets('all');
-                setAssets(response.data);
-            } catch (error) {
-                console.error('Error loading data:', error);
-            } finally {
-                setIsLoading(false);
             }
-        };
 
+            // Fetch assets with pagination and sorting
+            const response = await fetchAssets(type, page, ITEMS_PER_PAGE, sort);
+            console.log('API Response:', response);
+            setAssets(response.data);
+
+            // Force calculation of total pages based on total count
+            const totalItems = counts.total || response.pagination?.total || response.data?.length || 0;
+            console.log('Total items:', totalItems, 'Items per page:', ITEMS_PER_PAGE);
+
+            // Make sure we have at least 2 pages if we have more than ITEMS_PER_PAGE items
+            const calculatedTotalPages = Math.max(
+                Math.ceil(totalItems / ITEMS_PER_PAGE),
+                totalItems > ITEMS_PER_PAGE ? 2 : 1
+            );
+            console.log('Total pages calculated:', calculatedTotalPages);
+
+            setTotalPages(calculatedTotalPages);
+        } catch (error) {
+            console.error('Error loading data:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // Handle type change from FilterTabs
+    const handleTypeChange = (type) => {
+        setActiveType(type);
+        setCurrentPage(1); // Reset to first page when changing type
+        loadData(type, 1, sortOrder);
+    };
+
+    // Handle sort order change
+    const handleSortChange = (e) => {
+        const newSortOrder = e.target.value;
+        setSortOrder(newSortOrder);
+        loadData(activeType, currentPage, newSortOrder);
+    };
+
+    // Handle pagination
+    const handlePageChange = (newPage) => {
+        setCurrentPage(newPage);
+        loadData(activeType, newPage, sortOrder);
+    };
+
+    // Render page numbers for pagination
+    const renderPageNumbers = () => {
+        const pageNumbers = [];
+        const maxVisiblePages = 7; // Increased from 5 to 7 for better visibility
+
+        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+        // Adjust start page if we're near the end
+        if (endPage - startPage + 1 < maxVisiblePages) {
+            startPage = Math.max(1, endPage - maxVisiblePages + 1);
+        }
+
+        // Add first page with ellipsis if needed
+        if (startPage > 1) {
+            pageNumbers.push(
+                <Button
+                    key={1}
+                    onClick={() => handlePageChange(1)}
+                    className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === 1 ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
+                >
+                    1
+                </Button>
+            );
+
+            if (startPage > 2) {
+                pageNumbers.push(
+                    <span key="ellipsis1" className="px-1">...</span>
+                );
+            }
+        }
+
+        // Add page numbers
+        for (let i = startPage; i <= endPage; i++) {
+            pageNumbers.push(
+                <Button
+                    key={i}
+                    onClick={() => handlePageChange(i)}
+                    className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === i ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
+                >
+                    {i}
+                </Button>
+            );
+        }
+
+        // Add last page with ellipsis if needed
+        if (endPage < totalPages) {
+            if (endPage < totalPages - 1) {
+                pageNumbers.push(
+                    <span key="ellipsis2" className="px-1">...</span>
+                );
+            }
+
+            pageNumbers.push(
+                <Button
+                    key={totalPages}
+                    onClick={() => handlePageChange(totalPages)}
+                    className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === totalPages ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
+                >
+                    {totalPages}
+                </Button>
+            );
+        }
+
+        return pageNumbers;
+    };
+
+    useEffect(() => {
         loadData();
     }, []);
 
@@ -43,7 +153,7 @@ export default function HomePage() {
                 </div>
             </div>
 
-            <FilterTabs counts={counts} />
+            <FilterTabs counts={counts} onTypeChange={handleTypeChange} />
 
             <div className="container mx-auto px-4 py-6">
                 <div className="flex justify-between items-center mb-6">
@@ -51,15 +161,75 @@ export default function HomePage() {
                         Found <span className="text-primary-500">{counts.total.toLocaleString()}</span> charms
                     </h2>
                     <div className="flex space-x-2">
-                        <select className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md px-3 py-2 text-sm">
-                            <option>Newest First</option>
-                            <option>Oldest First</option>
+                        <select
+                            className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md px-3 py-2 text-sm"
+                            value={sortOrder}
+                            onChange={handleSortChange}
+                        >
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
                         </select>
                     </div>
                 </div>
             </div>
 
             <AssetGrid assets={assets} isLoading={isLoading} />
+
+            {/* Hardcoded Pagination Controls - Always visible */}
+            {!isLoading && (
+                <div className="container mx-auto px-4 py-6">
+                    <div className="flex flex-col items-center">
+                        <div className="text-sm text-dark-400 mb-2">
+                            Page {currentPage} of {Math.max(Math.ceil(counts.total / ITEMS_PER_PAGE), 1)}
+                        </div>
+
+                        <div className="flex items-center space-x-2 flex-wrap">
+                            <Button
+                                onClick={() => handlePageChange(1)}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1"
+                            >
+                                First
+                            </Button>
+                            <Button
+                                onClick={() => handlePageChange(currentPage - 1)}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1"
+                            >
+                                Previous
+                            </Button>
+
+                            {/* Static Page Numbers */}
+                            <div className="flex items-center space-x-1 mx-2 bg-dark-800/50 px-2 py-1 rounded-lg">
+                                {[1, 2, 3, 4, 5, 6].map(pageNum => (
+                                    <Button
+                                        key={pageNum}
+                                        onClick={() => handlePageChange(pageNum)}
+                                        className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === pageNum ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
+                                    >
+                                        {pageNum}
+                                    </Button>
+                                ))}
+                            </div>
+
+                            <Button
+                                onClick={() => handlePageChange(currentPage + 1)}
+                                disabled={currentPage >= Math.ceil(counts.total / ITEMS_PER_PAGE)}
+                                className="px-3 py-1"
+                            >
+                                Next
+                            </Button>
+                            <Button
+                                onClick={() => handlePageChange(Math.ceil(counts.total / ITEMS_PER_PAGE))}
+                                disabled={currentPage >= Math.ceil(counts.total / ITEMS_PER_PAGE)}
+                                className="px-3 py-1"
+                            >
+                                Last
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

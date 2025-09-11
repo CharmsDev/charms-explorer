@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::routing::{get, post, Router};
+use axum::routing::{delete, get, post, Router};
 use http::{header, Method};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
@@ -22,7 +22,7 @@ use config::ApiConfig;
 use db::DbPool;
 use handlers::{
     diagnose_database, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms,
-    get_charms_by_type, get_indexer_status, health_check, reset_indexer, AppState,
+    get_charms_by_type, get_indexer_status, health_check, like_charm, reset_indexer, unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -60,7 +60,7 @@ async fn main() {
     // Configure CORS policy
     let cors = CorsLayer::new()
         .allow_origin(Any)
-        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_methods([Method::GET, Method::POST, Method::DELETE, Method::OPTIONS])
         .allow_headers([
             header::CONTENT_TYPE,
             header::ACCEPT,
@@ -82,6 +82,8 @@ async fn main() {
         .route("/charms/count", get(get_charm_numbers))
         .route("/charms/by-type", get(get_charms_by_type))
         .route("/charms/by-charmid/{charmid}", get(get_charm_by_charmid))
+        .route("/charms/like", post(like_charm))
+        .route("/charms/like", delete(unlike_charm))
         .route("/charms/{txid}", get(get_charm_by_txid))
         .route("/charms", get(get_charms))
         .layer(cors)

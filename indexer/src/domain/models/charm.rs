@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Domain model for a Charm
+/// Represents a Charm asset found in a blockchain transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Charm {
     /// Transaction ID
@@ -22,10 +22,16 @@ pub struct Charm {
 
     /// Type of asset
     pub asset_type: String,
+
+    /// Blockchain type (e.g., "Bitcoin", "Cardano")
+    pub blockchain: String,
+
+    /// Network name (e.g., "mainnet", "testnet4")
+    pub network: String,
 }
 
 impl Charm {
-    /// Create a new Charm
+    /// Creates a new Charm with specified parameters
     pub fn new(
         txid: String,
         charmid: String,
@@ -33,6 +39,8 @@ impl Charm {
         data: Value,
         date_created: NaiveDateTime,
         asset_type: String,
+        blockchain: String,
+        network: String,
     ) -> Self {
         Self {
             txid,
@@ -41,6 +49,8 @@ impl Charm {
             data,
             date_created,
             asset_type,
+            blockchain,
+            network,
         }
     }
 }

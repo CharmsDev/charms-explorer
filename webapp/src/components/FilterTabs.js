@@ -1,21 +1,27 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
-export default function FilterTabs({ counts }) {
-    const pathname = usePathname();
+export default function FilterTabs({ counts, onTypeChange }) {
+    const [activeTab, setActiveTab] = useState('all');
     const [mounted, setMounted] = useState(false);
 
     // Set mounted to true on client side
     useEffect(() => setMounted(true), []);
 
+    // Handle tab click
+    const handleTabClick = (type) => {
+        setActiveTab(type);
+        if (onTypeChange) {
+            onTypeChange(type);
+        }
+    };
+
     // Define the tabs with icons
     const tabs = [
         {
             name: 'All',
-            href: '/',
+            type: 'all',
             count: counts?.total || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -25,7 +31,7 @@ export default function FilterTabs({ counts }) {
         },
         {
             name: 'NFTs',
-            href: '/nfts',
+            type: 'nft',
             count: counts?.nft || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -35,7 +41,7 @@ export default function FilterTabs({ counts }) {
         },
         {
             name: 'Tokens',
-            href: '/tokens',
+            type: 'token',
             count: counts?.token || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -45,7 +51,7 @@ export default function FilterTabs({ counts }) {
         },
         {
             name: 'dApps',
-            href: '/dapps',
+            type: 'dapp',
             count: counts?.dapp || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -56,10 +62,8 @@ export default function FilterTabs({ counts }) {
     ];
 
     // Helper function to check if a tab is active
-    const isActive = (href) => {
-        if (href === '/' && pathname === '/') return true;
-        if (href !== '/' && pathname.startsWith(href)) return true;
-        return false;
+    const isActive = (type) => {
+        return type === activeTab;
     };
 
     // Don't render anything until mounted to avoid hydration mismatch
@@ -70,11 +74,11 @@ export default function FilterTabs({ counts }) {
             <div className="container mx-auto px-4">
                 <div className="flex overflow-x-auto py-3 space-x-2 scrollbar-hide">
                     {tabs.map((tab) => {
-                        const active = isActive(tab.href);
+                        const active = isActive(tab.type);
                         return (
-                            <Link
+                            <button
                                 key={tab.name}
-                                href={tab.href}
+                                onClick={() => handleTabClick(tab.type)}
                                 className={`
                                     px-4 py-2 rounded-lg whitespace-nowrap flex items-center transition-all duration-300
                                     ${active
@@ -91,7 +95,7 @@ export default function FilterTabs({ counts }) {
                                     }`}>
                                     {tab.count.toLocaleString()}
                                 </span>
-                            </Link>
+                            </button>
                         );
                     })}
                 </div>

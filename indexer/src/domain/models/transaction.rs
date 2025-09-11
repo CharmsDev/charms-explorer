@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Domain model for a Bitcoin transaction
+/// Represents a blockchain transaction with charm data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     /// Transaction ID
@@ -28,10 +28,16 @@ pub struct Transaction {
 
     /// Status of the transaction (pending, confirmed, etc.)
     pub status: String,
+
+    /// Blockchain type (e.g., "Bitcoin", "Cardano")
+    pub blockchain: String,
+
+    /// Network name (e.g., "mainnet", "testnet4")
+    pub network: String,
 }
 
 impl Transaction {
-    /// Create a new Transaction
+    /// Creates a new Transaction with specified parameters
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         txid: String,
@@ -42,6 +48,8 @@ impl Transaction {
         updated_at: NaiveDateTime,
         confirmations: i32,
         status: String,
+        blockchain: String,
+        network: String,
     ) -> Self {
         Self {
             txid,
@@ -52,10 +60,12 @@ impl Transaction {
             updated_at,
             confirmations,
             status,
+            blockchain,
+            network,
         }
     }
 
-    /// Check if the transaction is confirmed
+    /// Returns true if transaction has sufficient confirmations
     pub fn is_confirmed(&self) -> bool {
         self.confirmations >= 6 || self.status == "confirmed"
     }

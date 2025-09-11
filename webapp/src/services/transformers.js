@@ -75,8 +75,11 @@ export const transformCharmData = (charm) => {
     // Extract version
     const version = getNestedProperty(charm, 'data.data.version') || '';
 
-    const likes = Math.floor(Math.random() * 100);
-    const comments = Math.floor(Math.random() * 20);
+    // Use real likes count from API if available, otherwise default to 0
+    const likes = charm.likes_count || 0;
+    const userLiked = charm.user_liked || false;
+    // Comments are not yet implemented, so we'll show 0
+    const comments = 0;
 
     return {
         id: charm.charmid,
@@ -89,6 +92,7 @@ export const transformCharmData = (charm) => {
         address: '',
         createdAt: charm.date_created,
         likes,
+        userLiked,
         comments,
         ticker,
         supply,
@@ -153,6 +157,7 @@ export const createDefaultCharm = (id) => {
         address: '',
         createdAt: new Date().toISOString(),
         likes: 0,
+        userLiked: false,
         comments: 0,
         ticker: '',
         supply: 0,
