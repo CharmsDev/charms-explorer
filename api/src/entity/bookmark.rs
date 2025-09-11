@@ -11,6 +11,9 @@ pub struct Model {
     pub height: i32,
     #[sea_orm(column_type = "Text")]
     pub status: String,
+    #[sea_orm(column_type = "Text")]
+    pub network: String,
+    pub last_updated_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

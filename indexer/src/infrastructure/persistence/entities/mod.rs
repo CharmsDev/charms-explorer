@@ -4,4 +4,5 @@ pub mod prelude;
 
 pub mod bookmark;
 pub mod charms;
+pub mod summary;
 pub mod transactions;

@@ -2,6 +2,7 @@ use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder, Set,
 };
+use std::fmt;
 
 use crate::domain::models::Transaction;
 use crate::infrastructure::persistence::entities::transactions;
@@ -13,6 +14,13 @@ pub struct TransactionRepository {
     conn: DatabaseConnection,
 }
 
+impl fmt::Debug for TransactionRepository {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransactionRepository")
+            .finish_non_exhaustive()
+    }
+}
+
 impl TransactionRepository {
     /// Create a new TransactionRepository
     pub fn new(conn: DatabaseConnection) -> Self {
@@ -21,6 +29,12 @@ impl TransactionRepository {
 
     /// Save a transaction
     pub async fn save_transaction(&self, transaction: &Transaction) -> Result<(), DbError> {
+        // Check if transaction already exists
+        if let Some(_existing) = self.get_by_txid(&transaction.txid).await? {
+            // Transaction already exists, skip insertion
+            return Ok(());
+        }
+
         // Create a new active model
         let tx_model = transactions::ActiveModel {
             txid: Set(transaction.txid.clone()),
@@ -31,12 +45,26 @@ impl TransactionRepository {
             updated_at: Set(transaction.updated_at),
             status: Set(transaction.status.clone()),
             confirmations: Set(transaction.confirmations),
+            blockchain: Set(transaction.blockchain.clone()),
+            network: Set(transaction.network.clone()),
         };
 
-        // Insert or update the transaction
-        tx_model.insert(&self.conn).await?;
-
-        Ok(())
+        // Try to insert the transaction, handle duplicate key violations gracefully
+        match tx_model.insert(&self.conn).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Check if the error is a duplicate key violation
+                if e.to_string()
+                    .contains("duplicate key value violates unique constraint")
+                {
+                    // Transaction already exists, this is not an error
+                    Ok(())
+                } else {
+                    // If it's not a duplicate key error, propagate the original error
+                    Err(e.into())
+                }
+            }
+        }
     }
 
     /// Get a transaction by its transaction ID
@@ -56,6 +84,27 @@ impl TransactionRepository {
         let results = transactions::Entity::find()
             .filter(transactions::Column::BlockHeight.eq(height as i32))
             .order_by_asc(transactions::Column::Ordinal)
+            .all(&self.conn)
+            .await?;
+
+        // Convert to domain models
+        Ok(results
+            .into_iter()
+            .map(|t| self.to_domain_model(t))
+            .collect())
+    }
+
+    /// Find transactions by blockchain and network
+    pub async fn find_by_blockchain_network(
+        &self,
+        blockchain: &str,
+        network: &str,
+    ) -> Result<Vec<Transaction>, DbError> {
+        // Query the database for transactions with the given blockchain and network
+        let results = transactions::Entity::find()
+            .filter(transactions::Column::Blockchain.eq(blockchain))
+            .filter(transactions::Column::Network.eq(network))
+            .order_by_desc(transactions::Column::BlockHeight)
             .all(&self.conn)
             .await?;
 
@@ -103,14 +152,31 @@ impl TransactionRepository {
             serde_json::Value,
             i32,
             bool,
+            String,
+            String,
         )>,
     ) -> Result<(), DbError> {
-        // Create active models for each transaction
+        // Skip individual existence checks - let database handle duplicates
+        if transactions.is_empty() {
+            return Ok(());
+        }
+
+        // Create active models for all transactions
         let now = chrono::Utc::now().naive_utc();
         let models: Vec<transactions::ActiveModel> = transactions
             .into_iter()
             .map(
-                |(txid, block_height, ordinal, raw, charm, confirmations, is_confirmed)| {
+                |(
+                    txid,
+                    block_height,
+                    ordinal,
+                    raw,
+                    charm,
+                    confirmations,
+                    is_confirmed,
+                    blockchain,
+                    network,
+                )| {
                     let status = if is_confirmed {
                         "confirmed".to_string()
                     } else {
@@ -126,17 +192,32 @@ impl TransactionRepository {
                         updated_at: Set(now),
                         status: Set(status),
                         confirmations: Set(confirmations),
+                        blockchain: Set(blockchain),
+                        network: Set(network),
                     }
                 },
             )
             .collect();
 
-        // Insert all transactions
-        transactions::Entity::insert_many(models)
+        // Try to insert all transactions, handle duplicate key violations gracefully
+        match transactions::Entity::insert_many(models)
             .exec(&self.conn)
-            .await?;
-
-        Ok(())
+            .await
+        {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Check if the error is a duplicate key violation
+                if e.to_string()
+                    .contains("duplicate key value violates unique constraint")
+                {
+                    // Some transactions already exist, this is not an error
+                    Ok(())
+                } else {
+                    // If it's not a duplicate key error, propagate the original error
+                    Err(e.into())
+                }
+            }
+        }
     }
 
     /// Convert a database entity to a domain model
@@ -150,6 +231,8 @@ impl TransactionRepository {
             entity.updated_at,
             entity.confirmations,
             entity.status,
+            entity.blockchain,
+            entity.network,
         )
     }
 }
