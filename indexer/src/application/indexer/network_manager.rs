@@ -9,8 +9,7 @@ use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::{BitcoinClient, BitcoinClientError};
-use crate::infrastructure::persistence::repositories::charm_repository::CharmRepository;
-use crate::infrastructure::persistence::repositories::{BookmarkRepository, SummaryRepository, TransactionRepository};
+use crate::infrastructure::persistence::repositories::{AssetRepository, BookmarkRepository, CharmRepository, SummaryRepository, TransactionRepository};
 use crate::utils::logging;
 
 /// Manager for multiple blockchain network processors
@@ -30,12 +29,15 @@ impl NetworkManager {
         }
     }
 
-    /// Initialize processors for all enabled networks
+    /// Initialize processors for all configured networks
+    /// 
+    /// Creates and configures blockchain processors for each network defined in the configuration
     pub async fn initialize(
         &mut self,
-        bookmark_repository: BookmarkRepository,
         charm_repository: CharmRepository,
+        asset_repository: AssetRepository,
         transaction_repository: TransactionRepository,
+        bookmark_repository: BookmarkRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
         // Initialize Bitcoin processors
@@ -44,6 +46,7 @@ impl NetworkManager {
                 "testnet4",
                 bookmark_repository.clone(),
                 charm_repository.clone(),
+                asset_repository.clone(),
                 transaction_repository.clone(),
                 summary_repository.clone(),
             )
@@ -55,6 +58,7 @@ impl NetworkManager {
                 "mainnet",
                 bookmark_repository.clone(),
                 charm_repository.clone(),
+                asset_repository.clone(),
                 transaction_repository.clone(),
                 summary_repository.clone(),
             )
@@ -72,6 +76,7 @@ impl NetworkManager {
         network: &str,
         bookmark_repository: BookmarkRepository,
         charm_repository: CharmRepository,
+        asset_repository: AssetRepository,
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
@@ -118,7 +123,7 @@ impl NetworkManager {
             }
         };
 
-        let charm_service = CharmService::new(bitcoin_client.clone(), api_client, charm_repository);
+        let charm_service = CharmService::new(bitcoin_client.clone(), api_client, charm_repository, asset_repository);
 
         let processor = BitcoinProcessor::new(
             bitcoin_client,

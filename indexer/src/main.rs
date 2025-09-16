@@ -73,6 +73,7 @@ async fn main() {
                 .initialize(
                     repositories.bookmark,
                     repositories.charm,
+                    repositories.asset,
                     repositories.transaction,
                     repositories.summary,
                 )
