@@ -1,21 +1,52 @@
 'use client';
 
-import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
-export default function FilterTabs({ counts }) {
-    const pathname = usePathname();
+export default function FilterTabs({ counts, onTypeChange, onNetworkChange }) {
+    const [activeTab, setActiveTab] = useState('all');
+    const [activeNetworks, setActiveNetworks] = useState(['mainnet', 'testnet4']);
     const [mounted, setMounted] = useState(false);
 
     // Set mounted to true on client side
     useEffect(() => setMounted(true), []);
 
+    // Handle tab click
+    const handleTabClick = (type) => {
+        setActiveTab(type);
+        if (onTypeChange) {
+            onTypeChange(type);
+        }
+    };
+
+    // Handle network toggle
+    const handleNetworkToggle = (network) => {
+        let newActiveNetworks;
+        if (activeNetworks.includes(network)) {
+            // Remove network if it's already active (but keep at least one)
+            if (activeNetworks.length > 1) {
+                newActiveNetworks = activeNetworks.filter(n => n !== network);
+            } else {
+                // If only one network is active, don't allow removing it
+                return;
+            }
+        } else {
+            // Add network if it's not active
+            newActiveNetworks = [...activeNetworks, network];
+        }
+        
+        setActiveNetworks(newActiveNetworks);
+        if (onNetworkChange) {
+            // Pass 'all' if both networks are selected, otherwise pass the specific network(s)
+            const networkParam = newActiveNetworks.length === 2 ? 'all' : newActiveNetworks[0];
+            onNetworkChange(networkParam);
+        }
+    };
+
     // Define the tabs with icons
     const tabs = [
         {
             name: 'All',
-            href: '/',
+            type: 'all',
             count: counts?.total || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -25,7 +56,7 @@ export default function FilterTabs({ counts }) {
         },
         {
             name: 'NFTs',
-            href: '/nfts',
+            type: 'nft',
             count: counts?.nft || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -35,7 +66,7 @@ export default function FilterTabs({ counts }) {
         },
         {
             name: 'Tokens',
-            href: '/tokens',
+            type: 'token',
             count: counts?.token || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -45,7 +76,7 @@ export default function FilterTabs({ counts }) {
         },
         {
             name: 'dApps',
-            href: '/dapps',
+            type: 'dapp',
             count: counts?.dapp || 0,
             icon: (
                 <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -55,11 +86,20 @@ export default function FilterTabs({ counts }) {
         }
     ];
 
+    // Define network buttons
+    const networks = [
+        { id: 'mainnet', name: 'Mainnet', count: 48932 },
+        { id: 'testnet4', name: 'Testnet4', count: 331 }
+    ];
+
     // Helper function to check if a tab is active
-    const isActive = (href) => {
-        if (href === '/' && pathname === '/') return true;
-        if (href !== '/' && pathname.startsWith(href)) return true;
-        return false;
+    const isActive = (type) => {
+        return type === activeTab;
+    };
+
+    // Helper function to check if a network is active
+    const isNetworkActive = (networkId) => {
+        return activeNetworks.includes(networkId);
     };
 
     // Don't render anything until mounted to avoid hydration mismatch
@@ -68,13 +108,14 @@ export default function FilterTabs({ counts }) {
     return (
         <div className="bg-dark-900/90 backdrop-blur-3xl border-y border-dark-800 sticky top-16 z-[100]">
             <div className="container mx-auto px-4">
+                {/* Asset Type Tabs */}
                 <div className="flex overflow-x-auto py-3 space-x-2 scrollbar-hide">
                     {tabs.map((tab) => {
-                        const active = isActive(tab.href);
+                        const active = isActive(tab.type);
                         return (
-                            <Link
+                            <button
                                 key={tab.name}
-                                href={tab.href}
+                                onClick={() => handleTabClick(tab.type)}
                                 className={`
                                     px-4 py-2 rounded-lg whitespace-nowrap flex items-center transition-all duration-300
                                     ${active
@@ -91,10 +132,11 @@ export default function FilterTabs({ counts }) {
                                     }`}>
                                     {tab.count.toLocaleString()}
                                 </span>
-                            </Link>
+                            </button>
                         );
                     })}
                 </div>
+
             </div>
         </div>
     );

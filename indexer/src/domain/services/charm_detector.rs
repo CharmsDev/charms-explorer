@@ -2,19 +2,41 @@ use serde_json::Value;
 
 const SPELL_BYTES: &[u8] = b"spell";
 
-/// Service for detecting and analyzing charm transactions
+/// Detects and analyzes charm transactions in blockchain data
 pub struct CharmDetectorService;
 
 impl CharmDetectorService {
-    /// Checks if a transaction could be a charm by looking for the "spell" marker
-    ///
-    /// # Arguments
-    ///
-    /// * `tx_hex` - The hexadecimal representation of the transaction
-    ///
-    /// # Returns
-    ///
-    /// `true` if the transaction could be a charm, `false` otherwise
+    /// Checks if transaction contains the "spell" marker
+    /// Now accepts context parameters for better logging
+    pub fn could_be_charm_with_context(
+        tx_hex: &str,
+        txid: &str,
+        block_height: u64,
+        tx_pos: usize,
+        network_name: &str,
+    ) -> bool {
+        if let Ok(tx_bytes) = hex::decode(tx_hex) {
+            // Look for the "spell" ASCII string in the transaction
+            for window in tx_bytes.windows(SPELL_BYTES.len()) {
+                if window == SPELL_BYTES {
+                    crate::utils::logging::log_info(&format!(
+                        "[{}] 🎯 Block {}: Found 'spell' marker in tx {} at position {}",
+                        network_name, block_height, txid, tx_pos
+                    ));
+                    return true;
+                }
+            }
+        } else {
+            crate::utils::logging::log_error(&format!(
+                "[{}] ❌ Block {}: Failed to decode transaction hex for tx {} at position {}",
+                network_name, block_height, txid, tx_pos
+            ));
+        }
+
+        false
+    }
+
+    /// Legacy method for backward compatibility
     pub fn could_be_charm(tx_hex: &str) -> bool {
         if let Ok(tx_bytes) = hex::decode(tx_hex) {
             // Look for the "spell" ASCII string in the transaction
@@ -24,20 +46,10 @@ impl CharmDetectorService {
                 }
             }
         }
-
         false
     }
 
-    /// Performs a more detailed analysis of a transaction to determine if it's a charm
-    /// and extracts charm-specific data if it is
-    ///
-    /// # Arguments
-    ///
-    /// * `tx_hex` - The hexadecimal representation of the transaction
-    ///
-    /// # Returns
-    ///
-    /// `Some(())` if the transaction is a charm, `None` otherwise
+    /// Analyzes transaction to determine if it's a charm
     pub fn analyze_charm_transaction(tx_hex: &str) -> Option<()> {
         if Self::could_be_charm(tx_hex) {
             Some(())
@@ -46,15 +58,7 @@ impl CharmDetectorService {
         }
     }
 
-    /// Process charm data from the API
-    ///
-    /// # Arguments
-    ///
-    /// * `spell_data` - The spell data from the API
-    ///
-    /// # Returns
-    ///
-    /// Processed charm data
+    /// Processes charm data from the API
     pub fn process_spell_data(spell_data: Value) -> Value {
         spell_data
     }

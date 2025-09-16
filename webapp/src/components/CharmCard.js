@@ -2,10 +2,14 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { likeCharm, unlikeCharm } from '../services/apiServices';
 
 export default function CharmCard({ charm }) {
     const [imageError, setImageError] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
+    const [likesCount, setLikesCount] = useState(charm.likes);
+    const [isLiked, setIsLiked] = useState(charm.userLiked);
+    const [isLikeLoading, setIsLikeLoading] = useState(false);
     const placeholderImage = "https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png";
 
     // Determine if the charm is an NFT
@@ -150,17 +154,53 @@ export default function CharmCard({ charm }) {
                 {/* Stats section */}
                 <div className="mt-4 pt-3 border-t border-dark-700 flex items-center justify-between">
                     <div className="flex items-center space-x-4">
-                        <div className="flex items-center group">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-dark-500 group-hover:text-primary-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+                        <button
+                            className={`flex items-center group ${isLikeLoading ? 'opacity-50 cursor-wait' : 'cursor-pointer'}`}
+                            onClick={async (e) => {
+                                e.preventDefault();
+                                if (isLikeLoading) return;
+
+                                setIsLikeLoading(true);
+                                try {
+                                    if (isLiked) {
+                                        const response = await unlikeCharm(charm.id);
+                                        setLikesCount(response.likes_count);
+                                        setIsLiked(false);
+                                    } else {
+                                        const response = await likeCharm(charm.id);
+                                        setLikesCount(response.likes_count);
+                                        setIsLiked(true);
+                                    }
+                                } catch (error) {
+                                    console.error('Error toggling like:', error);
+                                } finally {
+                                    setIsLikeLoading(false);
+                                }
+                            }}
+                            disabled={isLikeLoading}
+                        >
+                            <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className={`h-4 w-4 transition-colors ${isLiked ? 'text-primary-400 fill-primary-400' : 'text-dark-500 group-hover:text-primary-400'}`}
+                                viewBox="0 0 24 24"
+                                stroke="currentColor"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={isLiked ? 1 : 2}
+                                    d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                                />
                             </svg>
-                            <span className="ml-1 text-sm text-dark-400 group-hover:text-primary-400 transition-colors">{charm.likes}</span>
-                        </div>
-                        <div className="flex items-center group">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-dark-500 group-hover:text-primary-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <span className={`ml-1 text-sm transition-colors ${isLiked ? 'text-primary-400' : 'text-dark-400 group-hover:text-primary-400'}`}>
+                                {likesCount}
+                            </span>
+                        </button>
+                        <div className="flex items-center group cursor-not-allowed opacity-50" title="Comments not yet implemented">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-dark-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
                             </svg>
-                            <span className="ml-1 text-sm text-dark-400 group-hover:text-primary-400 transition-colors">{charm.comments}</span>
+                            <span className="ml-1 text-sm text-dark-700">{charm.comments}</span>
                         </div>
                     </div>
                     <div className="text-xs text-dark-400">{formattedDate}</div>

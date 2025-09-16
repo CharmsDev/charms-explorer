@@ -1,6 +1,6 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    QueryOrder, Set,
 };
 
 use crate::domain::models::Charm;
@@ -21,6 +21,12 @@ impl CharmRepository {
 
     /// Save a charm
     pub async fn save_charm(&self, charm: &Charm) -> Result<(), DbError> {
+        // Check if charm already exists
+        if let Some(_existing) = self.get_by_txid(&charm.txid).await? {
+            // Charm already exists, skip insertion
+            return Ok(());
+        }
+
         // Create a new active model
         let charm_model = charms::ActiveModel {
             txid: Set(charm.txid.clone()),
@@ -29,12 +35,26 @@ impl CharmRepository {
             data: Set(charm.data.clone()),
             date_created: Set(charm.date_created),
             asset_type: Set(charm.asset_type.clone()),
+            blockchain: Set(charm.blockchain.clone()),
+            network: Set(charm.network.clone()),
         };
 
-        // Insert or update the charm
-        charm_model.insert(&self.conn).await?;
-
-        Ok(())
+        // Try to insert the charm, handle duplicate key violations gracefully
+        match charm_model.insert(&self.conn).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Check if the error is a duplicate key violation
+                if e.to_string()
+                    .contains("duplicate key value violates unique constraint")
+                {
+                    // Charm already exists, this is not an error
+                    Ok(())
+                } else {
+                    // If it's not a duplicate key error, propagate the original error
+                    Err(e.into())
+                }
+            }
+        }
     }
 
     /// Get a charm by its transaction ID
@@ -76,6 +96,26 @@ impl CharmRepository {
             .collect())
     }
 
+    /// Find charms by blockchain and network
+    pub async fn find_by_blockchain_network(
+        &self,
+        blockchain: &str,
+        network: &str,
+    ) -> Result<Vec<Charm>, DbError> {
+        // Query the database for charms with the given blockchain and network
+        let results = charms::Entity::find()
+            .filter(charms::Column::Blockchain.eq(blockchain))
+            .filter(charms::Column::Network.eq(network))
+            .all(&self.conn)
+            .await?;
+
+        // Convert to domain models
+        Ok(results
+            .into_iter()
+            .map(|c| self.to_domain_model(c))
+            .collect())
+    }
+
     /// Find charms with pagination
     pub async fn find_paginated(
         &self,
@@ -105,28 +145,57 @@ impl CharmRepository {
     /// Save multiple charms in a batch
     pub async fn save_batch(
         &self,
-        charms: Vec<(String, String, u64, serde_json::Value, String)>,
+        charms: Vec<(
+            String,
+            String,
+            u64,
+            serde_json::Value,
+            String,
+            String,
+            String,
+        )>,
     ) -> Result<(), DbError> {
-        // Create active models for each charm
+        // Skip individual existence checks - let database handle duplicates
+        if charms.is_empty() {
+            return Ok(());
+        }
+
+        // Create active models for all charms
         let now = chrono::Utc::now().naive_utc();
         let models: Vec<charms::ActiveModel> = charms
             .into_iter()
             .map(
-                |(txid, charmid, block_height, data, asset_type)| charms::ActiveModel {
-                    txid: Set(txid),
-                    charmid: Set(charmid),
-                    block_height: Set(block_height as i32),
-                    data: Set(data),
-                    date_created: Set(now),
-                    asset_type: Set(asset_type),
+                |(txid, charmid, block_height, data, asset_type, blockchain, network)| {
+                    charms::ActiveModel {
+                        txid: Set(txid),
+                        charmid: Set(charmid),
+                        block_height: Set(block_height as i32),
+                        data: Set(data),
+                        date_created: Set(now),
+                        asset_type: Set(asset_type),
+                        blockchain: Set(blockchain),
+                        network: Set(network),
+                    }
                 },
             )
             .collect();
 
-        // Insert all charms
-        charms::Entity::insert_many(models).exec(&self.conn).await?;
-
-        Ok(())
+        // Try to insert all charms, handle duplicate key violations gracefully
+        match charms::Entity::insert_many(models).exec(&self.conn).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                // Check if the error is a duplicate key violation
+                if e.to_string()
+                    .contains("duplicate key value violates unique constraint")
+                {
+                    // Some charms already exist, this is not an error
+                    Ok(())
+                } else {
+                    // If it's not a duplicate key error, propagate the original error
+                    Err(e.into())
+                }
+            }
+        }
     }
 
     /// Convert a database entity to a domain model
@@ -138,6 +207,8 @@ impl CharmRepository {
             entity.data,
             entity.date_created,
             entity.asset_type,
+            entity.blockchain,
+            entity.network,
         )
     }
 }

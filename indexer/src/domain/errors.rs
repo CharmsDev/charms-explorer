@@ -54,6 +54,7 @@ pub enum BlockProcessorError {
     ApiClientError(ApiClientError),
     CharmError(CharmError),
     DbError(DbError),
+    ConfigError(String),
     ProcessingError(String),
 }
 
@@ -64,6 +65,7 @@ impl fmt::Display for BlockProcessorError {
             BlockProcessorError::ApiClientError(e) => write!(f, "API client error: {}", e),
             BlockProcessorError::CharmError(e) => write!(f, "Charm error: {}", e),
             BlockProcessorError::DbError(e) => write!(f, "Database error: {}", e),
+            BlockProcessorError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
             BlockProcessorError::ProcessingError(msg) => write!(f, "Processing error: {}", msg),
         }
     }

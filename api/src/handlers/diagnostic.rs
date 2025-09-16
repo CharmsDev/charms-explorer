@@ -22,7 +22,7 @@ pub async fn diagnose_database(State(app_state): State<AppState>) -> impl IntoRe
     let mut response = HashMap::new();
 
     // Add version number to identify the diagnostic format
-    response.insert("version", json!("1.1.0"));
+    response.insert("version", json!("1.2.0"));
 
     // Add Bitcoin RPC test information
     if let Some(bitcoin_rpc) = diagnostic_result.get("bitcoin_rpc") {
@@ -51,10 +51,33 @@ pub async fn diagnose_database(State(app_state): State<AppState>) -> impl IntoRe
     };
     response.insert("table_counts", table_counts);
 
+    // Add summary table information if available
+    if let Some(summary_table) = diagnostic_result.get("summary_table") {
+        response.insert("summary_table", summary_table.clone());
+    }
+
     // Add database connection information if available
     if let Some(db_connection) = diagnostic_result.get("db_connection") {
         response.insert("db_connection", db_connection.clone());
     }
+
+    // Add all tables list for clarity
+    let all_tables = if let Some(tables) = diagnostic_result.get("tables") {
+        if let Some(tables_array) = tables.get("tables").and_then(|t| t.as_array()) {
+            let table_names: Vec<String> = tables_array
+                .iter()
+                .filter_map(|table| {
+                    table.get("name").and_then(|n| n.as_str()).map(|s| s.to_string())
+                })
+                .collect();
+            json!(table_names)
+        } else {
+            json!([])
+        }
+    } else {
+        json!([])
+    };
+    response.insert("all_tables", all_tables);
 
     // Return JSON response
     Json(json!(response))
