@@ -23,12 +23,16 @@ pub async fn get_charm_numbers(
     Ok(Json(response))
 }
 
-/// Handler for GET /charms - Returns all charms with pagination
+/// Handler for GET /charms - Returns all charms with pagination, optionally filtered by network
 pub async fn get_charms(
     State(state): State<AppState>,
     Query(params): Query<GetCharmsQuery>,
 ) -> ExplorerResult<Json<PaginatedResponse<CharmsResponse>>> {
-    let response = charm_service::get_all_charms_paginated(&state, &params.pagination, params.user_id).await?;
+    let response = if let Some(network) = &params.network {
+        charm_service::get_all_charms_paginated_by_network(&state, &params.pagination, params.user_id, Some(network)).await?
+    } else {
+        charm_service::get_all_charms_paginated(&state, &params.pagination, params.user_id).await?
+    };
     Ok(Json(response))
 }
 

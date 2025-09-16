@@ -62,85 +62,81 @@ export const fetchRawCharmsData = async () => {
 };
 
 // Fetches and transforms charm assets with pagination and sorting
-export const fetchAssets = async (type = 'all', page = 1, limit = 12, sort = 'newest') => {
-    try {
-        let endpoint;
-        if (type === 'all') {
-            endpoint = ENDPOINTS.buildPaginatedUrl(ENDPOINTS.CHARMS, page, limit, sort);
-        } else {
-            // For type-specific endpoints, we need to handle the query params differently
-            const baseUrl = ENDPOINTS.CHARMS_BY_TYPE(type).split('?')[0];
-            const typeParam = `type=${encodeURIComponent(type)}`;
-            const paginationParams = new URLSearchParams({
-                page,
-                limit,
-                sort
-            }).toString();
-            endpoint = `${baseUrl}?${typeParam}&${paginationParams}`;
-        }
-
-        const response = await fetch(endpoint);
-
-        if (!response.ok) {
-            throw new Error(`API error: ${response.status}`);
-        }
-
-        const data = await response.json();
-        console.log('Raw API response data:', data);
-
-        // Transform the charms data
-        const transformedCharms = transformCharmsArray(data.data.charms);
-
-        // Ensure pagination metadata is properly structured
-        const paginationData = data.pagination || {
-            total: data.data.charms.length,
-            page: page,
-            limit: limit,
-            total_pages: Math.ceil(data.data.charms.length / limit) || 1
-        };
-
-        console.log('Pagination data:', paginationData);
-        console.log('Transformed charms count:', transformedCharms.length);
-
-        // Return with pagination metadata
-        return {
-            data: transformedCharms,
-            pagination: paginationData
-        };
-    } catch (error) {
-        console.error('Error in fetchAssets:', error);
-
-        // Fallback to client-side filtering if the API call fails
-        try {
-            const data = await fetchRawCharmsData();
-
-            // Filter by type using the detection logic if needed
-            let filteredCharms = data.charms;
-            if (type !== 'all') {
-                // Use detectCharmType for filtering
-                filteredCharms = data.charms.filter(charm => detectCharmType(charm) === type);
-            }
-
-            // Sort the charms
-            filteredCharms.sort((a, b) => {
-                if (sort === 'oldest') {
-                    return a.block_height - b.block_height;
-                } else {
-                    return b.block_height - a.block_height;
-                }
-            });
-
-            // Transform the *filtered* data
-            const transformedCharms = transformCharmsArray(filteredCharms);
-
-            // Paginate the results
-            const paginatedResult = paginateItems(transformedCharms, page, limit);
-            console.log('Client-side pagination result:', paginatedResult);
-            return paginatedResult;
-        } catch (fallbackError) {
-            throw handleApiError(fallbackError, 'fetch assets (fallback)');
-        }
+export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network = null) => {
+  try {
+    console.log(`[API] Fetching assets - page: ${page}, limit: ${limit}, sort: ${sort}, network: ${network}`);
+    
+    // Build URL with network parameter if provided
+    let url = `${ENDPOINTS.CHARMS}`;
+    const params = new URLSearchParams();
+    
+    if (network) {
+      params.append('network', network);
     }
+    
+    if (params.toString()) {
+      url += `?${params.toString()}`;
+    }
+    
+    console.log(`[API] Request URL: ${url}`);
+    
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    console.log('[API] Raw response data:', data);
+    
+    if (!data.data || !data.data.charms) {
+      console.warn('[API] No charms data in response');
+      return {
+        assets: [],
+        total: 0,
+        page: 1,
+        totalPages: 1
+      };
+    }
+    
+    let charms = data.data.charms;
+    console.log(`[API] Received ${charms.length} charms from API`);
+    
+    // Transform the charms data
+    const transformedCharms = transformCharmsArray(charms);
+    console.log(`[API] Transformed ${transformedCharms.length} charms`);
+    
+    // Apply client-side sorting
+    const sortedCharms = transformedCharms.sort((a, b) => {
+      if (sort === 'oldest') {
+        return a.block_height - b.block_height;
+      } else {
+        return b.block_height - a.block_height; // newest first (default)
+      }
+    });
+    
+    // Apply client-side pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedCharms = sortedCharms.slice(startIndex, endIndex);
+    
+    const totalPages = Math.ceil(sortedCharms.length / limit);
+    
+    // Use API total count if available, otherwise use client-side count
+    const totalCount = data.pagination?.total || sortedCharms.length;
+    
+    console.log(`[API] Returning page ${page} with ${paginatedCharms.length} charms, total: ${totalCount}, totalPages: ${totalPages}`);
+    
+    return {
+      assets: paginatedCharms,
+      total: totalCount,
+      page: page,
+      totalPages: totalPages
+    };
+  } catch (error) {
+    console.error('[API] Error fetching assets:', error);
+    throw error;
+  }
 };
 
 // Gets a specific asset by ID

@@ -1,6 +1,6 @@
 # Charms Indexer Makefile
 
-PORT=6002
+PORT=8002
 
 # Development server with port cleanup
 .PHONY: makeDev

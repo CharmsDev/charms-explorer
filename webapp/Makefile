@@ -1,6 +1,6 @@
 # Makefile for Charms Explorer Webapp
 
-PORT=6001
+PORT=8001
 
 # Development server with port cleanup
 makeDev:

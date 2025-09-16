@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5432:5432"
+      - "8003:5432"
     volumes:
       - charms_postgres_data:/var/lib/postgresql/data
       - ./init:/docker-entrypoint-initdb.d

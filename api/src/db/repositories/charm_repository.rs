@@ -80,12 +80,45 @@ impl CharmRepository {
         Ok((charms, total))
     }
 
-    /// Retrieves all charms with pagination and sorting
+    /// Retrieves all charms with pagination and sorting, optionally filtered by network
     pub async fn get_all_paginated(
         &self,
         pagination: &PaginationParams,
     ) -> Result<(Vec<charms::Model>, u64), DbError> {
         let mut query = charms::Entity::find();
+        
+        // Apply sorting
+        query = match pagination.sort.as_str() {
+            "oldest" => query.order_by_asc(charms::Column::BlockHeight),
+            _ => query.order_by_desc(charms::Column::BlockHeight), // "newest" is default
+        };
+        
+        // Get total count
+        let total = query.clone().count(&self.conn).await?;
+        
+        // Apply pagination
+        let paginator = query
+            .paginate(&self.conn, pagination.limit);
+        
+        let charms = paginator
+            .fetch_page(pagination.page - 1) // 0-indexed page
+            .await?;
+        
+        Ok((charms, total))
+    }
+
+    /// Retrieves all charms with pagination, sorting, and network filtering
+    pub async fn get_all_paginated_by_network(
+        &self,
+        pagination: &PaginationParams,
+        network: Option<&str>,
+    ) -> Result<(Vec<charms::Model>, u64), DbError> {
+        let mut query = charms::Entity::find();
+        
+        // Apply network filter if provided
+        if let Some(network) = network {
+            query = query.filter(charms::Column::Network.eq(network));
+        }
         
         // Apply sorting
         query = match pagination.sort.as_str() {

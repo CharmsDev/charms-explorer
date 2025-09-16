@@ -45,6 +45,17 @@ impl CharmService {
         block_height: u64,
         block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
     ) -> Result<Option<Charm>, CharmError> {
+        self.detect_and_process_charm_with_context(txid, block_height, block_hash, 0).await
+    }
+
+    /// Detects and processes a potential charm transaction with context for better logging
+    pub async fn detect_and_process_charm_with_context(
+        &self,
+        txid: &str,
+        block_height: u64,
+        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+        tx_pos: usize,
+    ) -> Result<Option<Charm>, CharmError> {
         // Get blockchain and network information from the Bitcoin client
         let blockchain = "Bitcoin".to_string();
         let network = self.bitcoin_client.network_id().name.clone();
@@ -54,8 +65,14 @@ impl CharmService {
             .bitcoin_client
             .get_raw_transaction_hex(txid, block_hash)?;
 
-        // Check if transaction could be a charm
-        if !CharmDetectorService::could_be_charm(&raw_tx_hex) {
+        // Check if transaction could be a charm with enhanced logging
+        if !CharmDetectorService::could_be_charm_with_context(
+            &raw_tx_hex,
+            txid,
+            block_height,
+            tx_pos,
+            &network,
+        ) {
             return Ok(None);
         }
 
@@ -67,6 +84,12 @@ impl CharmService {
         // This transaction has potential charm markers, so we should store it
         // regardless of whether the API returns charm data or not
 
+        // Log API request with full context
+        crate::utils::logging::log_info(&format!(
+            "[{}] 🔍 Block {}: Making API request for charm tx {} at position {}",
+            network, block_height, txid, tx_pos
+        ));
+
         // Try to fetch spell data from the API
         let (api_data, has_api_data) = match self.api_client.get_spell_data(txid).await {
             Ok(spell_data) => {
@@ -74,8 +97,16 @@ impl CharmService {
                 if spell_data.is_null()
                     || (spell_data.is_object() && spell_data.as_object().unwrap().is_empty())
                 {
+                    crate::utils::logging::log_info(&format!(
+                        "[{}] ⚪ Block {}: API returned empty response for tx {} at position {}",
+                        network, block_height, txid, tx_pos
+                    ));
                     (json!({"note": "No charm data from API"}), false)
                 } else {
+                    crate::utils::logging::log_info(&format!(
+                        "[{}] ✅ Block {}: API returned charm data for tx {} at position {} (size: {} bytes)",
+                        network, block_height, txid, tx_pos, spell_data.to_string().len()
+                    ));
                     // Process the spell data
                     let processed_data = CharmDetectorService::process_spell_data(spell_data);
                     (processed_data, true)
@@ -84,8 +115,8 @@ impl CharmService {
             Err(e) => {
                 // API failed, but we still want to store this as a potential charm
                 crate::utils::logging::log_error(&format!(
-                    "❌ API call failed for tx {}: {}",
-                    txid, e
+                    "[{}] ❌ Block {}: API call failed for tx {} at position {}: {}",
+                    network, block_height, txid, tx_pos, e
                 ));
                 (
                     json!({"note": "API call failed", "error": e.to_string()}),
@@ -116,6 +147,11 @@ impl CharmService {
 
         // Save the charm to the repository
         self.charm_repository.save_charm(&charm).await?;
+
+        crate::utils::logging::log_info(&format!(
+            "[{}] ✅ Block {}: Successfully saved charm {} at position {} (charm_id: {})",
+            network, block_height, txid, tx_pos, charm.charmid
+        ));
 
         Ok(Some(charm))
     }

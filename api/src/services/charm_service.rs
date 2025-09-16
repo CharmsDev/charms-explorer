@@ -30,6 +30,70 @@ pub async fn get_charm_numbers_by_type(
     })
 }
 
+pub async fn get_all_charms_paginated_by_network(
+    state: &AppState,
+    pagination: &PaginationParams,
+    user_id: i32,
+    network: Option<&str>,
+) -> ExplorerResult<PaginatedResponse<CharmsResponse>> {
+    // Handle database query with graceful error handling
+    let (charms, total) = match state.repositories.charm.get_all_paginated_by_network(pagination, network).await {
+        Ok(result) => result,
+        Err(err) => {
+            // Log database error for monitoring
+            eprintln!("Database error in get_all_charms_paginated_by_network: {:?}", err);
+            
+            // Return empty response on database error
+            return Ok(PaginatedResponse {
+                data: CharmsResponse { charms: vec![] },
+                pagination: PaginationMeta {
+                    total: 0,
+                    page: pagination.page,
+                    limit: pagination.limit,
+                    total_pages: 0,
+                },
+            });
+        }
+    };
+    
+    let mut charm_data = Vec::new();
+    
+    for charm in charms {
+        if is_empty_spell_charm(&charm.data) {
+            continue;
+        }
+        
+        let charm_data_item = CharmData {
+            txid: charm.txid,
+            charmid: charm.charmid,
+            block_height: charm.block_height,
+            data: charm.data,
+            date_created: charm.date_created.to_string(),
+            asset_type: charm.asset_type,
+            likes_count: 0,
+            user_liked: false,
+        };
+        
+        charm_data.push(charm_data_item);
+    }
+    
+    let total_pages = if pagination.limit > 0 {
+        (total as f64 / pagination.limit as f64).ceil() as u64
+    } else {
+        1
+    };
+    
+    Ok(PaginatedResponse {
+        data: CharmsResponse { charms: charm_data },
+        pagination: PaginationMeta {
+            total,
+            page: pagination.page,
+            limit: pagination.limit,
+            total_pages,
+        },
+    })
+}
+
 pub async fn get_all_charms_paginated(
     state: &AppState,
     pagination: &PaginationParams,

@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react';
 
-export default function FilterTabs({ counts, onTypeChange }) {
+export default function FilterTabs({ counts, onTypeChange, onNetworkChange }) {
     const [activeTab, setActiveTab] = useState('all');
+    const [activeNetworks, setActiveNetworks] = useState(['mainnet', 'testnet4']);
     const [mounted, setMounted] = useState(false);
 
     // Set mounted to true on client side
@@ -14,6 +15,30 @@ export default function FilterTabs({ counts, onTypeChange }) {
         setActiveTab(type);
         if (onTypeChange) {
             onTypeChange(type);
+        }
+    };
+
+    // Handle network toggle
+    const handleNetworkToggle = (network) => {
+        let newActiveNetworks;
+        if (activeNetworks.includes(network)) {
+            // Remove network if it's already active (but keep at least one)
+            if (activeNetworks.length > 1) {
+                newActiveNetworks = activeNetworks.filter(n => n !== network);
+            } else {
+                // If only one network is active, don't allow removing it
+                return;
+            }
+        } else {
+            // Add network if it's not active
+            newActiveNetworks = [...activeNetworks, network];
+        }
+        
+        setActiveNetworks(newActiveNetworks);
+        if (onNetworkChange) {
+            // Pass 'all' if both networks are selected, otherwise pass the specific network(s)
+            const networkParam = newActiveNetworks.length === 2 ? 'all' : newActiveNetworks[0];
+            onNetworkChange(networkParam);
         }
     };
 
@@ -61,9 +86,20 @@ export default function FilterTabs({ counts, onTypeChange }) {
         }
     ];
 
+    // Define network buttons
+    const networks = [
+        { id: 'mainnet', name: 'Mainnet', count: 48932 },
+        { id: 'testnet4', name: 'Testnet4', count: 331 }
+    ];
+
     // Helper function to check if a tab is active
     const isActive = (type) => {
         return type === activeTab;
+    };
+
+    // Helper function to check if a network is active
+    const isNetworkActive = (networkId) => {
+        return activeNetworks.includes(networkId);
     };
 
     // Don't render anything until mounted to avoid hydration mismatch
@@ -72,6 +108,7 @@ export default function FilterTabs({ counts, onTypeChange }) {
     return (
         <div className="bg-dark-900/90 backdrop-blur-3xl border-y border-dark-800 sticky top-16 z-[100]">
             <div className="container mx-auto px-4">
+                {/* Asset Type Tabs */}
                 <div className="flex overflow-x-auto py-3 space-x-2 scrollbar-hide">
                     {tabs.map((tab) => {
                         const active = isActive(tab.type);
@@ -99,6 +136,7 @@ export default function FilterTabs({ counts, onTypeChange }) {
                         );
                     })}
                 </div>
+
             </div>
         </div>
     );

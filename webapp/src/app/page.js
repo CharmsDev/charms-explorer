@@ -13,11 +13,12 @@ export default function HomePage() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [sortOrder, setSortOrder] = useState('newest');
-    const [activeType, setActiveType] = useState('all');
+    const [selectedNetwork, setSelectedNetwork] = useState('all');
+    const [error, setError] = useState(null);
 
     const ITEMS_PER_PAGE = 12; // Changed from 20 to 12 items per page
 
-    const loadData = async (type = activeType, page = currentPage, sort = sortOrder) => {
+    const loadData = async (network = selectedNetwork, page = currentPage, sort = sortOrder) => {
         try {
             setIsLoading(true);
 
@@ -27,14 +28,26 @@ export default function HomePage() {
                 setCounts(countsData);
             }
 
-            // Fetch assets with pagination and sorting
-            const response = await fetchAssets(type, page, ITEMS_PER_PAGE, sort);
+            // Determine network parameter for API call
+            const networkParam = network === 'all' ? null : network;
+
+            // Fetch assets with pagination, sorting, and network filtering
+            const response = await fetchAssets(page, ITEMS_PER_PAGE, sort, networkParam);
             console.log('API Response:', response);
-            setAssets(response.data);
+            console.log('Setting assets to:', response.assets);
+            setAssets(response.assets || []);
 
             // Force calculation of total pages based on total count
-            const totalItems = counts.total || response.pagination?.total || response.data?.length || 0;
+            const totalItems = response.total || counts.total || response.assets?.length || 0;
             console.log('Total items:', totalItems, 'Items per page:', ITEMS_PER_PAGE);
+
+            // Update counts with the real total from API
+            if (response.total && counts.total === 0) {
+                setCounts(prevCounts => ({
+                    ...prevCounts,
+                    total: response.total
+                }));
+            }
 
             // Make sure we have at least 2 pages if we have more than ITEMS_PER_PAGE items
             const calculatedTotalPages = Math.max(
@@ -53,22 +66,28 @@ export default function HomePage() {
 
     // Handle type change from FilterTabs
     const handleTypeChange = (type) => {
-        setActiveType(type);
-        setCurrentPage(1); // Reset to first page when changing type
+        setCurrentPage(1); // Reset to first page when filter changes
         loadData(type, 1, sortOrder);
     };
 
     // Handle sort order change
-    const handleSortChange = (e) => {
-        const newSortOrder = e.target.value;
-        setSortOrder(newSortOrder);
-        loadData(activeType, currentPage, newSortOrder);
+    const handleSortChange = (event) => {
+        const newSort = event.target.value;
+        setSortOrder(newSort);
+        setCurrentPage(1); // Reset to first page when sorting changes
+        loadData(selectedNetwork, 1, newSort);
+    };
+
+    const handleNetworkChange = (network) => {
+        setSelectedNetwork(network);
+        setCurrentPage(1); // Reset to first page when network changes
+        loadData(network, 1, sortOrder);
     };
 
     // Handle pagination
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
-        loadData(activeType, newPage, sortOrder);
+        loadData(selectedNetwork, newPage, sortOrder);
     };
 
     // Render page numbers for pagination
@@ -140,6 +159,14 @@ export default function HomePage() {
 
     useEffect(() => {
         loadData();
+        
+        // Expose handleNetworkChange to window for NetworkContext
+        window.handleNetworkChange = handleNetworkChange;
+        
+        // Cleanup on unmount
+        return () => {
+            delete window.handleNetworkChange;
+        };
     }, []);
 
     return (
@@ -153,7 +180,7 @@ export default function HomePage() {
                 </div>
             </div>
 
-            <FilterTabs counts={counts} onTypeChange={handleTypeChange} />
+            <FilterTabs counts={counts} onTypeChange={handleTypeChange} onNetworkChange={handleNetworkChange} />
 
             <div className="container mx-auto px-4 py-6">
                 <div className="flex justify-between items-center mb-6">
