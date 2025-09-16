@@ -24,6 +24,8 @@ export default function AssetGrid({ assets, isLoading }) {
         );
     }
 
+    console.log('AssetGrid received assets:', assets, 'Length:', assets?.length);
+    
     if (!assets || assets.length === 0) {
         return (
             <div className="container mx-auto px-4 py-16 text-center">

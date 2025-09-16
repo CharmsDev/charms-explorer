@@ -1,12 +1,21 @@
 // API request/response models
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
-/// Common pagination parameters
+/// Custom deserializer to convert string to u64
+fn deserialize_string_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = String::deserialize(deserializer)?;
+    s.parse::<u64>().map_err(serde::de::Error::custom)
+}
+
+/// Common pagination parameters for API endpoints
 #[derive(Debug, Deserialize, Default)]
 pub struct PaginationParams {
-    #[serde(default = "default_page")]
+    #[serde(default = "default_page", deserialize_with = "deserialize_string_to_u64")]
     pub page: u64,
-    #[serde(default = "default_limit")]
+    #[serde(default = "default_limit", deserialize_with = "deserialize_string_to_u64")]
     pub limit: u64,
     #[serde(default = "default_sort_order")]
     pub sort: String,
@@ -82,6 +91,7 @@ pub struct GetCharmsQuery {
     pub pagination: PaginationParams,
     #[serde(default = "default_user_id")]
     pub user_id: i32,
+    pub network: Option<String>,
 }
 
 fn default_user_id() -> i32 {

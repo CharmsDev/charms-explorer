@@ -262,7 +262,7 @@ impl<'a> BlockProcessor<'a> {
 
         match self
             .charm_service
-            .detect_and_process_charm(txid, height, Some(block_hash))
+            .detect_and_process_charm_with_context(txid, height, Some(block_hash), tx_pos)
             .await
         {
             Ok(Some(charm)) => {

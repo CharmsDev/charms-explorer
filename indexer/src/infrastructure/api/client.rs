@@ -30,6 +30,9 @@ impl ApiClient {
     pub async fn get_spell_data(&self, txid: &str) -> Result<Value, ApiClientError> {
         let url = format!("{}/spells/{}", self.api_url, txid);
 
+        // Note: Detailed logging is now handled in CharmService with full context
+        // This keeps the API client focused on HTTP operations
+
         // Make the request
         let response = self.client.get(&url).send().await?;
         let status = response.status();
@@ -41,9 +44,17 @@ impl ApiClient {
         } else if status.as_u16() == 400 {
             // Bad request - likely not a valid charm transaction
             return Ok(serde_json::json!({}));
+        } else if status.as_u16() == 502 || status.as_u16() == 503 || status.as_u16() == 504 {
+            // Server errors - API is down, return empty but don't spam errors
+            crate::utils::logging::log_warning(&format!(
+                "⚠️  API Server Error {}: API temporarily unavailable for tx: {}", status, txid
+            ));
+            return Ok(serde_json::json!({}));
         } else if !status.is_success() {
             // Only log errors, not successful requests
-            eprintln!("API returned error status {} for tx: {}", status, txid);
+            crate::utils::logging::log_error(&format!(
+                "API returned error status {} for tx: {}", status, txid
+            ));
             return Err(ApiClientError::ApiError(format!(
                 "API returned error status: {}",
                 status
@@ -53,10 +64,7 @@ impl ApiClient {
         // Parse the response as JSON
         match response.json::<Value>().await {
             Ok(json) => {
-                // Only log if we actually found charm data
-                if !json.is_null() && !(json.is_object() && json.as_object().unwrap().is_empty()) {
-                    println!("✅ Found charm data for tx: {}", txid);
-                }
+                // Response logging is now handled in CharmService with full context
                 Ok(json)
             }
             Err(e) => {
@@ -64,7 +72,9 @@ impl ApiClient {
                 if e.to_string().contains("EOF while parsing") {
                     Ok(serde_json::json!({}))
                 } else {
-                    eprintln!("Error decoding response for tx {}: {}", txid, e);
+                    crate::utils::logging::log_error(&format!(
+                        "Error decoding response for tx {}: {}", txid, e
+                    ));
                     Err(ApiClientError::ResponseError(format!(
                         "Error decoding response: {}",
                         e

@@ -41,11 +41,11 @@ COPY --from=builder /usr/src/app/target/release/charms-explorer-api /app/charms-
 
 # Set environment variables
 ENV HOST=0.0.0.0
-ENV PORT=3000
+ENV PORT=8000
 ENV RUST_LOG=info
 
 # Expose the port
-EXPOSE 3000
+EXPOSE 8000
 
 # Run the application
 CMD ["./charms-explorer-api"]

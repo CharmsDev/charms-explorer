@@ -296,8 +296,9 @@ impl BlockchainProcessor for BitcoinProcessor {
             }
 
             logging::log_info(&format!(
-                "[{}] � Sleeping for {} ms before next iteration...",
+                "[{}] 🔒 PROCESSING LOCK: Current height: {}, Sleeping for {} ms before next iteration...",
                 self.network_id().name,
+                self.current_height,
                 self.config.indexer.process_interval_ms
             ));
 

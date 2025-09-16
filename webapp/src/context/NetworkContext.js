@@ -14,7 +14,7 @@ export function NetworkProvider({ children }) {
     });
 
     const [selectedNetworks, setSelectedNetworks] = useState({
-        bitcoinMainnet: false,
+        bitcoinMainnet: true,
         bitcoinTestnet4: true,
         cardanoMainnet: false,
         cardanoPreprod: false
@@ -26,6 +26,34 @@ export function NetworkProvider({ children }) {
             ...prev,
             [network]: !prev[network]
         }));
+        
+        // Trigger API call when Bitcoin networks change
+        if (network === 'bitcoinMainnet' || network === 'bitcoinTestnet4') {
+            const newNetworks = {
+                ...selectedNetworks,
+                [network]: !selectedNetworks[network]
+            };
+            
+            // Determine which networks are active for Bitcoin
+            const bitcoinMainnetActive = newNetworks.bitcoinMainnet;
+            const bitcoinTestnet4Active = newNetworks.bitcoinTestnet4;
+            
+            // Call the network change handler if it exists
+            if (typeof window !== 'undefined' && window.handleNetworkChange) {
+                let networkParam = null;
+                if (bitcoinMainnetActive && bitcoinTestnet4Active) {
+                    networkParam = 'all';
+                } else if (bitcoinMainnetActive) {
+                    networkParam = 'mainnet';
+                } else if (bitcoinTestnet4Active) {
+                    networkParam = 'testnet4';
+                } else {
+                    // If no networks selected, default to all
+                    networkParam = 'all';
+                }
+                window.handleNetworkChange(networkParam);
+            }
+        }
     };
 
     // Get active networks
