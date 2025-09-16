@@ -37,40 +37,14 @@ impl<'a> BatchProcessor<'a> {
             return Ok(());
         }
 
-        logging::log_info(&format!(
-            "[{}] Saving batch of {} transactions for block {}",
-            network_id.name,
+        self.execute_batch_save(
+            "transaction",
             batch.len(),
-            height
-        ));
-
-        let mut retry_count = 0;
-        let max_retries = 3;
-
-        loop {
-            match self.transaction_repository.save_batch(batch.clone()).await {
-                Ok(_) => {
-                    logging::log_info(&format!(
-                        "[{}] Successfully saved transaction batch for block {}",
-                        network_id.name, height
-                    ));
-                    return Ok(());
-                }
-                Err(e) => {
-                    retry_count += 1;
-                    logging::log_error(&format!(
-                        "[{}] Error saving transaction batch for block {} (attempt {}/{}): {}",
-                        network_id.name, height, retry_count, max_retries, e
-                    ));
-
-                    if retry_count >= max_retries {
-                        return Err(BlockProcessorError::DbError(e));
-                    }
-
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                }
-            }
-        }
+            height,
+            network_id,
+            || async { self.transaction_repository.save_batch(batch.clone()).await },
+            |e| BlockProcessorError::DbError(e),
+        ).await
     }
 
     /// Save charm batch with retry logic
@@ -84,43 +58,86 @@ impl<'a> BatchProcessor<'a> {
             return Ok(());
         }
 
-        logging::log_info(&format!(
-            "[{}] Saving batch of {} charms for block {}",
-            network_id.name,
+        self.execute_batch_save(
+            "charm",
             batch.len(),
-            height
+            height,
+            network_id,
+            || async { self.charm_service.save_batch(batch.clone()).await },
+            |e| BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e)),
+        ).await
+    }
+
+    /// Save asset batch with retry logic
+    pub async fn save_asset_batch(
+        &self,
+        batch: Vec<AssetBatchItem>,
+        height: u64,
+        network_id: &NetworkId,
+    ) -> Result<(), BlockProcessorError> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+
+        self.execute_batch_save(
+            "asset",
+            batch.len(),
+            height,
+            network_id,
+            || async { self.charm_service.save_asset_batch(batch.clone()).await },
+            |e| BlockProcessorError::ProcessingError(format!("Failed to save asset batch: {}", e)),
+        ).await
+    }
+
+    /// Generic batch save execution with retry logic to eliminate code duplication
+    async fn execute_batch_save<F, Fut, E, ErrMapper>(
+        &self,
+        batch_type: &str,
+        batch_size: usize,
+        height: u64,
+        network_id: &NetworkId,
+        operation: F,
+        error_mapper: ErrMapper,
+    ) -> Result<(), BlockProcessorError>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = Result<(), E>>,
+        ErrMapper: Fn(E) -> BlockProcessorError,
+        E: std::fmt::Debug,
+    {
+        const MAX_RETRIES: u32 = 3;
+        const RETRY_DELAY_MS: u64 = 500;
+
+        logging::log_info(&format!(
+            "[{}] Saving batch of {} {}s for block {}",
+            network_id.name, batch_size, batch_type, height
         ));
 
-        let mut retry_count = 0;
-        let max_retries = 3;
-
-        loop {
-            match self.charm_service.save_batch(batch.clone()).await {
+        for attempt in 1..=MAX_RETRIES {
+            match operation().await {
                 Ok(_) => {
                     logging::log_info(&format!(
-                        "[{}] Successfully saved charm batch for block {}",
-                        network_id.name, height
+                        "[{}] Successfully saved {} batch for block {}",
+                        network_id.name, batch_type, height
                     ));
                     return Ok(());
                 }
                 Err(e) => {
-                    retry_count += 1;
                     logging::log_error(&format!(
-                        "[{}] Error saving charm batch for block {} (attempt {}/{}): {}",
-                        network_id.name, height, retry_count, max_retries, e
+                        "[{}] Error saving {} batch for block {} (attempt {}/{}): {:?}",
+                        network_id.name, batch_type, height, attempt, MAX_RETRIES, e
                     ));
 
-                    if retry_count >= max_retries {
-                        return Err(BlockProcessorError::ProcessingError(format!(
-                            "Failed to save charm batch: {}",
-                            e
-                        )));
+                    if attempt >= MAX_RETRIES {
+                        return Err(error_mapper(e));
                     }
 
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(RETRY_DELAY_MS)).await;
                 }
             }
         }
+
+        unreachable!("Loop should have returned or errored")
     }
 }
 
@@ -144,6 +161,15 @@ pub type CharmBatchItem = (
     u64,    // height
     Value,  // data
     String, // asset_type
+    String, // blockchain
+    String, // network
+);
+
+/// Asset batch item for bulk operations
+pub type AssetBatchItem = (
+    String, // app_id
+    String, // asset_type
+    u64,    // supply
     String, // blockchain
     String, // network
 );

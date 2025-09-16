@@ -62,4 +62,43 @@ impl CharmDetectorService {
     pub fn process_spell_data(spell_data: Value) -> Value {
         spell_data
     }
+
+    /// Extracts app_id from charm API response
+    /// Returns the first app_id found in the charm data, or None if not found
+    pub fn extract_app_id_from_spell_data(spell_data: &Value) -> Option<String> {
+        // Look for app_id in the API response structure
+        if let Some(outs) = spell_data.get("outs").and_then(|v| v.as_array()) {
+            for out in outs {
+                if let Some(charms) = out.get("charms").and_then(|v| v.as_object()) {
+                    // Look for app_id in charm data - it could be in various formats
+                    // Common patterns: "n/...", "t/...", etc.
+                    for (key, value) in charms {
+                        if let Some(charm_data) = value.as_object() {
+                            // Check if this charm has an app_id field
+                            if let Some(app_id) = charm_data.get("app_id").and_then(|v| v.as_str()) {
+                                return Some(app_id.to_string());
+                            }
+                            // Check if the key itself is an app_id pattern
+                            if key.starts_with("n/") || key.starts_with("t/") || key.starts_with("r/") {
+                                return Some(key.clone());
+                            }
+                        }
+                        // If the value is a string and looks like an app_id
+                        if let Some(app_id_str) = value.as_str() {
+                            if app_id_str.starts_with("n/") || app_id_str.starts_with("t/") || app_id_str.starts_with("r/") {
+                                return Some(app_id_str.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Fallback: look for app_id at the root level
+        if let Some(app_id) = spell_data.get("app_id").and_then(|v| v.as_str()) {
+            return Some(app_id.to_string());
+        }
+        
+        None
+    }
 }

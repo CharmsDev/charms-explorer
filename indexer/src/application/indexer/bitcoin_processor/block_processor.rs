@@ -5,12 +5,12 @@ use serde_json::json;
 
 use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
-use crate::domain::services::CharmService;
+use crate::domain::services::{CharmService, CharmDetectorService};
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{BookmarkRepository, SummaryRepository, TransactionRepository};
 use crate::utils::logging;
 
-use super::batch_processor::{BatchProcessor, CharmBatchItem, TransactionBatchItem};
+use super::batch_processor::{AssetBatchItem, BatchProcessor, CharmBatchItem, TransactionBatchItem};
 use super::retry_handler::RetryHandler;
 
 /// Handles processing of individual blocks
@@ -79,7 +79,7 @@ impl<'a> BlockProcessor<'a> {
 
         self.save_bookmark(&block_hash, height, latest_height, network_id).await?;
 
-        let (transaction_batch, charm_batch) = self
+        let (transaction_batch, charm_batch, asset_batch) = self
             .process_transactions(&block, &block_hash, height, latest_height, network_id)
             .await?;
 
@@ -91,6 +91,10 @@ impl<'a> BlockProcessor<'a> {
 
         batch_processor
             .save_charm_batch(charm_batch.clone(), height, network_id)
+            .await?;
+
+        batch_processor
+            .save_asset_batch(asset_batch.clone(), height, network_id)
             .await?;
 
         // Update summary table with current statistics
@@ -176,9 +180,10 @@ impl<'a> BlockProcessor<'a> {
         height: u64,
         latest_height: u64,
         network_id: &NetworkId,
-    ) -> Result<(Vec<TransactionBatchItem>, Vec<CharmBatchItem>), BlockProcessorError> {
+    ) -> Result<(Vec<TransactionBatchItem>, Vec<CharmBatchItem>, Vec<AssetBatchItem>), BlockProcessorError> {
         let mut transaction_batch = Vec::new();
         let mut charm_batch = Vec::new();
+        let mut asset_batch = Vec::new();
 
         let blockchain = "Bitcoin".to_string();
         let network = network_id.name.clone();
@@ -205,7 +210,7 @@ impl<'a> BlockProcessor<'a> {
                 ));
             }
 
-            if let Some((transaction_item, charm_item)) = self
+            if let Some((transaction_item, charm_item, asset_item)) = self
                 .process_single_transaction(
                     &txid_str,
                     block_hash,
@@ -220,18 +225,22 @@ impl<'a> BlockProcessor<'a> {
             {
                 transaction_batch.push(transaction_item);
                 charm_batch.push(charm_item);
+                if let Some(asset) = asset_item {
+                    asset_batch.push(asset);
+                }
             }
         }
 
         logging::log_info(&format!(
-            "[{}] 🎯 Found {} charms in block {} ({} total transactions)",
+            "[{}] 🎯 Found {} charms and {} assets in block {} ({} total transactions)",
             network_id.name,
             charm_batch.len(),
+            asset_batch.len(),
             height,
             block.txdata.len()
         ));
 
-        Ok((transaction_batch, charm_batch))
+        Ok((transaction_batch, charm_batch, asset_batch))
     }
 
     /// Process a single transaction
@@ -245,7 +254,7 @@ impl<'a> BlockProcessor<'a> {
         blockchain: &str,
         network: &str,
         network_id: &NetworkId,
-    ) -> Result<Option<(TransactionBatchItem, CharmBatchItem)>, BlockProcessorError> {
+    ) -> Result<Option<(TransactionBatchItem, CharmBatchItem, Option<AssetBatchItem>)>, BlockProcessorError> {
         let raw_tx_hex = match self
             .bitcoin_client
             .get_raw_transaction_hex(txid, Some(block_hash))
@@ -295,13 +304,26 @@ impl<'a> BlockProcessor<'a> {
                     txid.to_string(),
                     charm.charmid,
                     height,
-                    charm.data,
-                    charm.asset_type,
+                    charm.data.clone(),
+                    charm.asset_type.clone(),
                     blockchain.to_string(),
                     network.to_string(),
                 );
 
-                Ok(Some((transaction_item, charm_item)))
+                // Extract app_id from charm data and create asset item
+                let asset_item = if let Some(app_id) = CharmDetectorService::extract_app_id_from_spell_data(&charm.data) {
+                    Some((
+                        app_id,
+                        charm.asset_type.clone(),
+                        1, // supply - using 1 as default for new charms
+                        blockchain.to_string(),
+                        network.to_string(),
+                    ))
+                } else {
+                    None
+                };
+
+                Ok(Some((transaction_item, charm_item, asset_item)))
             }
             Ok(None) => Ok(None),
             Err(e) => {
