@@ -9,6 +9,7 @@ use crate::error::ExplorerResult;
 use crate::handlers::AppState;
 use crate::models::{
     CharmCountResponse, CharmData, CharmsResponse, GetCharmNumbersQuery, GetCharmsByTypeQuery,
+    GetCharmsQuery, LikeCharmRequest, LikeResponse, PaginatedResponse,
 };
 use crate::services::charm_service;
 
@@ -22,18 +23,26 @@ pub async fn get_charm_numbers(
     Ok(Json(response))
 }
 
-/// Handler for GET /charms - Returns all charms
-pub async fn get_charms(State(state): State<AppState>) -> ExplorerResult<Json<CharmsResponse>> {
-    let response = charm_service::get_all_charms(&state).await?;
+/// Handler for GET /charms - Returns all charms with pagination, optionally filtered by network
+pub async fn get_charms(
+    State(state): State<AppState>,
+    Query(params): Query<GetCharmsQuery>,
+) -> ExplorerResult<Json<PaginatedResponse<CharmsResponse>>> {
+    let response = if let Some(network) = &params.network {
+        charm_service::get_all_charms_paginated_by_network(&state, &params.pagination, params.user_id, Some(network)).await?
+    } else {
+        charm_service::get_all_charms_paginated(&state, &params.pagination, params.user_id).await?
+    };
     Ok(Json(response))
 }
 
-/// Handler for GET /charms/by-type - Returns charms filtered by asset type
+/// Handler for GET /charms/by-type - Returns charms filtered by asset type with pagination
 pub async fn get_charms_by_type(
     State(state): State<AppState>,
     Query(params): Query<GetCharmsByTypeQuery>,
-) -> ExplorerResult<Json<CharmsResponse>> {
-    let response = charm_service::get_charms_by_type(&state, &params.asset_type).await?;
+) -> ExplorerResult<Json<PaginatedResponse<CharmsResponse>>> {
+    // Use default user_id of 1 as specified in requirements
+    let response = charm_service::get_charms_by_type_paginated(&state, &params.asset_type, &params.pagination, 1).await?;
     Ok(Json(response))
 }
 
@@ -42,7 +51,8 @@ pub async fn get_charm_by_txid(
     State(state): State<AppState>,
     Path(txid): Path<String>,
 ) -> ExplorerResult<Json<CharmData>> {
-    let charm_data = charm_service::get_charm_by_txid(&state, &txid).await?;
+    // Use default user_id of 1 as specified in requirements
+    let charm_data = charm_service::get_charm_by_txid(&state, &txid, 1).await?;
     Ok(Json(charm_data))
 }
 
@@ -51,6 +61,25 @@ pub async fn get_charm_by_charmid(
     State(state): State<AppState>,
     Path(charmid): Path<String>,
 ) -> ExplorerResult<Json<CharmData>> {
-    let charm_data = charm_service::get_charm_by_charmid(&state, &charmid).await?;
+    // Use default user_id of 1 as specified in requirements
+    let charm_data = charm_service::get_charm_by_charmid(&state, &charmid, 1).await?;
     Ok(Json(charm_data))
+}
+
+/// Handler for POST /charms/like - Adds a like to a charm
+pub async fn like_charm(
+    State(state): State<AppState>,
+    Json(request): Json<LikeCharmRequest>,
+) -> ExplorerResult<Json<LikeResponse>> {
+    let response = charm_service::add_like(&state, &request).await?;
+    Ok(Json(response))
+}
+
+/// Handler for DELETE /charms/like - Removes a like from a charm
+pub async fn unlike_charm(
+    State(state): State<AppState>,
+    Json(request): Json<LikeCharmRequest>,
+) -> ExplorerResult<Json<LikeResponse>> {
+    let response = charm_service::remove_like(&state, &request).await?;
+    Ok(Json(response))
 }

@@ -14,6 +14,7 @@ use crate::db::Repositories;
 // Handler function re-exports
 pub use charms::{
     get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_type,
+    like_charm, unlike_charm,
 };
 pub use diagnostic::diagnose_database;
 pub use health::health_check;

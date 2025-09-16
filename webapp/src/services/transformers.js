@@ -30,14 +30,26 @@ export const detectCharmType = (charm) => {
 
 // Transforms a charm object from the API to the format expected by the UI
 export const transformCharmData = (charm) => {
-    if (!charm) return null;
+    if (!charm) {
+        console.log('transformCharmData: charm is null/undefined');
+        return null;
+    }
 
+    console.log('Transforming charm:', charm.charmid, 'data:', charm.data);
+    
     const detectedType = detectCharmType(charm);
+    console.log('Detected type for charm', charm.charmid, ':', detectedType);
 
     // Extract data from the new metadata structure
     // First check for data in the standard metadata structure (outs[0].charms.$0000)
     const charmData = getNestedProperty(charm, 'data.data.outs[0].charms.$0000') || {};
 
+    // Check if this charm has actual data or just a "No charm data from API" note
+    const hasApiData = getNestedProperty(charm, 'data.has_api_data');
+    const noteOnly = getNestedProperty(charm, 'data.data.note') === "No charm data from API";
+    
+    console.log('Charm has API data:', hasApiData, 'Note only:', noteOnly);
+    
     // If not found in the new structure, fall back to the old structure
     const name = charmData.name ||
         getNestedProperty(charm, 'data.data.name') ||
@@ -45,7 +57,7 @@ export const transformCharmData = (charm) => {
 
     const description = charmData.description ||
         getNestedProperty(charm, 'data.data.description') ||
-        'No description available';
+        (noteOnly ? 'Charm detected but no metadata available' : 'No description available');
 
     const image = charmData.image ||
         getNestedProperty(charm, 'data.data.image') ||
@@ -75,10 +87,13 @@ export const transformCharmData = (charm) => {
     // Extract version
     const version = getNestedProperty(charm, 'data.data.version') || '';
 
-    const likes = Math.floor(Math.random() * 100);
-    const comments = Math.floor(Math.random() * 20);
+    // Use real likes count from API if available, otherwise default to 0
+    const likes = charm.likes_count || 0;
+    const userLiked = charm.user_liked || false;
+    // Comments are not yet implemented, so we'll show 0
+    const comments = 0;
 
-    return {
+    const result = {
         id: charm.charmid,
         type: detectedType,
         name,
@@ -89,6 +104,7 @@ export const transformCharmData = (charm) => {
         address: '',
         createdAt: charm.date_created,
         likes,
+        userLiked,
         comments,
         ticker,
         supply,
@@ -103,12 +119,21 @@ export const transformCharmData = (charm) => {
         // Store the raw charm data for debugging and future use
         rawCharmData: charmData
     };
+    
+    console.log('Transformed charm result:', result);
+    return result;
 };
 
 // Transforms an array of charms from the API
 export const transformCharmsArray = (charms) => {
-    if (!Array.isArray(charms)) return [];
-    return charms.map(transformCharmData).filter(Boolean);
+    if (!Array.isArray(charms)) {
+        console.log('transformCharmsArray: input is not an array:', charms);
+        return [];
+    }
+    console.log('transformCharmsArray: processing', charms.length, 'charms');
+    const transformed = charms.map(transformCharmData).filter(Boolean);
+    console.log('transformCharmsArray: returned', transformed.length, 'transformed charms');
+    return transformed;
 };
 
 // Counts charms by type using the detection logic
@@ -153,6 +178,7 @@ export const createDefaultCharm = (id) => {
         address: '',
         createdAt: new Date().toISOString(),
         likes: 0,
+        userLiked: false,
         comments: 0,
         ticker: '',
         supply: 0,

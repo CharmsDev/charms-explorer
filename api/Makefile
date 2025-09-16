@@ -1,6 +1,8 @@
 # Charms Explorer API Makefile
 
-.PHONY: build run dev clean test check install-watch
+PORT=8000
+
+.PHONY: build makeDev dev clean test check install-watch
 
 # Default target
 all: build
@@ -9,16 +11,16 @@ all: build
 build:
 	cargo build
 
-# Run the API
-run:
-	cargo run
+# Development server with port cleanup
+makeDev:
+	@echo "Killing any process using port $(PORT)..."
+	@lsof -ti:$(PORT) | xargs kill -9 2>/dev/null || true
+	@echo "Starting API server with hot reload on port $(PORT)..."
+	@echo "Loading environment variables from .env file..."
+	@export $$(cat .env | xargs) && cargo watch -x run
 
-# Run the API with hot reload
-dev:
-	@echo "Killing any process using port 5002..."
-	@lsof -ti:5002 | xargs kill -9 2>/dev/null || true
-	@echo "Starting API server with hot reload..."
-	cargo watch -x run
+# Alias for makeDev
+dev: makeDev
 
 # Install cargo-watch for hot reloading
 install-watch:

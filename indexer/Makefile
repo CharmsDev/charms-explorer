@@ -1,10 +1,18 @@
 # Charms Indexer Makefile
 
-# Run the indexer
-.PHONY: run
-run:
+PORT=8002
+
+# Development server with port cleanup
+.PHONY: makeDev
+makeDev:
+	@echo "Killing any process using port $(PORT)..."
+	@lsof -ti:$(PORT) | xargs kill -9 2>/dev/null || true
 	@echo "🚀 Running indexer..."
 	cargo run --bin charms-indexer
+
+# Alias for makeDev
+.PHONY: dev
+dev: makeDev
 
 # Build the indexer
 .PHONY: build
