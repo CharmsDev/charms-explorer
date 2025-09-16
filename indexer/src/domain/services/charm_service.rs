@@ -1,19 +1,20 @@
 use chrono::Utc;
-use serde_json::json;
+use serde_json::{self, json, Value};
 use std::fmt;
 
 use crate::domain::errors::CharmError;
-use crate::domain::models::Charm;
+use crate::domain::models::{Asset, Charm};
 use crate::domain::services::charm_detector::CharmDetectorService;
 use crate::infrastructure::api::client::ApiClient;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
-use crate::infrastructure::persistence::repositories::charm_repository::CharmRepository;
+use crate::infrastructure::persistence::repositories::{asset_repository::AssetRepository, charm_repository::CharmRepository};
 
 /// Handles charm detection, processing and storage
 pub struct CharmService {
     bitcoin_client: BitcoinClient,
     api_client: ApiClient,
     charm_repository: CharmRepository,
+    asset_repository: AssetRepository,
 }
 
 impl fmt::Debug for CharmService {
@@ -30,11 +31,13 @@ impl CharmService {
         bitcoin_client: BitcoinClient,
         api_client: ApiClient,
         charm_repository: CharmRepository,
+        asset_repository: AssetRepository,
     ) -> Self {
         Self {
             bitcoin_client,
             api_client,
             charm_repository,
+            asset_repository,
         }
     }
 
@@ -145,15 +148,72 @@ impl CharmService {
             network.clone(),
         );
 
-        // Save the charm to the repository
-        self.charm_repository.save_charm(&charm).await?;
+        // Extract app_id from API data and create asset if found
+        if has_api_data {
+            if let Some(app_id) = CharmDetectorService::extract_app_id_from_spell_data(&api_data) {
+                crate::utils::logging::log_info(&format!(
+                    "[{}] 🎯 Block {}: Extracted app_id '{}' for tx {} at position {}",
+                    network, block_height, app_id, txid, tx_pos
+                ));
 
-        crate::utils::logging::log_info(&format!(
-            "[{}] ✅ Block {}: Successfully saved charm {} at position {} (charm_id: {})",
-            network, block_height, txid, tx_pos, charm.charmid
-        ));
+                // Create asset for this app_id
+                let asset = Asset::new(
+                    app_id.clone(),
+                    txid.to_string(),
+                    0, // Default vout_index, could be extracted from transaction data
+                    format!("charm-{}", txid),
+                    block_height,
+                    Utc::now().naive_utc(),
+                    api_data.clone(),
+                    "spell".to_string(),
+                    blockchain.clone(),
+                    network.clone(),
+                );
 
-        Ok(Some(charm))
+                // Save the asset to the database
+                match self.asset_repository.save_asset(&asset).await {
+                    Ok(_) => {
+                        crate::utils::logging::log_info(&format!(
+                            "[{}] ✅ Block {}: Saved asset with app_id '{}' for tx {} at position {}",
+                            network, block_height, app_id, txid, tx_pos
+                        ));
+                    }
+                    Err(e) => {
+                        crate::utils::logging::log_error(&format!(
+                            "[{}] ❌ Block {}: Failed to save asset with app_id '{}' for tx {} at position {}: {}",
+                            network, block_height, app_id, txid, tx_pos, e
+                        ));
+                        // Continue processing even if asset save fails
+                    }
+                }
+            } else {
+                crate::utils::logging::log_info(&format!(
+                    "[{}] ⚪ Block {}: No app_id found in API data for tx {} at position {}",
+                    network, block_height, txid, tx_pos
+                ));
+            }
+        }
+
+        // Save the charm to the database
+        match self.charm_repository.save_charm(&charm).await {
+            Ok(_) => {
+                crate::utils::logging::log_info(&format!(
+                    "[{}] ✅ Block {}: Saved charm for tx {} at position {}",
+                    network, block_height, txid, tx_pos
+                ));
+                Ok(Some(charm))
+            }
+            Err(e) => {
+                crate::utils::logging::log_error(&format!(
+                    "[{}] ❌ Block {}: Failed to save charm for tx {} at position {}: {}",
+                    network, block_height, txid, tx_pos, e
+                ));
+                Err(CharmError::ProcessingError(format!(
+                    "Failed to save charm: {}",
+                    e
+                )))
+            }
+        }
     }
 
     /// Saves multiple charms in a single database operation
@@ -173,5 +233,46 @@ impl CharmService {
             .save_batch(charms)
             .await
             .map_err(|e| CharmError::ProcessingError(format!("Failed to save charm batch: {}", e)))
+    }
+
+    /// Save a batch of assets to the repository
+    /// 
+    /// Converts simplified asset batch items into the full tuple format expected by the repository
+    pub async fn save_asset_batch(
+        &self,
+        batch: Vec<(
+            String, // app_id
+            String, // asset_type
+            u64,    // supply
+            String, // blockchain
+            String, // network
+        )>,
+    ) -> Result<(), CharmError> {
+        if batch.is_empty() {
+            return Ok(());
+        }
+
+        // Transform simplified batch items into full repository format
+        let asset_tuples: Vec<(String, String, i32, String, u64, Value, String, String, String)> = batch
+            .into_iter()
+            .map(|(app_id, asset_type, supply, blockchain, network)| {
+                (
+                    app_id.clone(),                          // app_id
+                    String::new(),                           // txid - empty for asset records
+                    0,                                       // vout_index - not applicable for assets
+                    format!("charm-{}", app_id),             // charm_id derived from app_id
+                    0,                                       // block_height - will be updated during processing
+                    serde_json::json!({"supply": supply}),   // data with supply information
+                    asset_type,                              // asset_type
+                    blockchain,                              // blockchain
+                    network,                                 // network
+                )
+            })
+            .collect();
+
+        self.asset_repository
+            .save_batch(asset_tuples)
+            .await
+            .map_err(|e| CharmError::ProcessingError(format!("Failed to save asset batch: {}", e)))
     }
 }

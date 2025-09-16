@@ -11,6 +11,7 @@ impl MigrationName for Migration {
 #[async_trait::async_trait]
 impl MigrationTrait for Migration {
     async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // Create the likes table
         manager
             .create_table(
                 Table::create()
@@ -31,26 +32,49 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .default(Expr::current_timestamp()),
                     )
-                    .index(
-                        Index::create()
-                            .name("idx_likes_charm_id")
-                            .col(Likes::CharmId),
-                    )
-                    .index(
-                        Index::create()
-                            .name("idx_likes_user_id")
-                            .col(Likes::UserId),
-                    )
-                    .index(
-                        Index::create()
-                            .unique()
-                            .name("idx_likes_charm_user_unique")
-                            .col(Likes::CharmId)
-                            .col(Likes::UserId),
-                    )
                     .to_owned(),
             )
-            .await
+            .await?;
+
+        // Create index on charm_id
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_likes_charm_id")
+                    .table(Likes::Table)
+                    .col(Likes::CharmId)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        // Create index on user_id
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx_likes_user_id")
+                    .table(Likes::Table)
+                    .col(Likes::UserId)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        // Create unique index on charm_id + user_id
+        manager
+            .create_index(
+                Index::create()
+                    .unique()
+                    .name("idx_likes_charm_user_unique")
+                    .table(Likes::Table)
+                    .col(Likes::CharmId)
+                    .col(Likes::UserId)
+                    .if_not_exists()
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
     }
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {

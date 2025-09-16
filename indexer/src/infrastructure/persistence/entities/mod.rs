@@ -2,6 +2,7 @@
 
 pub mod prelude;
 
+pub mod assets;
 pub mod bookmark;
 pub mod charms;
 pub mod summary;
