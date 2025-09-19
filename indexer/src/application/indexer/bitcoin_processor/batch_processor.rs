@@ -93,7 +93,7 @@ impl<'a> BatchProcessor<'a> {
     async fn execute_batch_save<F, Fut, E, ErrMapper>(
         &self,
         batch_type: &str,
-        batch_size: usize,
+        _batch_size: usize,
         height: u64,
         network_id: &NetworkId,
         operation: F,
@@ -108,18 +108,10 @@ impl<'a> BatchProcessor<'a> {
         const MAX_RETRIES: u32 = 3;
         const RETRY_DELAY_MS: u64 = 500;
 
-        logging::log_info(&format!(
-            "[{}] Saving batch of {} {}s for block {}",
-            network_id.name, batch_size, batch_type, height
-        ));
 
         for attempt in 1..=MAX_RETRIES {
             match operation().await {
                 Ok(_) => {
-                    logging::log_info(&format!(
-                        "[{}] Successfully saved {} batch for block {}",
-                        network_id.name, batch_type, height
-                    ));
                     return Ok(());
                 }
                 Err(e) => {
