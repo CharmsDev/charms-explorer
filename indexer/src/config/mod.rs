@@ -43,6 +43,23 @@ impl NetworkId {
     }
 }
 
+/// Provider type for Bitcoin networks
+#[derive(Debug, Clone, PartialEq)]
+pub enum ProviderType {
+    QuickNode,
+    BitcoinNode,
+}
+
+impl ProviderType {
+    pub fn from_str(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "quicknode" => ProviderType::QuickNode,
+            "bitcoin_node" => ProviderType::BitcoinNode,
+            _ => ProviderType::BitcoinNode, // Default to Bitcoin node
+        }
+    }
+}
+
 /// Configuration for the Bitcoin client
 #[derive(Debug, Clone)]
 pub struct BitcoinConfig {
@@ -58,6 +75,10 @@ pub struct BitcoinConfig {
     pub network: String,
     /// Genesis block height
     pub genesis_block_height: u64,
+    /// Optional QuickNode endpoint for fallback
+    pub quicknode_endpoint: Option<String>,
+    /// Provider type to use for this network
+    pub provider_type: ProviderType,
 }
 
 /// Configuration for the Cardano client
@@ -131,6 +152,11 @@ impl AppConfig {
             .unwrap_or(true);
 
         if enable_bitcoin_testnet4 {
+            let provider_type = ProviderType::from_str(
+                &env::var("BITCOIN_TESTNET4_PROVIDER")
+                    .unwrap_or_else(|_| "bitcoin_node".to_string())
+            );
+            
             bitcoin_configs.insert(
                 "testnet4".to_string(),
                 BitcoinConfig {
@@ -147,6 +173,8 @@ impl AppConfig {
                         .expect("BITCOIN_TESTNET4_GENESIS_BLOCK_HEIGHT environment variable is required")
                         .parse::<u64>()
                         .expect("BITCOIN_TESTNET4_GENESIS_BLOCK_HEIGHT must be a valid u64"),
+                    quicknode_endpoint: None, // Testnet4 uses local node only
+                    provider_type,
                 },
             );
         }
@@ -158,6 +186,11 @@ impl AppConfig {
             .unwrap_or(false);
 
         if enable_bitcoin_mainnet {
+            let provider_type = ProviderType::from_str(
+                &env::var("BITCOIN_MAINNET_PROVIDER")
+                    .unwrap_or_else(|_| "bitcoin_node".to_string())
+            );
+            
             bitcoin_configs.insert(
                 "mainnet".to_string(),
                 BitcoinConfig {
@@ -171,11 +204,11 @@ impl AppConfig {
                         .expect("BITCOIN_MAINNET_RPC_PASSWORD environment variable is required"),
                     network: "mainnet".to_string(),
                     genesis_block_height: env::var("BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT")
-                        .expect(
-                            "BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT environment variable is required",
-                        )
+                        .expect("BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT environment variable is required")
                         .parse::<u64>()
                         .expect("BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT must be a valid u64"),
+                    quicknode_endpoint: env::var("BITCOIN_MAINNET_QUICKNODE_ENDPOINT").ok(),
+                    provider_type,
                 },
             );
         }
