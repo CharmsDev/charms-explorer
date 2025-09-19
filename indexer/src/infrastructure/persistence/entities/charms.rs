@@ -21,6 +21,8 @@ pub struct Model {
     pub blockchain: String,
     #[sea_orm(column_type = "Text")]
     pub network: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub address: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

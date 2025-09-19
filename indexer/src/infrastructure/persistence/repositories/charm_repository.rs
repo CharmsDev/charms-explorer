@@ -37,6 +37,7 @@ impl CharmRepository {
             asset_type: Set(charm.asset_type.clone()),
             blockchain: Set(charm.blockchain.clone()),
             network: Set(charm.network.clone()),
+            address: Set(charm.address.clone()),
         };
 
         // Try to insert the charm, handle duplicate key violations gracefully
@@ -175,6 +176,7 @@ impl CharmRepository {
                         asset_type: Set(asset_type),
                         blockchain: Set(blockchain),
                         network: Set(network),
+                        address: Set(None), // For batch operations, address is not available
                     }
                 },
             )
@@ -198,6 +200,43 @@ impl CharmRepository {
         }
     }
 
+    /// Get charms by Bitcoin address
+    pub async fn get_charms_by_address(&self, address: &str, network: Option<&str>) -> Result<Vec<Charm>, DbError> {
+        let mut query = charms::Entity::find()
+            .filter(charms::Column::Address.eq(address));
+        
+        // Filter by network if provided
+        if let Some(net) = network {
+            query = query.filter(charms::Column::Network.eq(net));
+        }
+        
+        let entities = query
+            .order_by_desc(charms::Column::BlockHeight)
+            .all(&self.conn)
+            .await
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        Ok(entities.into_iter().map(|e| self.to_domain_model(e)).collect())
+    }
+
+    /// Get charm count by Bitcoin address
+    pub async fn get_charm_count_by_address(&self, address: &str, network: Option<&str>) -> Result<u64, DbError> {
+        let mut query = charms::Entity::find()
+            .filter(charms::Column::Address.eq(address));
+        
+        // Filter by network if provided
+        if let Some(net) = network {
+            query = query.filter(charms::Column::Network.eq(net));
+        }
+        
+        let count = query
+            .count(&self.conn)
+            .await
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        Ok(count)
+    }
+
     /// Convert a database entity to a domain model
     fn to_domain_model(&self, entity: charms::Model) -> Charm {
         Charm::new(
@@ -209,6 +248,7 @@ impl CharmRepository {
             entity.asset_type,
             entity.blockchain,
             entity.network,
+            entity.address,
         )
     }
 }
