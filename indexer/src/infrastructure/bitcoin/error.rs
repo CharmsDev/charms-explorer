@@ -10,6 +10,10 @@ pub enum BitcoinClientError {
     ConnectionError(String),
     /// Configuration error
     ConfigError(String),
+    /// Network error
+    NetworkError(String),
+    /// Parse error
+    ParseError(String),
     /// Other error
     Other(String),
 }
@@ -20,6 +24,8 @@ impl Clone for BitcoinClientError {
             BitcoinClientError::RpcError(e) => BitcoinClientError::Other(e.to_string()),
             BitcoinClientError::ConnectionError(msg) => BitcoinClientError::ConnectionError(msg.clone()),
             BitcoinClientError::ConfigError(msg) => BitcoinClientError::ConfigError(msg.clone()),
+            BitcoinClientError::NetworkError(msg) => BitcoinClientError::NetworkError(msg.clone()),
+            BitcoinClientError::ParseError(msg) => BitcoinClientError::ParseError(msg.clone()),
             BitcoinClientError::Other(msg) => BitcoinClientError::Other(msg.clone()),
         }
     }
@@ -31,6 +37,8 @@ impl fmt::Display for BitcoinClientError {
             BitcoinClientError::RpcError(e) => write!(f, "Bitcoin RPC error: {}", e),
             BitcoinClientError::ConnectionError(msg) => write!(f, "Connection error: {}", msg),
             BitcoinClientError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
+            BitcoinClientError::NetworkError(msg) => write!(f, "Network error: {}", msg),
+            BitcoinClientError::ParseError(msg) => write!(f, "Parse error: {}", msg),
             BitcoinClientError::Other(msg) => write!(f, "Error: {}", msg),
         }
     }

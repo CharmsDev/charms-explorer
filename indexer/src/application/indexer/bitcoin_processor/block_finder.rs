@@ -25,7 +25,7 @@ impl<'a> BlockFinder<'a> {
         ));
 
         // Get current chain height to set upper bound
-        let chain_height = match self.bitcoin_client.get_block_count() {
+        let chain_height = match self.bitcoin_client.get_block_count().await {
             Ok(height) => height,
             Err(_) => {
                 logging::log_error(&format!(
@@ -105,7 +105,7 @@ impl<'a> BlockFinder<'a> {
 
     /// Check if a block is available at the given height
     async fn is_block_available(&self, height: u64) -> bool {
-        match self.bitcoin_client.get_block_hash(height) {
+        match self.bitcoin_client.get_block_hash(height).await {
             Ok(block_hash) => self.is_block_data_available(&block_hash).await,
             Err(e) => {
                 if self.is_pruned_error(&e) {
@@ -129,7 +129,7 @@ impl<'a> BlockFinder<'a> {
 
     /// Check if block data is available for the given hash
     async fn is_block_data_available(&self, block_hash: &bitcoin::BlockHash) -> bool {
-        match self.bitcoin_client.get_block(block_hash) {
+        match self.bitcoin_client.get_block(block_hash).await {
             Ok(_) => true,
             Err(e) => {
                 if self.is_pruned_error(&e) {

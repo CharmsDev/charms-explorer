@@ -4,7 +4,6 @@ use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::SummaryRepository;
-use crate::utils::logging;
 
 use super::batch_processor::{CharmBatchItem, TransactionBatchItem};
 use super::retry_handler::RetryHandler;
@@ -40,7 +39,7 @@ impl<'a> SummaryUpdater<'a> {
     ) -> Result<(), BlockProcessorError> {
         // Get bitcoin node information
         let (bitcoin_node_status, bitcoin_node_block_count, bitcoin_node_best_block_hash) = 
-            match self.bitcoin_client.get_best_block_hash() {
+            match self.bitcoin_client.get_best_block_hash().await {
                 Ok(best_hash) => {
                     ("connected".to_string(), latest_height as i64, best_hash.to_string())
                 }
@@ -104,10 +103,6 @@ impl<'a> SummaryUpdater<'a> {
             .await
             .map_err(BlockProcessorError::DbError)?;
 
-        logging::log_info(&format!(
-            "[{}] 📊 Updated summary: block={}, charms={}, txs={}, confirmed={}",
-            network_id.name, height, totals.total_charms, totals.total_transactions, totals.total_confirmed_transactions
-        ));
 
         Ok(())
     }
