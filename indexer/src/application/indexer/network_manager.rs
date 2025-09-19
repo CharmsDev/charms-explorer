@@ -3,15 +3,16 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::application::indexer::BitcoinProcessor;
+use crate::application::indexer::bitcoin_processor::BitcoinProcessor;
 use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
-use crate::domain::services::CharmService;
+use crate::domain::services::{CharmService, CharmQueueService};
 use crate::infrastructure::bitcoin::{BitcoinClient, SimpleBitcoinClient, ProviderFactory};
 use crate::infrastructure::persistence::repositories::{
     AssetRepository, BookmarkRepository, CharmRepository, SummaryRepository, TransactionRepository,
 };
+use crate::infrastructure::queue::{CharmQueue, DatabaseWriter};
 use crate::utils::logging;
 
 /// Manager for multiple blockchain network processors
@@ -19,6 +20,8 @@ pub struct NetworkManager {
     config: AppConfig,
     processors: HashMap<String, Arc<Mutex<Box<dyn BlockchainProcessor>>>>,
     tasks: HashMap<String, JoinHandle<Result<(), BlockProcessorError>>>,
+    database_writer_tasks: HashMap<String, JoinHandle<()>>,
+    global_charm_queue: Option<CharmQueue>,
 }
 
 impl NetworkManager {
@@ -28,6 +31,8 @@ impl NetworkManager {
             config,
             processors: HashMap::new(),
             tasks: HashMap::new(),
+            database_writer_tasks: HashMap::new(),
+            global_charm_queue: None,
         }
     }
 
@@ -42,7 +47,13 @@ impl NetworkManager {
         bookmark_repository: BookmarkRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
-        // Initialize Bitcoin processors
+        // First, initialize the global charm queue system
+        self.initialize_charm_queue_system(
+            charm_repository.clone(),
+            asset_repository.clone(),
+        ).await?;
+
+        // Then initialize Bitcoin processors
         if self.config.indexer.enable_bitcoin_testnet4 {
             self.initialize_bitcoin_processor(
                 "testnet4",
@@ -54,7 +65,6 @@ impl NetworkManager {
             )
             .await?;
         }
-
 
         if self.config.indexer.enable_bitcoin_mainnet {
             self.initialize_bitcoin_processor(
@@ -70,6 +80,52 @@ impl NetworkManager {
 
         // TODO: Initialize Cardano processors when implemented
 
+        Ok(())
+    }
+
+    /// Initialize the global charm queue system
+    /// 
+    /// Creates a single database writer that processes charms from all networks
+    async fn initialize_charm_queue_system(
+        &mut self,
+        charm_repository: CharmRepository,
+        asset_repository: AssetRepository,
+    ) -> Result<(), BlockProcessorError> {
+        // Create a global charm queue and database writer
+        let (charm_queue, receiver) = CharmQueue::new();
+        
+        // Store the global charm queue for use by processors
+        self.global_charm_queue = Some(charm_queue.clone());
+        
+        // Create a CharmService for the database writer (without queue to avoid recursion)
+        // TODO: Refactor CharmService to not require BitcoinClient for database operations
+        let dummy_config = self.config.get_bitcoin_config("mainnet").unwrap_or_else(|| {
+            panic!("Need at least one Bitcoin config for database writer")
+        });
+        let dummy_client = SimpleBitcoinClient::new(dummy_config).unwrap();
+        let writer_charm_service = Arc::new(CharmService::new(
+            BitcoinClient::from_simple_client(dummy_client),
+            charm_repository.clone(),
+            asset_repository.clone(),
+        ));
+        
+        let database_writer = DatabaseWriter::new(
+            writer_charm_service,
+            charm_queue.clone(),
+            receiver,
+            None, // Use default config
+        );
+        
+        // Start the global database writer background task
+        let writer_handle = tokio::spawn(async move {
+            if let Err(e) = database_writer.start().await {
+                crate::utils::logging::log_error(&format!("Global database writer error: {}", e));
+            }
+        });
+        
+        self.database_writer_tasks.insert("global_writer".to_string(), writer_handle);
+        
+        logging::log_info("✅ Global charm queue system initialized");
         Ok(())
     }
 
@@ -122,8 +178,29 @@ impl NetworkManager {
         // Wrap in legacy BitcoinClient interface for compatibility
         let bitcoin_client = BitcoinClient::from_simple_client(simple_client);
 
-        let charm_service =
-            CharmService::new(bitcoin_client.clone(), charm_repository, asset_repository);
+        // Use the global charm queue
+        let charm_queue = self.global_charm_queue.as_ref()
+            .expect("Global charm queue should be initialized before processors")
+            .clone();
+        
+        // Create queue service with the global queue
+        let queue_service = CharmQueueService::new_with_queue(
+            Arc::new(charm_repository.clone()),
+            charm_queue,
+        );
+        
+        // Create charm service with queue integration
+        let charm_service = CharmService::new_with_queue(
+            bitcoin_client.clone(),
+            charm_repository,
+            asset_repository,
+            queue_service,
+        );
+
+        logging::log_info(&format!(
+            "[{}] 🚀 Async charm queue system initialized and started",
+            network_id.name
+        ));
 
         let processor = BitcoinProcessor::new(
             bitcoin_client,
@@ -183,6 +260,12 @@ impl NetworkManager {
         for (_, handle) in self.tasks.drain() {
             handle.abort();
         }
-        logging::log_info("All processors stopped");
+        
+        // Stop database writer tasks
+        for (_, handle) in self.database_writer_tasks.drain() {
+            handle.abort();
+        }
+        
+        logging::log_info("All processors and database writers stopped");
     }
 }

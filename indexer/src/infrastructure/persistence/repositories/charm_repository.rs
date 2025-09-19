@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set,
+    QueryOrder, Set, ConnectionTrait, Statement, DbBackend,
 };
 
 use crate::domain::models::Charm;
@@ -17,6 +17,20 @@ impl CharmRepository {
     /// Create a new CharmRepository
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
+    }
+
+    /// Optimize the session for high-throughput writer by toggling synchronous_commit
+    pub async fn set_synchronous_commit(&self, on: bool) -> Result<(), DbError> {
+        let value = if on { "on" } else { "off" };
+        let stmt = Statement::from_string(
+            DbBackend::Postgres,
+            format!("SET synchronous_commit = {};", value),
+        );
+        self.conn
+            .execute(stmt)
+            .await
+            .map(|_| ())
+            .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
     /// Save a charm

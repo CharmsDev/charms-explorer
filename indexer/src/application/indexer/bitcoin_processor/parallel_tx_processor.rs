@@ -203,47 +203,22 @@ impl ParallelTransactionProcessor {
             }
         };
 
-        // Process for charms
-        let charm_data = match self.charm_service
-            .detect_and_process_charm_with_context(&txid, height, Some(&block_hash), tx_pos)
-            .await
-        {
-            Ok(Some(charm)) => {
-                let confirmations = latest_height - height + 1;
-                let is_confirmed = confirmations >= 6;
+        // Process for charms asynchronously (non-blocking)
+        if let Some(hex) = raw_hex.as_ref() {
+            let charm_service = self.charm_service.clone();
+            let txid_clone = txid.clone();
+            let hex_clone = hex.clone();
+            
+            // Spawn charm detection in background - don't await it
+            tokio::spawn(async move {
+                let _ = charm_service
+                    .detect_and_process_charm_with_raw_hex(&txid_clone, height, &hex_clone, tx_pos)
+                    .await;
+            });
+        }
 
-                let transaction_item = (
-                    txid.clone(),
-                    height,
-                    tx_pos as i64,
-                    serde_json::json!(raw_hex.clone()),
-                    serde_json::json!({}),
-                    confirmations as i32,
-                    is_confirmed,
-                    blockchain.clone(),
-                    network.clone(),
-                );
-
-                let charm_item = (
-                    txid.clone(),
-                    charm.charmid,
-                    height,
-                    charm.data,
-                    charm.asset_type,
-                    blockchain,
-                    network,
-                );
-
-                Some((transaction_item, charm_item, None))
-            }
-            Ok(None) => None,
-            Err(e) => {
-                return Ok(TransactionResult {
-                    charm_data: None,
-                    error: Some(format!("Charm processing error: {}", e)),
-                });
-            }
-        };
+        // Return immediately without waiting for charm detection
+        let charm_data = None;
 
         Ok(TransactionResult {
             charm_data,
