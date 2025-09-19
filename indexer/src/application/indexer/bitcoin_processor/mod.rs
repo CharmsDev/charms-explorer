@@ -1,12 +1,10 @@
 mod batch_processor;
-mod block_finder;
 mod block_processor;
 mod parallel_tx_processor;
 mod retry_handler;
 mod summary_updater;
 
 pub use batch_processor::BatchProcessor;
-pub use block_finder::BlockFinder;
 pub use block_processor::BlockProcessor;
 pub use parallel_tx_processor::{ParallelTransactionProcessor, ParallelConfig};
 pub use retry_handler::RetryHandler;
@@ -75,15 +73,13 @@ impl BitcoinProcessor {
                 logging::log_info(&format!("[{}] Resuming from block {}", self.network_id().name, self.current_height));
             }
             Ok(None) => {
-                logging::log_info(&format!("[{}] No previous bookmark found, finding first available block from {}", self.network_id().name, self.genesis_block_height));
-                let block_finder = BlockFinder::new(&self.bitcoin_client);
-                self.current_height = block_finder.find_first_available_block(self.genesis_block_height).await;
+                logging::log_info(&format!("[{}] No previous bookmark found, starting from genesis block {}", self.network_id().name, self.genesis_block_height));
+                self.current_height = self.genesis_block_height;
                 logging::log_info(&format!("[{}] Starting from block {}", self.network_id().name, self.current_height));
             }
             Err(e) => {
-                logging::log_error(&format!("[{}] Error getting bookmark: {}, finding first available block", self.network_id().name, e));
-                let block_finder = BlockFinder::new(&self.bitcoin_client);
-                self.current_height = block_finder.find_first_available_block(self.genesis_block_height).await;
+                logging::log_error(&format!("[{}] Error getting bookmark: {}, starting from genesis block", self.network_id().name, e));
+                self.current_height = self.genesis_block_height;
                 logging::log_info(&format!("[{}] Starting from block {}", self.network_id().name, self.current_height));
             }
         }
@@ -163,27 +159,17 @@ impl BitcoinProcessor {
                        error_msg.contains("block height out of range") ||
                        error_msg.contains("block not found") {
 
-                        logging::log_info(&format!("[{}] Block {} appears to be pruned/missing, finding next available block", self.network_id().name, self.current_height));
+                        logging::log_info(&format!("[{}] Block {} appears to be pruned/missing, skipping to next block", self.network_id().name, self.current_height));
                         
-                        let block_finder = BlockFinder::new(&self.bitcoin_client);
-                        let next_available = block_finder
-                            .find_first_available_block(self.current_height + 1)
-                            .await;
+                        let next_available = self.current_height + 1;
+                        logging::log_info(&format!("[{}] Skipping to block {}", self.network_id().name, next_available));
 
-                        let skipped_blocks = next_available - self.current_height;
-                        logging::log_info(&format!("[{}] Skipping {} blocks, jumping to block {}", self.network_id().name, skipped_blocks, next_available));
-
-                        // Update bookmark for all skipped blocks to show progress in API
-                        if skipped_blocks > 0 {
-                            for skip_height in self.current_height..next_available {
-                                // Create a placeholder hash for skipped blocks
-                                let placeholder_hash = format!("skipped-{}", skip_height);
-                                if let Err(_bookmark_err) = self.bookmark_repository
-                                    .save_bookmark(&placeholder_hash, skip_height, false, self.network_id())
-                                    .await {
-                                    // Silently continue on bookmark errors
-                                }
-                            }
+                        // Update bookmark for skipped block to show progress in API
+                        let placeholder_hash = format!("skipped-{}", self.current_height);
+                        if let Err(_bookmark_err) = self.bookmark_repository
+                            .save_bookmark(&placeholder_hash, self.current_height, false, self.network_id())
+                            .await {
+                            // Silently continue on bookmark errors
                         }
 
                         self.current_height = next_available;
