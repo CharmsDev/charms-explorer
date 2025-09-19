@@ -3,13 +3,15 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::application::indexer::BitcoinProcessor;
+use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
-use crate::infrastructure::bitcoin::{BitcoinClient, BitcoinClientError};
-use crate::infrastructure::persistence::repositories::{AssetRepository, BookmarkRepository, CharmRepository, SummaryRepository, TransactionRepository};
+use crate::infrastructure::bitcoin::{BitcoinClient, SimpleBitcoinClient, ProviderFactory};
+use crate::infrastructure::persistence::repositories::{
+    AssetRepository, BookmarkRepository, CharmRepository, SummaryRepository, TransactionRepository,
+};
 use crate::utils::logging;
 
 /// Manager for multiple blockchain network processors
@@ -30,7 +32,7 @@ impl NetworkManager {
     }
 
     /// Initialize processors for all configured networks
-    /// 
+    ///
     /// Creates and configures blockchain processors for each network defined in the configuration
     pub async fn initialize(
         &mut self,
@@ -52,6 +54,7 @@ impl NetworkManager {
             )
             .await?;
         }
+
 
         if self.config.indexer.enable_bitcoin_mainnet {
             self.initialize_bitcoin_processor(
@@ -94,36 +97,33 @@ impl NetworkManager {
             }
         };
 
-        let bitcoin_client = match BitcoinClient::new(bitcoin_config) {
+        // Create network ID
+        let network_id = NetworkId::new(NetworkType::Bitcoin, network);
+
+        // Create SimpleBitcoinClient using the new provider system
+        let simple_client = match SimpleBitcoinClient::new(bitcoin_config) {
             Ok(client) => client,
             Err(e) => {
-                let error_details = match &e {
-                    BitcoinClientError::RpcError(rpc_err) => {
-                        format!("Bitcoin RPC error: {}", rpc_err)
-                    }
-                    BitcoinClientError::ConnectionError(conn_err) => {
-                        format!("Connection error: {}", conn_err)
-                    }
-                    _ => format!("{}", e),
-                };
-
                 logging::log_error(&format!(
                     "Failed to create Bitcoin client for network '{}': {}",
-                    network, error_details
+                    network, e
                 ));
                 return Err(BlockProcessorError::BitcoinClientError(e));
             }
         };
 
-        let api_client = match crate::infrastructure::api::ApiClient::new(&self.config) {
-            Ok(client) => client,
-            Err(e) => {
-                logging::log_error(&format!("Failed to create API client: {}", e));
-                return Err(BlockProcessorError::ApiClientError(e));
-            }
-        };
+        // Log which provider is being used
+        let provider_name = ProviderFactory::get_provider_name(bitcoin_config);
+        logging::log_info(&format!(
+            "[{}] 🔧 Using {} provider",
+            network_id.name, provider_name
+        ));
 
-        let charm_service = CharmService::new(bitcoin_client.clone(), api_client, charm_repository, asset_repository);
+        // Wrap in legacy BitcoinClient interface for compatibility
+        let bitcoin_client = BitcoinClient::from_simple_client(simple_client);
+
+        let charm_service =
+            CharmService::new(bitcoin_client.clone(), charm_repository, asset_repository);
 
         let processor = BitcoinProcessor::new(
             bitcoin_client,
