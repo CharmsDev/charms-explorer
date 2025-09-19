@@ -28,6 +28,9 @@ pub struct Charm {
 
     /// Network name (e.g., "mainnet", "testnet4")
     pub network: String,
+
+    /// Bitcoin address that holds the charm
+    pub address: Option<String>,
 }
 
 impl Charm {
@@ -41,6 +44,7 @@ impl Charm {
         asset_type: String,
         blockchain: String,
         network: String,
+        address: Option<String>,
     ) -> Self {
         Self {
             txid,
@@ -51,6 +55,7 @@ impl Charm {
             asset_type,
             blockchain,
             network,
+            address,
         }
     }
 }
