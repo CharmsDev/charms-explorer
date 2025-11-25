@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import FilterTabs from '../components/FilterTabs';
 import AssetGrid from '../components/AssetGrid';
-import { fetchAssets, getAssetCounts } from '../services/api';
+import { fetchAssets, fetchAssetsByType, getAssetCounts } from '../services/api';
 import { Button } from '../components/ui/Button';
 
 export default function HomePage() {
@@ -14,11 +14,12 @@ export default function HomePage() {
     const [totalPages, setTotalPages] = useState(1);
     const [sortOrder, setSortOrder] = useState('newest');
     const [selectedNetwork, setSelectedNetwork] = useState('all');
+    const [selectedType, setSelectedType] = useState('all');
     const [error, setError] = useState(null);
 
-    const ITEMS_PER_PAGE = 12; // Changed from 20 to 12 items per page
+    const ITEMS_PER_PAGE = 12;
 
-    const loadData = async (network = selectedNetwork, page = currentPage, sort = sortOrder) => {
+    const loadData = async (type = selectedType, network = selectedNetwork, page = currentPage, sort = sortOrder) => {
         try {
             setIsLoading(true);
 
@@ -31,15 +32,19 @@ export default function HomePage() {
             // Determine network parameter for API call
             const networkParam = network === 'all' ? null : network;
 
-            // Fetch assets with pagination, sorting, and network filtering
-            const response = await fetchAssets(page, ITEMS_PER_PAGE, sort, networkParam);
-            console.log('API Response:', response);
-            console.log('Setting assets to:', response.assets);
+            // Choose the appropriate API call based on type
+            let response;
+            if (type === 'all') {
+                // Use charms endpoint for "All" tab
+                response = await fetchAssets(page, ITEMS_PER_PAGE, sort, networkParam);
+            } else {
+                // Use assets endpoint for specific types (nft, token, dapp)
+                response = await fetchAssetsByType(type, page, ITEMS_PER_PAGE, sort, networkParam);
+            }
             setAssets(response.assets || []);
 
             // Force calculation of total pages based on total count
             const totalItems = response.total || counts.total || response.assets?.length || 0;
-            console.log('Total items:', totalItems, 'Items per page:', ITEMS_PER_PAGE);
 
             // Update counts with the real total from API
             if (response.total && counts.total === 0) {
@@ -54,7 +59,6 @@ export default function HomePage() {
                 Math.ceil(totalItems / ITEMS_PER_PAGE),
                 totalItems > ITEMS_PER_PAGE ? 2 : 1
             );
-            console.log('Total pages calculated:', calculatedTotalPages);
 
             setTotalPages(calculatedTotalPages);
         } catch (error) {
@@ -66,8 +70,9 @@ export default function HomePage() {
 
     // Handle type change from FilterTabs
     const handleTypeChange = (type) => {
-        setCurrentPage(1); // Reset to first page when filter changes
-        loadData(type, 1, sortOrder);
+        setSelectedType(type);
+        setCurrentPage(1); // Reset to first page when changing type
+        loadData(type, selectedNetwork, 1, sortOrder);
     };
 
     // Handle sort order change
@@ -75,25 +80,25 @@ export default function HomePage() {
         const newSort = event.target.value;
         setSortOrder(newSort);
         setCurrentPage(1); // Reset to first page when sorting changes
-        loadData(selectedNetwork, 1, newSort);
+        loadData(selectedType, selectedNetwork, 1, newSort);
     };
 
     const handleNetworkChange = (network) => {
         setSelectedNetwork(network);
         setCurrentPage(1); // Reset to first page when network changes
-        loadData(network, 1, sortOrder);
+        loadData(selectedType, network, 1, sortOrder);
     };
 
     // Handle pagination
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
-        loadData(selectedNetwork, newPage, sortOrder);
+        loadData(selectedType, selectedNetwork, newPage, sortOrder);
     };
 
     // Render page numbers for pagination
     const renderPageNumbers = () => {
         const pageNumbers = [];
-        const maxVisiblePages = 7; // Increased from 5 to 7 for better visibility
+        const maxVisiblePages = 7;
 
         let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
         let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
@@ -159,11 +164,9 @@ export default function HomePage() {
 
     useEffect(() => {
         loadData();
-        
-        // Expose handleNetworkChange to window for NetworkContext
+
         window.handleNetworkChange = handleNetworkChange;
-        
-        // Cleanup on unmount
+
         return () => {
             delete window.handleNetworkChange;
         };
@@ -173,9 +176,9 @@ export default function HomePage() {
         <div>
             <div className="bg-dark-900 pt-8 pb-6">
                 <div className="container mx-auto px-4 text-center">
-                    <h1 className="text-4xl font-bold mt-4 mb-3 gradient-text">Explore Bitcoin Charms</h1>
+                    <h1 className="text-4xl font-bold mt-4 mb-3 gradient-text">Explore Charms</h1>
                     <p className="text-xl max-w-2xl mx-auto mb-2 text-dark-200">
-                        Discover NFTs, Tokens, and dApps built with Charms technology on Bitcoin
+                        Discover NFTs, Tokens, and dApps built with Charms technology
                     </p>
                 </div>
             </div>
@@ -202,7 +205,6 @@ export default function HomePage() {
 
             <AssetGrid assets={assets} isLoading={isLoading} />
 
-            {/* Hardcoded Pagination Controls - Always visible */}
             {!isLoading && (
                 <div className="container mx-auto px-4 py-6">
                     <div className="flex flex-col items-center">
@@ -226,7 +228,6 @@ export default function HomePage() {
                                 Previous
                             </Button>
 
-                            {/* Static Page Numbers */}
                             <div className="flex items-center space-x-1 mx-2 bg-dark-800/50 px-2 py-1 rounded-lg">
                                 {[1, 2, 3, 4, 5, 6].map(pageNum => (
                                     <Button

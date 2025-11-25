@@ -2,6 +2,7 @@
 /api/target
 /api/Cargo.lock
 **/*.rs.bk
+
 # Rust compiler ICE (Internal Compiler Error) files
 **/rustc-ice-*.txt
 
@@ -25,6 +26,11 @@
 /wallet/.vercel
 /wallet/*.tsbuildinfo
 /wallet/next-env.d.ts
+
+# indexer
+/indexer/target
+/indexer/Cargo.lock
+/indexer/scripts/backup
 
 # Dependencies
 .yarn/*
@@ -81,14 +87,11 @@ indexer/pid.txt
 
 # Project-specific directories to ignore
 _rjj/
-/api/_rjj
-/indexer/_rjj
-/webapp/_rjj
 /api/deploy
 /indexer/deploy
 /database/target
-/database/_rjj
 /database/deploy
 /indexer/test
 database/.env.production
 /database/scripts
+database/tools/

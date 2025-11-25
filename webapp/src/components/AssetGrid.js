@@ -1,6 +1,6 @@
 'use client';
 
-import CharmCard from './CharmCard';
+import AssetCard from './AssetCard';
 
 export default function AssetGrid({ assets, isLoading }) {
     if (isLoading) {
@@ -8,14 +8,23 @@ export default function AssetGrid({ assets, isLoading }) {
             <div className="container mx-auto px-4 py-8">
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                     {[...Array(8)].map((_, index) => (
-                        <div key={index} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden shadow-sm h-full animate-pulse">
-                            <div className="w-full h-48 bg-gray-200 dark:bg-gray-700"></div>
-                            <div className="p-4">
-                                <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2"></div>
-                                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4"></div>
-                                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full mb-2"></div>
-                                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-full mb-2"></div>
-                                <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                        <div key={index} className="relative bg-dark-900 border border-gray-500/30 rounded-xl p-4 animate-pulse">
+                            {/* Type badge skeleton */}
+                            <div className="absolute top-3 right-3 w-16 h-6 bg-gray-700 rounded-full"></div>
+
+                            {/* Image skeleton */}
+                            <div className="aspect-square rounded-lg bg-dark-800 mb-4"></div>
+
+                            {/* Content skeleton */}
+                            <div className="space-y-2">
+                                <div className="h-6 bg-gray-700 rounded w-3/4"></div>
+                                <div className="h-4 bg-gray-700 rounded w-1/2"></div>
+                                <div className="h-4 bg-gray-700 rounded w-full"></div>
+                                <div className="h-4 bg-gray-700 rounded w-2/3"></div>
+                                <div className="flex justify-between pt-2 border-t border-dark-800">
+                                    <div className="h-3 bg-gray-700 rounded w-20"></div>
+                                    <div className="h-3 bg-gray-700 rounded w-16"></div>
+                                </div>
                             </div>
                         </div>
                     ))}
@@ -24,8 +33,6 @@ export default function AssetGrid({ assets, isLoading }) {
         );
     }
 
-    console.log('AssetGrid received assets:', assets, 'Length:', assets?.length);
-    
     if (!assets || assets.length === 0) {
         return (
             <div className="container mx-auto px-4 py-16 text-center">
@@ -39,7 +46,7 @@ export default function AssetGrid({ assets, isLoading }) {
         <div className="container mx-auto px-4 py-8">
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
                 {assets.map((asset) => (
-                    <CharmCard key={asset.id} charm={asset} />
+                    <AssetCard key={asset.id} asset={asset} />
                 ))}
             </div>
         </div>
