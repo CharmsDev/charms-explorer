@@ -4,7 +4,7 @@
 // Re-exports the API services from the modular components
 
 // Re-export all API services
-export { fetchAssets, getAssetById, getAssetCounts } from './apiServices';
+export { fetchAssets, fetchAssetsByType, getAssetById, getAssetCounts, fetchIndexerStatus, resetIndexer, likeCharm, unlikeCharm, fetchCharmsByAddress } from './apiServices';
 
 // Export additional utilities if needed by components
 export { paginateItems } from './apiUtils';

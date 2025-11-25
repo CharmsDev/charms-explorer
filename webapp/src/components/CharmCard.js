@@ -10,7 +10,7 @@ export default function CharmCard({ charm }) {
     const [likesCount, setLikesCount] = useState(charm.likes);
     const [isLiked, setIsLiked] = useState(charm.userLiked);
     const [isLikeLoading, setIsLikeLoading] = useState(false);
-    const placeholderImage = "https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png";
+    const placeholderImage = "/images/logo.png";
 
     // Determine if the charm is an NFT
     const isNftCharm = charm.type === 'nft';
@@ -80,6 +80,8 @@ export default function CharmCard({ charm }) {
 
     const typeDetails = getTypeDetails();
 
+    const isPlaceholder = !imageError && charm.image === placeholderImage;
+
     return (
         <div
             className="card card-hover flex flex-col h-full transform transition-all duration-300 bg-gradient-to-br from-dark-800 to-dark-900"
@@ -91,7 +93,7 @@ export default function CharmCard({ charm }) {
                 <img
                     src={!imageError ? charm.image : placeholderImage}
                     alt={charm.name}
-                    className={`w-full h-full object-cover transition-all duration-500 ${isHovered ? 'scale-110' : 'scale-100'}`}
+                    className={`w-full h-full object-cover transition-all duration-500 ${!isPlaceholder ? (isHovered ? 'scale-110' : 'scale-100') : 'opacity-60 group-hover:opacity-100'}`}
                     onError={() => setImageError(true)}
                 />
                 <div className={`absolute inset-0 bg-gradient-to-t from-dark-900 to-transparent opacity-60`}></div>
@@ -207,9 +209,11 @@ export default function CharmCard({ charm }) {
                 </div>
 
                 {/* UTXO ID (shortened) */}
-                <div className="mt-2 text-xs text-dark-500 font-mono truncate hover:text-primary-400 transition-colors cursor-pointer" title={`${charm.txid}:${charm.outputIndex}`}>
-                    {charm.txid.substring(0, 8)}...:{charm.outputIndex}
-                </div>
+                {charm.txid && (
+                    <div className="mt-2 text-xs text-dark-500 font-mono truncate hover:text-primary-400 transition-colors cursor-pointer" title={`${charm.txid}:${charm.outputIndex || 0}`}>
+                        {charm.txid.substring(0, 8)}...:{charm.outputIndex || 0}
+                    </div>
+                )}
 
                 {/* Version tag if available */}
                 {charm.version && (

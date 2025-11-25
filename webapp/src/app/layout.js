@@ -4,7 +4,7 @@ import { NetworkProvider } from '../context/NetworkContext';
 
 export const metadata = {
     title: 'Charms Explorer',
-    description: 'Explore Bitcoin Charms - NFTs, Tokens, and dApps',
+    description: 'Explore Charms - NFTs, Tokens, and dApps',
 };
 
 export default function RootLayout({ children }) {
@@ -36,13 +36,13 @@ export default function RootLayout({ children }) {
                             <div className="mb-6 md:mb-0">
                                 <div className="flex items-center">
                                     <img
-                                        src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
+                                        src="/images/logo.png"
                                         alt="Charms Logo"
                                         className="h-10 w-auto mr-2 animate-float"
                                     />
                                     <span className="text-xl font-bold gradient-text">Explorer</span>
                                 </div>
-                                <p className="text-dark-400 mt-2 text-sm">The premier explorer for Bitcoin Charms</p>
+                                <p className="text-dark-400 mt-2 text-sm">The premier explorer for Charms</p>
                             </div>
 
                             {/* Community Column */}
