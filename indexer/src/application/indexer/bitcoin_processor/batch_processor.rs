@@ -147,14 +147,17 @@ pub type TransactionBatchItem = (
 );
 
 /// Charm batch item for bulk operations
+/// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
 pub type CharmBatchItem = (
     String, // txid
-    String, // charmid
+    i32,    // vout
     u64,    // height
     Value,  // data
     String, // asset_type
     String, // blockchain
     String, // network
+    String, // app_id
+    i64,    // amount
 );
 
 /// Asset batch item for bulk operations

@@ -6,7 +6,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
-use tokio::time::sleep;
 use bitcoincore_rpc::bitcoin::{Block, BlockHash};
 use futures::stream::{FuturesUnordered, StreamExt};
 
@@ -54,6 +53,7 @@ pub struct ParallelTransactionProcessor {
     charm_service: Arc<CharmService>,
     config: ParallelConfig,
     rate_limiter: Arc<Semaphore>,
+    #[allow(dead_code)]
     network_id: NetworkId,
 }
 
@@ -175,8 +175,8 @@ impl ParallelTransactionProcessor {
         block_hash: BlockHash,
         height: u64,
         latest_height: u64,
-        blockchain: String,
-        network: String,
+        _blockchain: String,
+        _network: String,
     ) -> Result<TransactionResult, BlockProcessorError> {
         // Acquire semaphore permit for rate limiting
         let _permit = self.rate_limiter.acquire().await.map_err(|_| {
@@ -212,7 +212,7 @@ impl ParallelTransactionProcessor {
             // Spawn charm detection in background - don't await it
             tokio::spawn(async move {
                 let _ = charm_service
-                    .detect_and_process_charm_with_raw_hex(&txid_clone, height, &hex_clone, tx_pos)
+                    .detect_and_process_charm_with_raw_hex_and_latest(&txid_clone, height, &hex_clone, tx_pos, latest_height)
                     .await;
             });
         }

@@ -19,7 +19,7 @@ use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::config::{AppConfig, NetworkId};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
-use crate::infrastructure::bitcoin::{BitcoinClient, SimpleBitcoinClient, ProviderFactory};
+use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{BookmarkRepository, SummaryRepository, TransactionRepository};
 use crate::utils::logging;
 

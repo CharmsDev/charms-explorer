@@ -7,7 +7,7 @@ use std::sync::Arc;
 use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
-use crate::infrastructure::bitcoin::{BitcoinClient, SimpleBitcoinClient};
+use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{BookmarkRepository, SummaryRepository, TransactionRepository};
 use crate::utils::logging;
 
@@ -82,6 +82,9 @@ impl<'a> BlockProcessor<'a> {
         batch_processor
             .save_asset_batch(asset_batch.clone(), height, network_id)
             .await?;
+
+        // Mark spent charms by analyzing transaction inputs
+        self.mark_spent_charms(&block, network_id).await?;
 
         // Update summary table with current statistics
         let summary_updater = super::SummaryUpdater::new(self.bitcoin_client, self.summary_repository);
@@ -305,14 +308,17 @@ impl<'a> BlockProcessor<'a> {
                     network.to_string(),
                 );
 
+                // [RJJ-S01] Updated to use vout instead of charmid, added app_id and amount
                 let charm_item = (
                     txid.to_string(),
-                    charm.charmid,
+                    charm.vout,
                     height,
                     charm.data.clone(),
                     charm.asset_type.clone(),
                     blockchain.to_string(),
                     network.to_string(),
+                    charm.app_id.clone(),
+                    charm.amount,
                 );
 
                 // Assets are now created directly by the charm service during native parsing
@@ -364,6 +370,48 @@ impl<'a> BlockProcessor<'a> {
     /// Heuristic to determine if we're likely using a local Bitcoin node
     fn is_using_local_node(&self) -> bool {
         self.bitcoin_client.is_using_local_node()
+    }
+
+    /// Mark charms as spent by analyzing transaction inputs in the block
+    async fn mark_spent_charms(
+        &self,
+        block: &bitcoin::Block,
+        network_id: &NetworkId,
+    ) -> Result<(), BlockProcessorError> {
+        // Collect all input txids (UTXOs being spent) from all transactions in the block
+        let mut spent_txids = Vec::new();
+
+        for tx in &block.txdata {
+            // Skip coinbase transactions (they don't spend existing UTXOs)
+            if tx.is_coin_base() {
+                continue;
+            }
+
+            // Extract the txid from each input (previous output being spent)
+            for input in &tx.input {
+                let prev_txid = input.previous_output.txid.to_string();
+                spent_txids.push(prev_txid);
+            }
+        }
+
+        // Mark all collected txids as spent in batch using CharmService
+        if !spent_txids.is_empty() {
+            self.retry_handler
+                .execute_with_retry_and_logging(
+                    || async {
+                        self.charm_service
+                            .mark_charms_as_spent_batch(spent_txids.clone())
+                            .await
+                            .map_err(|e| crate::infrastructure::persistence::error::DbError::QueryError(e.to_string()))
+                    },
+                    "mark charms as spent",
+                    &network_id.name,
+                )
+                .await
+                .map_err(BlockProcessorError::DbError)?;
+        }
+
+        Ok(())
     }
 
 }

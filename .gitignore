@@ -86,7 +86,7 @@ indexer/pid.txt
 /api/_bkp
 
 # Project-specific directories to ignore
-_rjj/
+**/_rjj/
 /api/deploy
 /indexer/deploy
 /database/target

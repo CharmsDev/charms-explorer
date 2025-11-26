@@ -36,10 +36,14 @@ async fn main() {
 
             let mut network_manager = NetworkManager::new(config.clone());
 
+            // [RJJ-S01] Now includes spell repository for spell-first architecture
+            // [RJJ-STATS-HOLDERS] Now includes stats_holders repository
             match network_manager
                 .initialize(
                     repositories.charm,
                     repositories.asset,
+                    repositories.spell, // [RJJ-S01]
+                    repositories.stats_holders, // [RJJ-STATS-HOLDERS]
                     repositories.transaction,
                     repositories.bookmark,
                     repositories.summary,
