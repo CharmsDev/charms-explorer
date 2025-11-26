@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tokio::time::{interval, Instant};
 
 use crate::domain::services::CharmService;
-use crate::infrastructure::queue::charm_queue::{CharmSaveRequest, CharmQueue, QueueError};
+use crate::infrastructure::queue::charm_queue::{CharmDataSaveRequest, CharmQueue, QueueError};
 use crate::utils::logging;
 
 /// Configuration for the database writer service
@@ -44,7 +44,7 @@ pub struct DatabaseWriter {
     charm_service: Arc<CharmService>,
     queue: CharmQueue,
     config: DatabaseWriterConfig,
-    receiver: Option<mpsc::UnboundedReceiver<CharmSaveRequest>>,
+    receiver: Option<mpsc::UnboundedReceiver<CharmDataSaveRequest>>,
 }
 
 impl DatabaseWriter {
@@ -52,7 +52,7 @@ impl DatabaseWriter {
     pub fn new(
         charm_service: Arc<CharmService>,
         queue: CharmQueue,
-        receiver: mpsc::UnboundedReceiver<CharmSaveRequest>,
+        receiver: mpsc::UnboundedReceiver<CharmDataSaveRequest>,
         config: Option<DatabaseWriterConfig>,
     ) -> Self {
         Self {
@@ -130,8 +130,8 @@ impl DatabaseWriter {
         Ok(())
     }
 
-    /// Process a batch of charm save requests
-    async fn process_batch(&self, batch: &mut Vec<CharmSaveRequest>) {
+    /// Process a batch of charm data save requests
+    async fn process_batch(&self, batch: &mut Vec<CharmDataSaveRequest>) {
         if batch.is_empty() {
             return;
         }
@@ -145,16 +145,51 @@ impl DatabaseWriter {
         ));
 
         // Convert requests to the format expected by save_batch
-        let charm_batch: Vec<(String, String, u64, serde_json::Value, String, String, String)> = 
+        // [RJJ-S01] Updated to use vout instead of charmid, added app_id and amount
+        let charm_batch: Vec<(String, i32, u64, serde_json::Value, String, String, String, String, i64)> = 
             batch.iter().map(|req| (
-                req.txid.clone(),
-                req.charmid.clone(),
-                req.block_height,
-                req.data.clone(),
-                req.asset_type.clone(),
-                req.blockchain.clone(),
-                req.network.clone(),
+                req.charm.txid.clone(),
+                req.charm.vout,
+                req.charm.block_height,
+                req.charm.data.clone(),
+                req.charm.asset_type.clone(),
+                req.charm.blockchain.clone(),
+                req.charm.network.clone(),
+                req.charm.app_id.clone(),
+                req.charm.amount,
             )).collect();
+
+        // Convert transaction requests to batch format
+        let transaction_batch: Vec<(String, u64, i64, serde_json::Value, serde_json::Value, i32, bool, String, String)> = 
+            batch.iter().map(|req| {
+                let raw_json = serde_json::json!({
+                    "hex": req.transaction.raw_hex,
+                    "txid": req.transaction.txid
+                });
+                (
+                    req.transaction.txid.clone(),
+                    req.transaction.block_height,
+                    req.transaction.tx_position,
+                    raw_json,
+                    req.charm.data.clone(), // Use charm data for transaction charm_data field
+                    req.transaction.confirmations,
+                    req.transaction.is_confirmed,
+                    req.transaction.blockchain.clone(),
+                    req.transaction.network.clone(),
+                )
+            }).collect();
+
+        // Convert asset requests to batch format
+        let asset_batch: Vec<(String, String, u64, String, String)> = 
+            batch.iter().flat_map(|req| 
+                req.assets.iter().map(|asset| (
+                    asset.app_id.clone(),
+                    asset.asset_type.clone(),
+                    asset.supply,
+                    asset.blockchain.clone(),
+                    asset.network.clone(),
+                ))
+            ).collect();
 
         // Process with retry logic
         let mut attempts = 0;
@@ -163,49 +198,115 @@ impl DatabaseWriter {
         while attempts < self.config.max_retries && !success {
             attempts += 1;
 
-            match self.charm_service.save_batch(charm_batch.clone()).await {
-                Ok(_) => {
-                    success = true;
-                    
-                    // Mark all items as processed
-                    for _ in 0..batch_size {
-                        self.queue.mark_processed();
-                    }
+            // Save all data in sequence: charms, transactions, then assets
+            let mut all_success = true;
+            let mut error_msg = String::new();
 
-                    let duration = start_time.elapsed();
-                    logging::log_debug(&format!(
-                        "[DATABASE_WRITER] ✅ Successfully saved batch of {} charms in {:?} (attempt {})",
-                        batch_size, duration, attempts
-                    ));
+            // 1. Save charms first
+            if let Err(e) = self.charm_service.save_batch(charm_batch.clone()).await {
+                all_success = false;
+                error_msg = format!("Failed to save charms: {}", e);
+            }
 
-                    // Warn if batch took too long
-                    if duration.as_secs_f64() > 2.0 {
-                        logging::log_warning(&format!(
-                            "[DATABASE_WRITER] 🐢 Slow batch: {} charms took {:.2}s",
-                            batch_size,
-                            duration.as_secs_f64()
-                        ));
+            // 1b. Update stats_holders for new charms [RJJ-STATS-HOLDERS]
+            if all_success && !charm_batch.is_empty() {
+                let holder_updates: Vec<(String, String, i64, i32)> = batch
+                    .iter()
+                    .filter_map(|req| {
+                        req.charm.address.as_ref().map(|addr| {
+                            (
+                                req.charm.app_id.clone(),
+                                addr.clone(),
+                                req.charm.amount,
+                                req.charm.block_height as i32,
+                            )
+                        })
+                    })
+                    .collect();
+
+                if !holder_updates.is_empty() {
+                    if let Err(e) = self.charm_service.get_stats_holders_repository().update_holders_batch(holder_updates).await {
+                        logging::log_warning(&format!("[DATABASE_WRITER] Failed to update stats_holders: {}", e));
+                        // Don't fail the entire batch for stats update failures
                     }
                 }
-                Err(e) => {
-                    logging::log_warning(&format!("Failed to save charm batch: {}", e));
+            }
+
+            // 2. Save transactions (only if charms succeeded)
+            if all_success && !transaction_batch.is_empty() {
+                if let Err(e) = self.charm_service.save_transaction_batch(transaction_batch.clone()).await {
+                    all_success = false;
+                    error_msg = format!("Failed to save transactions: {}", e);
+                }
+            }
+
+            // 3. Save assets (only if previous steps succeeded)
+            if all_success && !asset_batch.is_empty() {
+                if let Err(e) = self.charm_service.save_asset_batch(asset_batch.clone()).await {
+                    all_success = false;
+                    error_msg = format!("Failed to save assets: {}", e);
+                }
+            }
+
+            if all_success {
+                success = true;
+                
+                // Mark all items as processed
+                for _ in 0..batch_size {
+                    self.queue.mark_processed();
+                }
+
+                let duration = start_time.elapsed();
+                logging::log_debug(&format!(
+                    "[DATABASE_WRITER] ✅ Successfully saved batch of {} charm data sets (charms + transactions + assets) in {:?} (attempt {})",
+                    batch_size, duration, attempts
+                ));
+
+                // Warn if batch took too long
+                if duration.as_secs_f64() > 2.0 {
+                    logging::log_warning(&format!(
+                        "[DATABASE_WRITER] 🐢 Slow batch: {} charm data sets took {:.2}s",
+                        batch_size,
+                        duration.as_secs_f64()
+                    ));
+                }
+            } else {
+                // Only log non-duplicate errors
+                let is_duplicate_error = error_msg.contains("duplicate key") || 
+                                        error_msg.contains("unique constraint");
+                
+                if !is_duplicate_error {
+                    logging::log_warning(&format!("Failed to save charm data batch: {}", error_msg));
                     logging::log_error(&format!(
                         "[DATABASE_WRITER] ❌ Failed to save batch (attempt {}/{}): {}",
-                        attempts, self.config.max_retries, e
+                        attempts, self.config.max_retries, error_msg
                     ));
+                } else {
+                    // Duplicate errors are expected and not a problem - log as debug
+                    logging::log_debug(&format!(
+                        "[DATABASE_WRITER] ℹ️ Duplicate key detected (attempt {}), skipping",
+                        attempts
+                    ));
+                }
 
-                    if attempts < self.config.max_retries {
-                        tokio::time::sleep(self.config.retry_delay).await;
-                    } else {
-                        // Mark all items as errors after max retries
+                if attempts < self.config.max_retries {
+                    tokio::time::sleep(self.config.retry_delay).await;
+                } else {
+                    // Mark all items as errors after max retries (only for non-duplicate errors)
+                    if !is_duplicate_error {
                         for _ in 0..batch_size {
                             self.queue.mark_error();
                         }
                         
                         logging::log_error(&format!(
-                            "[DATABASE_WRITER] 💥 Failed to save batch after {} attempts, dropping {} charms",
+                            "[DATABASE_WRITER] 💥 Failed to save batch after {} attempts, dropping {} charm data sets",
                             self.config.max_retries, batch_size
                         ));
+                    } else {
+                        // For duplicate errors, mark as processed since they're already in DB
+                        for _ in 0..batch_size {
+                            self.queue.mark_processed();
+                        }
                     }
                 }
             }
@@ -286,7 +387,7 @@ impl DatabaseWriterBuilder {
         self,
         charm_service: Arc<CharmService>,
         queue: CharmQueue,
-        receiver: mpsc::UnboundedReceiver<CharmSaveRequest>,
+        receiver: mpsc::UnboundedReceiver<CharmDataSaveRequest>,
     ) -> DatabaseWriter {
         DatabaseWriter::new(charm_service, queue, receiver, Some(self.config))
     }

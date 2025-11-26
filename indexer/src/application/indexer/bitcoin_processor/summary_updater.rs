@@ -106,24 +106,21 @@ impl<'a> SummaryUpdater<'a> {
 
         Ok(())
     }
-
     /// Calculate asset type counts from charm batch
     fn calculate_asset_counts(&self, charm_batch: &[CharmBatchItem]) -> AssetCounts {
         let mut counts = AssetCounts::default();
         
         for charm_item in charm_batch {
-            let asset_type = &charm_item.4; // asset_type is the 5th element
+            let asset_type = &charm_item.4; // asset_type is still the 5th element (index 4)
             match asset_type.as_str() {
                 "nft" => counts.nft_count += 1,
                 "token" => counts.token_count += 1,
-                "dapp" => counts.dapp_count += 1,
                 _ => counts.other_count += 1,
             }
         }
         
         counts
     }
-
     /// Calculate total counts by adding current batch to existing totals
     fn calculate_totals(
         &self,

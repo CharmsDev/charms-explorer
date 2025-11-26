@@ -5,8 +5,6 @@ use bitcoincore_rpc::bitcoin::{Block, BlockHash};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::str::FromStr;
-use std::time::Duration;
-use tokio::time::sleep;
 
 use crate::infrastructure::bitcoin::error::BitcoinClientError;
 use super::BitcoinProvider;

@@ -10,7 +10,7 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::{CharmService, CharmQueueService};
 use crate::infrastructure::bitcoin::{BitcoinClient, SimpleBitcoinClient, ProviderFactory};
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, BookmarkRepository, CharmRepository, SummaryRepository, TransactionRepository,
+    AssetRepository, BookmarkRepository, CharmRepository, SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository, // [RJJ-STATS-HOLDERS]
 };
 use crate::infrastructure::queue::{CharmQueue, DatabaseWriter};
 use crate::utils::logging;
@@ -43,14 +43,20 @@ impl NetworkManager {
         &mut self,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
+        spell_repository: SpellRepository, // [RJJ-S01] New parameter
+        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS] New parameter
         transaction_repository: TransactionRepository,
         bookmark_repository: BookmarkRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
         // First, initialize the global charm queue system
+        // [RJJ-S01] Now passes spell_repository
+        // [RJJ-STATS-HOLDERS] Now passes stats_holders_repository
         self.initialize_charm_queue_system(
             charm_repository.clone(),
             asset_repository.clone(),
+            spell_repository.clone(), // [RJJ-S01]
+            stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
         ).await?;
 
         // Then initialize Bitcoin processors
@@ -60,6 +66,8 @@ impl NetworkManager {
                 bookmark_repository.clone(),
                 charm_repository.clone(),
                 asset_repository.clone(),
+                spell_repository.clone(), // [RJJ-S01]
+                stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
                 transaction_repository.clone(),
                 summary_repository.clone(),
             )
@@ -72,6 +80,8 @@ impl NetworkManager {
                 bookmark_repository.clone(),
                 charm_repository.clone(),
                 asset_repository.clone(),
+                spell_repository.clone(), // [RJJ-S01]
+                stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
                 transaction_repository.clone(),
                 summary_repository.clone(),
             )
@@ -86,10 +96,14 @@ impl NetworkManager {
     /// Initialize the global charm queue system
     /// 
     /// Creates a single database writer that processes charms from all networks
+    /// [RJJ-S01] Now includes spell_repository
+    /// [RJJ-STATS-HOLDERS] Now includes stats_holders_repository
     async fn initialize_charm_queue_system(
         &mut self,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
+        spell_repository: SpellRepository, // [RJJ-S01]
+        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
     ) -> Result<(), BlockProcessorError> {
         // Create a global charm queue and database writer
         let (charm_queue, receiver) = CharmQueue::new();
@@ -107,6 +121,8 @@ impl NetworkManager {
             BitcoinClient::from_simple_client(dummy_client),
             charm_repository.clone(),
             asset_repository.clone(),
+            spell_repository.clone(), // [RJJ-S01]
+            stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
         ));
         
         let database_writer = DatabaseWriter::new(
@@ -130,12 +146,16 @@ impl NetworkManager {
     }
 
     /// Initialize a Bitcoin processor for a specific network
+    /// [RJJ-S01] Now includes spell_repository parameter
+    /// [RJJ-STATS-HOLDERS] Now includes stats_holders_repository parameter
     async fn initialize_bitcoin_processor(
         &mut self,
         network: &str,
         bookmark_repository: BookmarkRepository,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
+        spell_repository: SpellRepository, // [RJJ-S01]
+        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
@@ -190,10 +210,14 @@ impl NetworkManager {
         );
         
         // Create charm service with queue integration
+        // [RJJ-S01] Now includes spell_repository for spell-first architecture
+        // [RJJ-STATS-HOLDERS] Now includes stats_holders_repository
         let charm_service = CharmService::new_with_queue(
             bitcoin_client.clone(),
-            charm_repository,
+            charm_repository.clone(),
             asset_repository,
+            spell_repository, // [RJJ-S01]
+            stats_holders_repository, // [RJJ-STATS-HOLDERS]
             queue_service,
         );
 

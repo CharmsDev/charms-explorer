@@ -117,7 +117,12 @@ impl AssetRepository {
             return Ok(());
         }
 
-        println!("💾 Batch saving {} assets to database", assets.len());
+        let assets_count = assets.len();
+        
+        // Log only for larger batches to reduce noise
+        if assets_count > 5 {
+            println!("💾 Batch saving {} assets to database", assets_count);
+        }
 
         let now = Utc::now();
         let active_models: Vec<assets::ActiveModel> = assets
@@ -146,25 +151,26 @@ impl AssetRepository {
             })
             .collect();
 
-        // For batch operations, we'll insert and handle conflicts individually
-        let mut saved_count = 0;
-        for active_model in active_models {
-            match Assets::insert(active_model).exec(&self.db).await {
-                Ok(_) => {
-                    saved_count += 1;
-                },
-                Err(sea_orm::DbErr::RecordNotInserted) => {
-                    // Handle conflict by updating existing record
-                    // For batch operations, we'll skip updates to keep it simple
-                    // In production, you might want to implement proper batch upsert
-                },
-                Err(e) => return Err(DbError::SeaOrmError(e)),
+        // Try to insert all assets, handle duplicate key violations gracefully
+        match Assets::insert_many(active_models).exec(&self.db).await {
+            Ok(_) => {
+                // Only log for larger batches
+                if assets_count > 5 {
+                    println!("✅ Batch saved {} assets successfully", assets_count);
+                }
+                Ok(())
+            },
+            Err(e) => {
+                // Check if the error is a duplicate key violation
+                if e.to_string().contains("duplicate key value violates unique constraint") {
+                    // Assets already exist, this is not an error - silently succeed
+                    Ok(())
+                } else {
+                    // If it's not a duplicate key error, propagate it
+                    Err(DbError::SeaOrmError(e))
+                }
             }
         }
-        
-        println!("✅ Batch saved {} assets successfully", saved_count);
-
-        Ok(())
     }
 
     /// Find asset by app_id
