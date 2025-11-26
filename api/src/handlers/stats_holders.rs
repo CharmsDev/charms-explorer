@@ -1,4 +1,4 @@
-// [RJJ-STATS-HOLDERS] Handlers for holder statistics endpoints
+// Handlers for holder statistics endpoints
 
 use axum::{
     extract::{Path, State},
@@ -9,7 +9,7 @@ use crate::error::ExplorerResult;
 use crate::handlers::AppState;
 use crate::services::stats_holders_service::{self, HoldersResponse};
 
-/// [RJJ-STATS-HOLDERS] Handler for GET /assets/{app_id}/holders
+/// Handler for GET /assets/{app_id}/holders
 /// Returns holder statistics for a specific asset
 pub async fn get_asset_holders(
     State(state): State<AppState>,

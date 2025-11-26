@@ -24,7 +24,7 @@ pub struct Model {
     pub description: Option<String>,
     pub image_url: Option<String>,
     pub total_supply: Option<Decimal>,
-    pub decimals: i16, // [RJJ-DECIMALS] Dynamic decimal precision (default: 8)
+    pub decimals: i16, // Dynamic decimal precision (default: 8)
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
