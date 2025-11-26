@@ -1,6 +1,7 @@
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use rust_decimal::Decimal;
 
 /// Represents an Asset with a unique app_id that can have multiple charms
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +35,7 @@ pub struct Asset {
 
     /// Network name (e.g., "mainnet", "testnet4")
     pub network: String,
+    pub total_supply: Option<Decimal>,
 }
 
 impl Asset {
@@ -50,7 +52,7 @@ impl Asset {
         blockchain: String,
         network: String,
     ) -> Self {
-        Self {
+        Asset {
             app_id,
             txid,
             vout_index,
@@ -61,6 +63,7 @@ impl Asset {
             asset_type,
             blockchain,
             network,
+            total_supply: None,
         }
     }
 }

@@ -3,13 +3,16 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
+use crate::application::indexer::bitcoin_processor::BitcoinProcessor;
 use crate::application::indexer::processor_trait::BlockchainProcessor;
-use crate::application::indexer::BitcoinProcessor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
-use crate::domain::services::CharmService;
-use crate::infrastructure::bitcoin::{BitcoinClient, BitcoinClientError};
-use crate::infrastructure::persistence::repositories::{AssetRepository, BookmarkRepository, CharmRepository, SummaryRepository, TransactionRepository};
+use crate::domain::services::{CharmService, CharmQueueService};
+use crate::infrastructure::bitcoin::{BitcoinClient, SimpleBitcoinClient, ProviderFactory};
+use crate::infrastructure::persistence::repositories::{
+    AssetRepository, BookmarkRepository, CharmRepository, SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository, // [RJJ-STATS-HOLDERS]
+};
+use crate::infrastructure::queue::{CharmQueue, DatabaseWriter};
 use crate::utils::logging;
 
 /// Manager for multiple blockchain network processors
@@ -17,6 +20,8 @@ pub struct NetworkManager {
     config: AppConfig,
     processors: HashMap<String, Arc<Mutex<Box<dyn BlockchainProcessor>>>>,
     tasks: HashMap<String, JoinHandle<Result<(), BlockProcessorError>>>,
+    database_writer_tasks: HashMap<String, JoinHandle<()>>,
+    global_charm_queue: Option<CharmQueue>,
 }
 
 impl NetworkManager {
@@ -26,27 +31,43 @@ impl NetworkManager {
             config,
             processors: HashMap::new(),
             tasks: HashMap::new(),
+            database_writer_tasks: HashMap::new(),
+            global_charm_queue: None,
         }
     }
 
     /// Initialize processors for all configured networks
-    /// 
+    ///
     /// Creates and configures blockchain processors for each network defined in the configuration
     pub async fn initialize(
         &mut self,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
+        spell_repository: SpellRepository, // [RJJ-S01] New parameter
+        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS] New parameter
         transaction_repository: TransactionRepository,
         bookmark_repository: BookmarkRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
-        // Initialize Bitcoin processors
+        // First, initialize the global charm queue system
+        // [RJJ-S01] Now passes spell_repository
+        // [RJJ-STATS-HOLDERS] Now passes stats_holders_repository
+        self.initialize_charm_queue_system(
+            charm_repository.clone(),
+            asset_repository.clone(),
+            spell_repository.clone(), // [RJJ-S01]
+            stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
+        ).await?;
+
+        // Then initialize Bitcoin processors
         if self.config.indexer.enable_bitcoin_testnet4 {
             self.initialize_bitcoin_processor(
                 "testnet4",
                 bookmark_repository.clone(),
                 charm_repository.clone(),
                 asset_repository.clone(),
+                spell_repository.clone(), // [RJJ-S01]
+                stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
                 transaction_repository.clone(),
                 summary_repository.clone(),
             )
@@ -59,6 +80,8 @@ impl NetworkManager {
                 bookmark_repository.clone(),
                 charm_repository.clone(),
                 asset_repository.clone(),
+                spell_repository.clone(), // [RJJ-S01]
+                stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
                 transaction_repository.clone(),
                 summary_repository.clone(),
             )
@@ -70,13 +93,69 @@ impl NetworkManager {
         Ok(())
     }
 
+    /// Initialize the global charm queue system
+    /// 
+    /// Creates a single database writer that processes charms from all networks
+    /// [RJJ-S01] Now includes spell_repository
+    /// [RJJ-STATS-HOLDERS] Now includes stats_holders_repository
+    async fn initialize_charm_queue_system(
+        &mut self,
+        charm_repository: CharmRepository,
+        asset_repository: AssetRepository,
+        spell_repository: SpellRepository, // [RJJ-S01]
+        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
+    ) -> Result<(), BlockProcessorError> {
+        // Create a global charm queue and database writer
+        let (charm_queue, receiver) = CharmQueue::new();
+        
+        // Store the global charm queue for use by processors
+        self.global_charm_queue = Some(charm_queue.clone());
+        
+        // Create a CharmService for the database writer (without queue to avoid recursion)
+        // TODO: Refactor CharmService to not require BitcoinClient for database operations
+        let dummy_config = self.config.get_bitcoin_config("mainnet").unwrap_or_else(|| {
+            panic!("Need at least one Bitcoin config for database writer")
+        });
+        let dummy_client = SimpleBitcoinClient::new(dummy_config).unwrap();
+        let writer_charm_service = Arc::new(CharmService::new(
+            BitcoinClient::from_simple_client(dummy_client),
+            charm_repository.clone(),
+            asset_repository.clone(),
+            spell_repository.clone(), // [RJJ-S01]
+            stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
+        ));
+        
+        let database_writer = DatabaseWriter::new(
+            writer_charm_service,
+            charm_queue.clone(),
+            receiver,
+            None, // Use default config
+        );
+        
+        // Start the global database writer background task
+        let writer_handle = tokio::spawn(async move {
+            if let Err(e) = database_writer.start().await {
+                crate::utils::logging::log_error(&format!("Global database writer error: {}", e));
+            }
+        });
+        
+        self.database_writer_tasks.insert("global_writer".to_string(), writer_handle);
+        
+        logging::log_info("✅ Global charm queue system initialized");
+        Ok(())
+    }
+
     /// Initialize a Bitcoin processor for a specific network
+    /// [RJJ-S01] Now includes spell_repository parameter
+    /// [RJJ-STATS-HOLDERS] Now includes stats_holders_repository parameter
     async fn initialize_bitcoin_processor(
         &mut self,
         network: &str,
         bookmark_repository: BookmarkRepository,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
+        spell_repository: SpellRepository, // [RJJ-S01]
+        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
     ) -> Result<(), BlockProcessorError> {
@@ -94,36 +173,58 @@ impl NetworkManager {
             }
         };
 
-        let bitcoin_client = match BitcoinClient::new(bitcoin_config) {
+        // Create network ID
+        let network_id = NetworkId::new(NetworkType::Bitcoin, network);
+
+        // Create SimpleBitcoinClient using the new provider system
+        let simple_client = match SimpleBitcoinClient::new(bitcoin_config) {
             Ok(client) => client,
             Err(e) => {
-                let error_details = match &e {
-                    BitcoinClientError::RpcError(rpc_err) => {
-                        format!("Bitcoin RPC error: {}", rpc_err)
-                    }
-                    BitcoinClientError::ConnectionError(conn_err) => {
-                        format!("Connection error: {}", conn_err)
-                    }
-                    _ => format!("{}", e),
-                };
-
                 logging::log_error(&format!(
                     "Failed to create Bitcoin client for network '{}': {}",
-                    network, error_details
+                    network, e
                 ));
                 return Err(BlockProcessorError::BitcoinClientError(e));
             }
         };
 
-        let api_client = match crate::infrastructure::api::ApiClient::new(&self.config) {
-            Ok(client) => client,
-            Err(e) => {
-                logging::log_error(&format!("Failed to create API client: {}", e));
-                return Err(BlockProcessorError::ApiClientError(e));
-            }
-        };
+        // Log which provider is being used
+        let provider_name = ProviderFactory::get_provider_name(bitcoin_config);
+        logging::log_info(&format!(
+            "[{}] 🔧 Using {} provider",
+            network_id.name, provider_name
+        ));
 
-        let charm_service = CharmService::new(bitcoin_client.clone(), api_client, charm_repository, asset_repository);
+        // Wrap in legacy BitcoinClient interface for compatibility
+        let bitcoin_client = BitcoinClient::from_simple_client(simple_client);
+
+        // Use the global charm queue
+        let charm_queue = self.global_charm_queue.as_ref()
+            .expect("Global charm queue should be initialized before processors")
+            .clone();
+        
+        // Create queue service with the global queue
+        let queue_service = CharmQueueService::new_with_queue(
+            Arc::new(charm_repository.clone()),
+            charm_queue,
+        );
+        
+        // Create charm service with queue integration
+        // [RJJ-S01] Now includes spell_repository for spell-first architecture
+        // [RJJ-STATS-HOLDERS] Now includes stats_holders_repository
+        let charm_service = CharmService::new_with_queue(
+            bitcoin_client.clone(),
+            charm_repository.clone(),
+            asset_repository,
+            spell_repository, // [RJJ-S01]
+            stats_holders_repository, // [RJJ-STATS-HOLDERS]
+            queue_service,
+        );
+
+        logging::log_info(&format!(
+            "[{}] 🚀 Async charm queue system initialized and started",
+            network_id.name
+        ));
 
         let processor = BitcoinProcessor::new(
             bitcoin_client,
@@ -183,6 +284,12 @@ impl NetworkManager {
         for (_, handle) in self.tasks.drain() {
             handle.abort();
         }
-        logging::log_info("All processors stopped");
+        
+        // Stop database writer tasks
+        for (_, handle) in self.database_writer_tasks.drain() {
+            handle.abort();
+        }
+        
+        logging::log_info("All processors and database writers stopped");
     }
 }

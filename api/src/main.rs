@@ -21,8 +21,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    diagnose_database, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms,
-    get_charms_by_type, get_indexer_status, health_check, like_charm, reset_indexer, unlike_charm, AppState,
+    diagnose_database, get_asset_by_id, get_asset_counts, get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms,
+    get_charms_by_address, get_charms_by_type, get_indexer_status, health_check, like_charm, reset_indexer, unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -82,10 +82,15 @@ async fn main() {
         .route("/charms/count", get(get_charm_numbers))
         .route("/charms/by-type", get(get_charms_by_type))
         .route("/charms/by-charmid/{charmid}", get(get_charm_by_charmid))
+        .route("/charms/by-address/{address}", get(get_charms_by_address))
         .route("/charms/like", post(like_charm))
         .route("/charms/like", delete(unlike_charm))
         .route("/charms/{txid}", get(get_charm_by_txid))
         .route("/charms", get(get_charms))
+        .route("/assets/count", get(get_asset_counts))
+        .route("/assets/{app_id}/holders", get(get_asset_holders))
+        .route("/assets/{asset_id}", get(get_asset_by_id))
+        .route("/assets", get(get_assets))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

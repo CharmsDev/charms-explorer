@@ -2,7 +2,11 @@ use log::{debug, error, info, warn};
 
 /// Initialize the logger
 pub fn init_logger() {
-    env_logger::init();
+    let mut builder = env_logger::Builder::from_default_env();
+    builder
+        .filter_level(log::LevelFilter::Info)
+        .filter_module("sqlx", log::LevelFilter::Warn)
+        .init();
 }
 
 /// Log an informational message

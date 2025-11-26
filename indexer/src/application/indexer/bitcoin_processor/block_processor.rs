@@ -2,15 +2,17 @@
 
 use bitcoincore_rpc::bitcoin;
 use serde_json::json;
+use std::sync::Arc;
 
 use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
-use crate::domain::services::{CharmService, CharmDetectorService};
+use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{BookmarkRepository, SummaryRepository, TransactionRepository};
 use crate::utils::logging;
 
 use super::batch_processor::{AssetBatchItem, BatchProcessor, CharmBatchItem, TransactionBatchItem};
+use super::parallel_tx_processor::{ParallelTransactionProcessor, ParallelConfig};
 use super::retry_handler::RetryHandler;
 
 /// Handles processing of individual blocks
@@ -48,14 +50,9 @@ impl<'a> BlockProcessor<'a> {
         height: u64,
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
-        // Log every block being processed
-        logging::log_info(&format!(
-            "[{}] 📦 Processing block: {}",
-            network_id.name, height
-        ));
 
         // Get latest height once for the entire block processing
-        let latest_height = self.bitcoin_client.get_block_count().map_err(|e| {
+        let latest_height = self.bitcoin_client.get_block_count().await.map_err(|e| {
             logging::log_error(&format!(
                 "[{}] Error getting block count: {}",
                 network_id.name, e
@@ -64,18 +61,7 @@ impl<'a> BlockProcessor<'a> {
         })?;
 
         let block_hash = self.get_block_hash(height, network_id).await?;
-        logging::log_info(&format!(
-            "[{}] 🔍 Got block hash for {}: {}",
-            network_id.name, height, block_hash
-        ));
-
         let block = self.get_block(&block_hash, network_id).await?;
-        logging::log_info(&format!(
-            "[{}] 📄 Got block data for {}: {} transactions",
-            network_id.name,
-            height,
-            block.txdata.len()
-        ));
 
         self.save_bookmark(&block_hash, height, latest_height, network_id).await?;
 
@@ -97,15 +83,17 @@ impl<'a> BlockProcessor<'a> {
             .save_asset_batch(asset_batch.clone(), height, network_id)
             .await?;
 
+        // Mark spent charms by analyzing transaction inputs
+        self.mark_spent_charms(&block, network_id).await?;
+
         // Update summary table with current statistics
         let summary_updater = super::SummaryUpdater::new(self.bitcoin_client, self.summary_repository);
         summary_updater.update_statistics(height, latest_height, &charm_batch, &transaction_batch, network_id)
             .await?;
 
-        logging::log_info(&format!(
-            "[{}] ✅ Completed processing block: {}",
-            network_id.name, height
-        ));
+        // Single summary line per block
+        println!("[{}] Block {}: {} txs, {} charms, {} assets", 
+            network_id.name, height, transaction_batch.len(), charm_batch.len(), asset_batch.len());
 
         Ok(())
     }
@@ -116,13 +104,19 @@ impl<'a> BlockProcessor<'a> {
         height: u64,
         network_id: &NetworkId,
     ) -> Result<bitcoin::BlockHash, BlockProcessorError> {
-        self.bitcoin_client.get_block_hash(height).map_err(|e| {
-            logging::log_error(&format!(
-                "[{}] Error getting block hash for height {}: {}",
-                network_id.name, height, e
-            ));
-            BlockProcessorError::BitcoinClientError(e)
-        })
+        
+        match self.bitcoin_client.get_block_hash(height).await {
+            Ok(hash) => {
+                Ok(hash)
+            }
+            Err(e) => {
+                logging::log_error(&format!(
+                    "[{}] ❌ Error getting block hash for height {}: {}",
+                    network_id.name, height, e
+                ));
+                Err(BlockProcessorError::BitcoinClientError(e))
+            }
+        }
     }
 
     /// Get block data for given hash
@@ -131,13 +125,28 @@ impl<'a> BlockProcessor<'a> {
         block_hash: &bitcoin::BlockHash,
         network_id: &NetworkId,
     ) -> Result<bitcoin::Block, BlockProcessorError> {
-        self.bitcoin_client.get_block(block_hash).map_err(|e| {
-            logging::log_error(&format!(
-                "[{}] Error getting block for hash {}: {}",
-                network_id.name, block_hash, e
-            ));
-            BlockProcessorError::BitcoinClientError(e)
-        })
+        
+        match self.bitcoin_client.get_block(block_hash).await {
+            Ok(block) => {
+                Ok(block)
+            }
+            Err(e) => {
+                // Check if this is a pruned block error
+                let error_msg = e.to_string();
+                if error_msg.contains("pruned data") || error_msg.contains("Block not available") {
+                    logging::log_error(&format!(
+                        "[{}] ❌ Block {} is pruned/not available: {}",
+                        network_id.name, block_hash, e
+                    ));
+                } else {
+                    logging::log_error(&format!(
+                        "[{}] ❌ Error getting block for hash {}: {}",
+                        network_id.name, block_hash, e
+                    ));
+                }
+                Err(BlockProcessorError::BitcoinClientError(e))
+            }
+        }
     }
 
     /// Save bookmark for processed block
@@ -151,10 +160,6 @@ impl<'a> BlockProcessor<'a> {
         let confirmations = latest_height - height + 1;
         let is_confirmed = confirmations >= 6;
 
-        logging::log_info(&format!(
-            "[{}] 💾 Saving bookmark for block {} (hash: {}, confirmed: {})",
-            network_id.name, height, block_hash, is_confirmed
-        ));
 
         self.retry_handler
             .execute_with_retry_and_logging(
@@ -172,7 +177,7 @@ impl<'a> BlockProcessor<'a> {
         Ok(())
     }
 
-    /// Process all transactions in a block
+    /// Process all transactions in a block using parallel processing
     async fn process_transactions(
         &self,
         block: &bitcoin::Block,
@@ -181,66 +186,72 @@ impl<'a> BlockProcessor<'a> {
         latest_height: u64,
         network_id: &NetworkId,
     ) -> Result<(Vec<TransactionBatchItem>, Vec<CharmBatchItem>, Vec<AssetBatchItem>), BlockProcessorError> {
-        let mut transaction_batch = Vec::new();
-        let mut charm_batch = Vec::new();
-        let mut asset_batch = Vec::new();
-
         let blockchain = "Bitcoin".to_string();
         let network = network_id.name.clone();
+        let tx_count = block.txdata.len();
 
-        logging::log_info(&format!(
-            "[{}] 🔄 Processing {} transactions in block {}",
-            network_id.name,
-            block.txdata.len(),
-            height
-        ));
+        // Use parallel processing for blocks with many transactions
+        if tx_count > 10 {
 
-        for (tx_pos, tx) in block.txdata.iter().enumerate() {
-            let txid = tx.txid();
-            let txid_str = txid.to_string();
+            // Use optimized configuration based on provider type
+            let config = self.get_parallel_config_for_provider(tx_count);
+            
+            let _provider_name = self.bitcoin_client.get_primary_provider_name()
+                .unwrap_or_else(|| "Unknown".to_string());
+            let _is_local = self.is_using_local_node();
+            
 
-            // Log every 100th transaction or all transactions if block has <= 50 txs
-            if tx_pos % 100 == 0 || block.txdata.len() <= 50 {
-                logging::log_info(&format!(
-                    "[{}] 📄 Processing tx {}/{} in block {}",
-                    network_id.name,
-                    tx_pos + 1,
-                    block.txdata.len(),
-                    height
-                ));
-            }
+            let parallel_processor = ParallelTransactionProcessor::new(
+                Arc::new(self.bitcoin_client.clone()),
+                Arc::new(self.charm_service.clone()),
+                network_id.clone(),
+                Some(config),
+            );
 
-            if let Some((transaction_item, charm_item, asset_item)) = self
-                .process_single_transaction(
-                    &txid_str,
+            parallel_processor
+                .process_block_transactions(
+                    block,
                     block_hash,
                     height,
                     latest_height,
-                    tx_pos,
                     &blockchain,
                     &network,
-                    network_id,
                 )
-                .await?
-            {
-                transaction_batch.push(transaction_item);
-                charm_batch.push(charm_item);
-                if let Some(asset) = asset_item {
-                    asset_batch.push(asset);
+                .await
+        } else {
+            // Use sequential processing for small blocks
+
+            let mut transaction_batch = Vec::new();
+            let mut charm_batch = Vec::new();
+            let mut asset_batch = Vec::new();
+
+            for (tx_pos, tx) in block.txdata.iter().enumerate() {
+                let txid = tx.txid();
+                let txid_str = txid.to_string();
+
+                if let Some((transaction_item, charm_item, asset_item)) = self
+                    .process_single_transaction(
+                        &txid_str,
+                        block_hash,
+                        height,
+                        latest_height,
+                        tx_pos,
+                        &blockchain,
+                        &network,
+                        network_id,
+                    )
+                    .await?
+                {
+                    transaction_batch.push(transaction_item);
+                    charm_batch.push(charm_item);
+                    if let Some(asset) = asset_item {
+                        asset_batch.push(asset);
+                    }
                 }
             }
+
+            Ok((transaction_batch, charm_batch, asset_batch))
         }
-
-        logging::log_info(&format!(
-            "[{}] 🎯 Found {} charms and {} assets in block {} ({} total transactions)",
-            network_id.name,
-            charm_batch.len(),
-            asset_batch.len(),
-            height,
-            block.txdata.len()
-        ));
-
-        Ok((transaction_batch, charm_batch, asset_batch))
     }
 
     /// Process a single transaction
@@ -258,11 +269,12 @@ impl<'a> BlockProcessor<'a> {
         let raw_tx_hex = match self
             .bitcoin_client
             .get_raw_transaction_hex(txid, Some(block_hash))
+            .await
         {
             Ok(hex) => hex,
             Err(e) => {
                 logging::log_error(&format!(
-                    "[{}] Error getting raw transaction {}: {}",
+                    "[{}] ❌ Error getting raw transaction {}: {}",
                     network_id.name, txid, e
                 ));
                 return Ok(None);
@@ -275,10 +287,6 @@ impl<'a> BlockProcessor<'a> {
             .await
         {
             Ok(Some(charm)) => {
-                logging::log_info(&format!(
-                    "[{}] 🎉 Block {}: Found charm tx: {} at pos {} (charm_id: {})",
-                    network_id.name, height, txid, tx_pos, charm.charmid
-                ));
 
                 let confirmations = latest_height - height + 1;
                 let is_confirmed = confirmations >= 6;
@@ -300,28 +308,22 @@ impl<'a> BlockProcessor<'a> {
                     network.to_string(),
                 );
 
+                // [RJJ-S01] Updated to use vout instead of charmid, added app_id and amount
                 let charm_item = (
                     txid.to_string(),
-                    charm.charmid,
+                    charm.vout,
                     height,
                     charm.data.clone(),
                     charm.asset_type.clone(),
                     blockchain.to_string(),
                     network.to_string(),
+                    charm.app_id.clone(),
+                    charm.amount,
                 );
 
-                // Extract app_id from charm data and create asset item
-                let asset_item = if let Some(app_id) = CharmDetectorService::extract_app_id_from_spell_data(&charm.data) {
-                    Some((
-                        app_id,
-                        charm.asset_type.clone(),
-                        1, // supply - using 1 as default for new charms
-                        blockchain.to_string(),
-                        network.to_string(),
-                    ))
-                } else {
-                    None
-                };
+                // Assets are now created directly by the charm service during native parsing
+                // No need to extract app_id here as it's handled in the native charm parser
+                let asset_item = None;
 
                 Ok(Some((transaction_item, charm_item, asset_item)))
             }
@@ -334,6 +336,82 @@ impl<'a> BlockProcessor<'a> {
                 Ok(None)
             }
         }
+    }
+
+    /// Get optimized parallel configuration based on provider capabilities
+    fn get_parallel_config_for_provider(&self, tx_count: usize) -> ParallelConfig {
+        // Check if we have external providers that might require fallback
+        let has_external_providers = self.has_external_providers();
+        
+        if has_external_providers {
+            // QuickNode optimized config - can handle 10 req/s
+            ParallelConfig {
+                max_concurrent_requests: 8,   // Increased for better throughput
+                requests_per_second: 8,       // Near QuickNode limit of 10 req/s
+                batch_size: 20,               // Larger batches
+                request_timeout_ms: 15000,    // Reasonable timeout
+            }
+        } else {
+            // Only local providers: Use aggressive configuration
+            ParallelConfig {
+                max_concurrent_requests: if tx_count > 1000 { 100 } else if tx_count > 500 { 75 } else { 50 },
+                requests_per_second: 100,
+                batch_size: if tx_count > 2000 { 200 } else if tx_count > 500 { 100 } else { 50 },
+                request_timeout_ms: 10000,
+            }
+        }
+    }
+    
+    /// Check if we have any external providers (QuickNode) in the provider list
+    fn has_external_providers(&self) -> bool {
+        self.bitcoin_client.has_external_providers()
+    }
+
+    /// Heuristic to determine if we're likely using a local Bitcoin node
+    fn is_using_local_node(&self) -> bool {
+        self.bitcoin_client.is_using_local_node()
+    }
+
+    /// Mark charms as spent by analyzing transaction inputs in the block
+    async fn mark_spent_charms(
+        &self,
+        block: &bitcoin::Block,
+        network_id: &NetworkId,
+    ) -> Result<(), BlockProcessorError> {
+        // Collect all input txids (UTXOs being spent) from all transactions in the block
+        let mut spent_txids = Vec::new();
+
+        for tx in &block.txdata {
+            // Skip coinbase transactions (they don't spend existing UTXOs)
+            if tx.is_coin_base() {
+                continue;
+            }
+
+            // Extract the txid from each input (previous output being spent)
+            for input in &tx.input {
+                let prev_txid = input.previous_output.txid.to_string();
+                spent_txids.push(prev_txid);
+            }
+        }
+
+        // Mark all collected txids as spent in batch using CharmService
+        if !spent_txids.is_empty() {
+            self.retry_handler
+                .execute_with_retry_and_logging(
+                    || async {
+                        self.charm_service
+                            .mark_charms_as_spent_batch(spent_txids.clone())
+                            .await
+                            .map_err(|e| crate::infrastructure::persistence::error::DbError::QueryError(e.to_string()))
+                    },
+                    "mark charms as spent",
+                    &network_id.name,
+                )
+                .await
+                .map_err(BlockProcessorError::DbError)?;
+        }
+
+        Ok(())
     }
 
 }

@@ -4,7 +4,6 @@ use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::SummaryRepository;
-use crate::utils::logging;
 
 use super::batch_processor::{CharmBatchItem, TransactionBatchItem};
 use super::retry_handler::RetryHandler;
@@ -40,7 +39,7 @@ impl<'a> SummaryUpdater<'a> {
     ) -> Result<(), BlockProcessorError> {
         // Get bitcoin node information
         let (bitcoin_node_status, bitcoin_node_block_count, bitcoin_node_best_block_hash) = 
-            match self.bitcoin_client.get_best_block_hash() {
+            match self.bitcoin_client.get_best_block_hash().await {
                 Ok(best_hash) => {
                     ("connected".to_string(), latest_height as i64, best_hash.to_string())
                 }
@@ -104,31 +103,24 @@ impl<'a> SummaryUpdater<'a> {
             .await
             .map_err(BlockProcessorError::DbError)?;
 
-        logging::log_info(&format!(
-            "[{}] 📊 Updated summary: block={}, charms={}, txs={}, confirmed={}",
-            network_id.name, height, totals.total_charms, totals.total_transactions, totals.total_confirmed_transactions
-        ));
 
         Ok(())
     }
-
     /// Calculate asset type counts from charm batch
     fn calculate_asset_counts(&self, charm_batch: &[CharmBatchItem]) -> AssetCounts {
         let mut counts = AssetCounts::default();
         
         for charm_item in charm_batch {
-            let asset_type = &charm_item.4; // asset_type is the 5th element
+            let asset_type = &charm_item.4; // asset_type is still the 5th element (index 4)
             match asset_type.as_str() {
                 "nft" => counts.nft_count += 1,
                 "token" => counts.token_count += 1,
-                "dapp" => counts.dapp_count += 1,
                 _ => counts.other_count += 1,
             }
         }
         
         counts
     }
-
     /// Calculate total counts by adding current batch to existing totals
     fn calculate_totals(
         &self,

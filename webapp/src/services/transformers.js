@@ -17,13 +17,9 @@ export const detectCharmType = (charm) => {
                 if (appValue.startsWith('t/')) {
                     return 'token';
                 }
-                // Add rules for 'dapp' if they become available
             }
         }
     }
-    // Fallback or default type if no specific type detected
-    // For now, let's keep the original asset_type if detection fails,
-    // or default to 'unknown' if asset_type is also missing.
     return charm?.asset_type || 'unknown';
 };
 
@@ -31,26 +27,16 @@ export const detectCharmType = (charm) => {
 // Transforms a charm object from the API to the format expected by the UI
 export const transformCharmData = (charm) => {
     if (!charm) {
-        console.log('transformCharmData: charm is null/undefined');
         return null;
     }
 
-    console.log('Transforming charm:', charm.charmid, 'data:', charm.data);
-    
     const detectedType = detectCharmType(charm);
-    console.log('Detected type for charm', charm.charmid, ':', detectedType);
 
-    // Extract data from the new metadata structure
-    // First check for data in the standard metadata structure (outs[0].charms.$0000)
     const charmData = getNestedProperty(charm, 'data.data.outs[0].charms.$0000') || {};
 
-    // Check if this charm has actual data or just a "No charm data from API" note
     const hasApiData = getNestedProperty(charm, 'data.has_api_data');
     const noteOnly = getNestedProperty(charm, 'data.data.note') === "No charm data from API";
-    
-    console.log('Charm has API data:', hasApiData, 'Note only:', noteOnly);
-    
-    // If not found in the new structure, fall back to the old structure
+
     const name = charmData.name ||
         getNestedProperty(charm, 'data.data.name') ||
         `Charm ${charm.charmid?.substring(0, 8) || 'Unknown'}`;
@@ -61,7 +47,7 @@ export const transformCharmData = (charm) => {
 
     const image = charmData.image ||
         getNestedProperty(charm, 'data.data.image') ||
-        'https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png';
+        '/images/logo.png';
 
     const ticker = charmData.ticker ||
         getNestedProperty(charm, 'data.data.ticker') || '';
@@ -87,10 +73,8 @@ export const transformCharmData = (charm) => {
     // Extract version
     const version = getNestedProperty(charm, 'data.data.version') || '';
 
-    // Use real likes count from API if available, otherwise default to 0
     const likes = charm.likes_count || 0;
     const userLiked = charm.user_liked || false;
-    // Comments are not yet implemented, so we'll show 0
     const comments = 0;
 
     const result = {
@@ -111,29 +95,44 @@ export const transformCharmData = (charm) => {
         remaining,
         url,
         attributes,
-        // New fields from the metadata standards
-        imageHash,
-        utxoId,
-        appData,
-        version,
-        // Store the raw charm data for debugging and future use
         rawCharmData: charmData
     };
-    
-    console.log('Transformed charm result:', result);
+
     return result;
 };
 
 // Transforms an array of charms from the API
 export const transformCharmsArray = (charms) => {
     if (!Array.isArray(charms)) {
-        console.log('transformCharmsArray: input is not an array:', charms);
         return [];
     }
-    console.log('transformCharmsArray: processing', charms.length, 'charms');
-    const transformed = charms.map(transformCharmData).filter(Boolean);
-    console.log('transformCharmsArray: returned', transformed.length, 'transformed charms');
-    return transformed;
+
+    const seenIds = new Set();
+    const result = [];
+
+    charms.forEach((charm, index) => {
+        const transformed = transformCharmData(charm);
+        if (transformed) {
+            if (!transformed.id) {
+                transformed.id = `generated-${index}-${Date.now()}`;
+            }
+
+            if (seenIds.has(transformed.id)) {
+                let counter = 1;
+                let newId = `${transformed.id}-${counter}`;
+                while (seenIds.has(newId)) {
+                    counter++;
+                    newId = `${transformed.id}-${counter}`;
+                }
+                transformed.id = newId;
+            }
+
+            seenIds.add(transformed.id);
+            result.push(transformed);
+        }
+    });
+
+    return result;
 };
 
 // Counts charms by type using the detection logic
@@ -172,7 +171,7 @@ export const createDefaultCharm = (id) => {
         type: 'unknown',
         name: `Charm ${id.substring(0, 8)}`,
         description: 'No description available',
-        image: 'https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png',
+        image: '/images/logo.png',
         txid: '',
         outputIndex: 0,
         address: '',

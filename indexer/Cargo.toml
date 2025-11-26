@@ -13,9 +13,17 @@ hex = "0.4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.32.0", features = ["full"] }
+futures = "0.3"
 reqwest = { version = "0.11", features = ["json"] }
 sqlx = { version = "0.7", features = ["runtime-tokio", "tls-native-tls", "postgres", "json", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 
+# Charms integration
+charms-client = "0.9.2"
+charms-data = "0.9.2"
+bitcoin = "0.32.7"
+anyhow = "1.0.99"
+
 # SeaORM dependencies
-sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono", "with-json"] }
+sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono", "with-json", "with-rust_decimal"] }
+rust_decimal = "1.32"

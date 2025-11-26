@@ -1,8 +1,10 @@
 //! Asset repository for database operations
 
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set, NotSet};
-use serde_json::Value;
+use sea_orm::entity::prelude::*;
+use sea_orm::{DatabaseConnection, EntityTrait, Set, NotSet};
 use chrono::{DateTime, FixedOffset, Utc};
+use serde_json::Value;
+use rust_decimal::Decimal;
 
 use crate::domain::models::Asset;
 use crate::infrastructure::persistence::entities::{assets, prelude::*};
@@ -20,30 +22,44 @@ impl AssetRepository {
         Self { db }
     }
 
-    /// Save a single asset to the database
-    pub async fn save_asset(&self, asset: &Asset) -> Result<(), DbError> {
-        let active_model = assets::ActiveModel {
-            id: NotSet,
-            app_id: Set(asset.app_id.clone()),
-            txid: Set(asset.txid.clone()),
-            vout_index: Set(asset.vout_index),
-            charm_id: Set(asset.charm_id.clone()),
-            block_height: Set(asset.block_height as i32),
-            date_created: Set(DateTime::<FixedOffset>::from(DateTime::<Utc>::from_naive_utc_and_offset(asset.date_created, Utc))),
-            data: Set(asset.data.clone()),
-            asset_type: Set(asset.asset_type.clone()),
-            blockchain: Set(asset.blockchain.clone()),
-            network: Set(asset.network.clone()),
-            created_at: Set(Utc::now().into()),
-            updated_at: Set(Utc::now().into()),
-        };
+    /// Save or update asset with supply accumulation
+    pub async fn save_or_update_asset(&self, asset: &Asset, amount: i64) -> Result<(), DbError> {
+        // Processing asset silently
 
-        // Try to insert, if conflict occurs, update the existing record
-        match Assets::insert(active_model).exec(&self.db).await {
-            Ok(_) => {},
-            Err(sea_orm::DbErr::RecordNotInserted) => {
-                // Record already exists, update it
+        // Check if asset already exists
+        let existing_asset = Assets::find()
+            .filter(assets::Column::AppId.eq(&asset.app_id))
+            .one(&self.db)
+            .await
+            .map_err(|e| DbError::SeaOrmError(e))?;
+
+        match existing_asset {
+            Some(existing) => {
+                // Asset exists, update supply using Decimal for large numbers
+                let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
+                let amount_decimal = Decimal::from(amount);
+                let new_supply = old_supply + amount_decimal;
+                // Reduced logging for asset updates
+
                 let update_model = assets::ActiveModel {
+                    id: Set(existing.id),
+                    total_supply: Set(Some(new_supply)),
+                    updated_at: Set(Utc::now().into()),
+                    ..Default::default()
+                };
+
+                Assets::update(update_model)
+                    .exec(&self.db)
+                    .await
+                    .map_err(|e| DbError::SeaOrmError(e))?;
+
+                // Asset updated silently
+            }
+            None => {
+                // Asset doesn't exist, create new one
+                // Creating new asset silently
+
+                let active_model = assets::ActiveModel {
                     id: NotSet,
                     app_id: Set(asset.app_id.clone()),
                     txid: Set(asset.txid.clone()),
@@ -55,21 +71,31 @@ impl AssetRepository {
                     asset_type: Set(asset.asset_type.clone()),
                     blockchain: Set(asset.blockchain.clone()),
                     network: Set(asset.network.clone()),
-                    created_at: NotSet,
+                    name: Set(None),
+                    symbol: Set(None),
+                    description: Set(None),
+                    image_url: Set(None),
+                    total_supply: Set(Some(Decimal::from(amount))),
+                    created_at: Set(Utc::now().into()),
                     updated_at: Set(Utc::now().into()),
                 };
-                
-                Assets::update_many()
-                    .filter(assets::Column::AppId.eq(&asset.app_id))
-                    .set(update_model)
+
+                Assets::insert(active_model)
                     .exec(&self.db)
                     .await
                     .map_err(|e| DbError::SeaOrmError(e))?;
-            },
-            Err(e) => return Err(DbError::SeaOrmError(e)),
+
+                // Asset created silently
+            }
         }
 
         Ok(())
+    }
+
+    /// Save a single asset to the database (legacy method)
+    pub async fn save_asset(&self, asset: &Asset) -> Result<(), DbError> {
+        // Use the new method with amount = 1 for backward compatibility
+        self.save_or_update_asset(asset, 1).await
     }
 
     /// Save multiple assets in a batch operation
@@ -91,6 +117,13 @@ impl AssetRepository {
             return Ok(());
         }
 
+        let assets_count = assets.len();
+        
+        // Log only for larger batches to reduce noise
+        if assets_count > 5 {
+            println!("💾 Batch saving {} assets to database", assets_count);
+        }
+
         let now = Utc::now();
         let active_models: Vec<assets::ActiveModel> = assets
             .into_iter()
@@ -107,26 +140,37 @@ impl AssetRepository {
                     asset_type: Set(asset_type),
                     blockchain: Set(blockchain),
                     network: Set(network),
+                    name: NotSet,
+                    symbol: NotSet,
+                    description: NotSet,
+                    image_url: NotSet,
+                    total_supply: Set(Some(Decimal::from(1))),
                     created_at: Set(now.into()),
                     updated_at: Set(now.into()),
                 }
             })
             .collect();
 
-        // For batch operations, we'll insert and handle conflicts individually
-        for active_model in active_models {
-            match Assets::insert(active_model).exec(&self.db).await {
-                Ok(_) => {},
-                Err(sea_orm::DbErr::RecordNotInserted) => {
-                    // Handle conflict by updating existing record
-                    // For batch operations, we'll skip updates to keep it simple
-                    // In production, you might want to implement proper batch upsert
-                },
-                Err(e) => return Err(DbError::SeaOrmError(e)),
+        // Try to insert all assets, handle duplicate key violations gracefully
+        match Assets::insert_many(active_models).exec(&self.db).await {
+            Ok(_) => {
+                // Only log for larger batches
+                if assets_count > 5 {
+                    println!("✅ Batch saved {} assets successfully", assets_count);
+                }
+                Ok(())
+            },
+            Err(e) => {
+                // Check if the error is a duplicate key violation
+                if e.to_string().contains("duplicate key value violates unique constraint") {
+                    // Assets already exist, this is not an error - silently succeed
+                    Ok(())
+                } else {
+                    // If it's not a duplicate key error, propagate it
+                    Err(DbError::SeaOrmError(e))
+                }
             }
         }
-
-        Ok(())
     }
 
     /// Find asset by app_id
@@ -149,6 +193,7 @@ impl AssetRepository {
                 asset_type: model.asset_type,
                 blockchain: model.blockchain,
                 network: model.network,
+                total_supply: model.total_supply,
             })),
             None => Ok(None),
         }
@@ -175,6 +220,7 @@ impl AssetRepository {
                 asset_type: model.asset_type,
                 blockchain: model.blockchain,
                 network: model.network,
+                total_supply: model.total_supply,
             })
             .collect();
 

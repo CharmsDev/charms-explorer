@@ -56,7 +56,6 @@ export default function StatusPage() {
         try {
             setLoading(true);
             const statusData = await fetchIndexerStatus();
-            console.log('Status data:', statusData);
 
             // Process and organize data by network
             const processedData = {
