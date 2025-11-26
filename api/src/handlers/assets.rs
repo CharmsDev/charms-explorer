@@ -90,7 +90,7 @@ pub struct AssetItem {
     pub description: Option<String>,
     pub image_url: Option<String>,
     pub total_supply: Option<i64>,
-    pub decimals: i16, // [RJJ-DECIMALS] Dynamic decimal precision
+    pub decimals: i16, // Dynamic decimal precision
     pub network: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
@@ -157,7 +157,7 @@ pub async fn get_assets(
                     description,
                     image_url,
                     total_supply: asset.total_supply.map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
-                    decimals: asset.decimals, // [RJJ-DECIMALS]
+                    decimals: asset.decimals,
                     network: asset.network,
                     created_at: asset.created_at,
                     updated_at: asset.updated_at,
@@ -246,7 +246,7 @@ pub async fn get_asset_by_id(
                 description,
                 image_url,
                 total_supply: asset.total_supply.map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
-                decimals: asset.decimals, // [RJJ-DECIMALS]
+                decimals: asset.decimals,
                 network: asset.network,
                 created_at: asset.created_at,
                 updated_at: asset.updated_at,

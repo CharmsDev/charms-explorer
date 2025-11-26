@@ -1,4 +1,4 @@
-// [RJJ-STATS-HOLDERS] Stats holders entity - Aggregated holder statistics per asset
+// Stats holders entity - Aggregated holder statistics per asset
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use chrono::NaiveDateTime;
