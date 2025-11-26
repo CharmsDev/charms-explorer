@@ -1,26 +1,37 @@
 // Database repository management
 
-mod charm_repository;
-mod likes_repository;
+pub mod asset_repository;
+pub mod charm_repository;
+pub mod likes_repository;
+pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
 
+pub use asset_repository::AssetRepository;
 pub use charm_repository::CharmRepository;
 pub use likes_repository::LikesRepository;
+pub use stats_holders_repository::StatsHoldersRepository;
 
 use sea_orm::DatabaseConnection;
+use std::sync::Arc;
 
 /// Container for all database repositories
 pub struct Repositories {
+    pub asset_repository: Arc<AssetRepository>,
     pub charm: CharmRepository,
     pub likes: LikesRepository,
+    pub stats_holders: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
 }
 
 impl Repositories {
     /// Creates a new repositories container with database connection
     pub fn new(conn: DatabaseConnection) -> Self {
         let db_conn = conn.clone();
+        let db_conn2 = conn.clone();
+        let db_conn3 = conn.clone();
         Repositories {
-            charm: CharmRepository::new(conn),
-            likes: LikesRepository::new(db_conn),
+            asset_repository: Arc::new(AssetRepository::new(std::sync::Arc::new(conn))),
+            charm: CharmRepository::new(db_conn),
+            likes: LikesRepository::new(db_conn2),
+            stats_holders: StatsHoldersRepository::new(db_conn3), // [RJJ-STATS-HOLDERS]
         }
     }
 }

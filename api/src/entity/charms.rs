@@ -10,8 +10,8 @@ use serde_json::Value;
 pub struct Model {
     #[sea_orm(primary_key, column_type = "Text")]
     pub txid: String,
-    #[sea_orm(column_type = "Text")]
-    pub charmid: String,
+    #[sea_orm(primary_key)]
+    pub vout: i32,
     pub block_height: i32,
     pub data: Value,
     pub date_created: NaiveDateTime,
@@ -21,6 +21,12 @@ pub struct Model {
     pub blockchain: String,
     #[sea_orm(column_type = "Text")]
     pub network: String,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub address: Option<String>,
+    pub spent: bool,
+    #[sea_orm(column_type = "Text")]
+    pub app_id: String,
+    pub amount: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
