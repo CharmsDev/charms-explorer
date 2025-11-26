@@ -9,6 +9,7 @@ export default function Header() {
     const [isConnecting, setIsConnecting] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const pathname = usePathname();
 
     // Use the network context
@@ -30,14 +31,21 @@ export default function Header() {
 
     const handleConnect = () => {
         setIsConnecting(true);
-        // Simulate wallet connection
+        // TODO: Implement wallet connection
         setTimeout(() => {
             setIsConnecting(false);
-            alert('RJJ-TODO - Wallet connection');
+            // Wallet connection will be implemented here
         }, 1000);
     };
 
-    // No longer needed as we're using the context
+    // Handle search submission [RJJ-ADDRESS-SEARCH]
+    const handleSearch = (e) => {
+        e.preventDefault();
+        if (searchQuery.trim()) {
+            // Navigate to address page
+            window.location.href = `/address/${searchQuery.trim()}`;
+        }
+    };
 
     return (
         <header className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${isScrolled
@@ -53,7 +61,7 @@ export default function Header() {
                             <div className="flex items-center group">
                                 <div className={`relative transition-all duration-300 ${isScrolled ? 'scale-90' : 'scale-100'}`}>
                                     <img
-                                        src="https://charms.dev/_astro/logo-charms-dark.Ceshk2t3.png"
+                                        src="/images/logo.png"
                                         alt="Charms Logo"
                                         className="h-7 w-auto group-hover:animate-pulse-slow"
                                     />
@@ -67,20 +75,22 @@ export default function Header() {
                         </Link>
                     </div>
 
-                    {/* Center section - Search bar */}
+                    {/* Center section - Search bar [RJJ-ADDRESS-SEARCH] */}
                     <div className="hidden md:flex justify-center">
-                        <div className="relative group w-full max-w-md">
+                        <form onSubmit={handleSearch} className="relative group w-full max-w-md">
                             <input
                                 type="text"
-                                placeholder="Search Charms"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder="Search by Bitcoin address..."
                                 className="w-full bg-dark-800/70 text-white rounded-full py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-dark-800 transition-all"
                             />
-                            <div className="absolute left-3 top-2.5 text-dark-400 group-focus-within:text-primary-400 transition-colors">
+                            <button type="submit" className="absolute left-3 top-2.5 text-dark-400 group-focus-within:text-primary-400 transition-colors">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
-                            </div>
-                        </div>
+                            </button>
+                        </form>
                     </div>
 
                     {/* Right section - Status button, Connect button and menu */}

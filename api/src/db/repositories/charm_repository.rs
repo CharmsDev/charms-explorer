@@ -1,6 +1,6 @@
 // Charm database operations implementation
 
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect, PaginatorTrait};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, PaginatorTrait};
 
 use crate::db::error::DbError;
 use crate::entity::charms;
@@ -22,28 +22,18 @@ impl CharmRepository {
         &self.conn
     }
 
-    /// Retrieves a charm by transaction ID
+    /// Retrieves charms by transaction ID (may return multiple due to composite key)
     pub async fn get_by_txid(&self, txid: &str) -> Result<Option<charms::Model>, DbError> {
-        charms::Entity::find_by_id(txid.to_string())
+        charms::Entity::find()
+            .filter(charms::Column::Txid.eq(txid))
             .one(&self.conn)
             .await
             .map_err(Into::into)
     }
 
-    /// Finds all charms with matching charm ID
-    pub async fn find_by_charmid(&self, charmid: &str) -> Result<Vec<charms::Model>, DbError> {
-        charms::Entity::find()
-            .filter(charms::Column::Charmid.eq(charmid))
-            .all(&self.conn)
-            .await
-            .map_err(Into::into)
-    }
-
     /// Finds all charms with matching asset type
-    pub async fn find_by_asset_type(
-        &self,
-        asset_type: &str,
-    ) -> Result<Vec<charms::Model>, DbError> {
+    #[allow(dead_code)]
+    pub async fn find_by_asset_type(&self, asset_type: &str) -> Result<Vec<charms::Model>, DbError> {
         charms::Entity::find()
             .filter(charms::Column::AssetType.eq(asset_type))
             .all(&self.conn)
@@ -51,98 +41,80 @@ impl CharmRepository {
             .map_err(Into::into)
     }
     
-    /// Finds all charms with matching asset type with pagination and sorting
+    /// Retrieves all charms ordered by descending block height (legacy method)
+    #[allow(dead_code)]
+    pub async fn get_all(&self) -> Result<Vec<charms::Model>, DbError> {
+        charms::Entity::find()
+            .order_by_desc(charms::Column::BlockHeight)
+            .all(&self.conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Retrieves all charms paginated by network
+    pub async fn get_all_paginated_by_network(
+        &self,
+        pagination: &PaginationParams,
+        network: &str,
+    ) -> Result<(Vec<charms::Model>, u64), DbError> {
+        let paginator = charms::Entity::find()
+            .filter(charms::Column::Network.eq(network))
+            .order_by_desc(charms::Column::BlockHeight)
+            .paginate(&self.conn, pagination.limit);
+        
+        let total = paginator.num_items().await?;
+        let charms = paginator.fetch_page(pagination.page - 1).await?;
+        
+        Ok((charms, total))
+    }
+
+    /// Retrieves all charms paginated
+    pub async fn get_all_paginated(
+        &self,
+        pagination: &PaginationParams,
+    ) -> Result<(Vec<charms::Model>, u64), DbError> {
+        let paginator = charms::Entity::find()
+            .order_by_desc(charms::Column::BlockHeight)
+            .paginate(&self.conn, pagination.limit);
+        
+        let total = paginator.num_items().await?;
+        let charms = paginator.fetch_page(pagination.page - 1).await?;
+        
+        Ok((charms, total))
+    }
+
+    /// Finds charms by asset type with pagination
     pub async fn find_by_asset_type_paginated(
         &self,
         asset_type: &str,
         pagination: &PaginationParams,
     ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        let mut query = charms::Entity::find()
-            .filter(charms::Column::AssetType.eq(asset_type));
-        
-        // Apply sorting
-        query = match pagination.sort.as_str() {
-            "oldest" => query.order_by_asc(charms::Column::BlockHeight),
-            _ => query.order_by_desc(charms::Column::BlockHeight), // "newest" is default
-        };
-        
-        // Get total count
-        let total = query.clone().count(&self.conn).await?;
-        
-        // Apply pagination
-        let paginator = query
+        let paginator = charms::Entity::find()
+            .filter(charms::Column::AssetType.eq(asset_type))
+            .order_by_desc(charms::Column::BlockHeight)
             .paginate(&self.conn, pagination.limit);
         
-        let charms = paginator
-            .fetch_page(pagination.page - 1) // 0-indexed page
-            .await?;
+        let total = paginator.num_items().await?;
+        let charms = paginator.fetch_page(pagination.page - 1).await?;
         
         Ok((charms, total))
     }
 
-    /// Retrieves all charms with pagination and sorting, optionally filtered by network
-    pub async fn get_all_paginated(
-        &self,
-        pagination: &PaginationParams,
-    ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        let mut query = charms::Entity::find();
-        
-        // Apply sorting
-        query = match pagination.sort.as_str() {
-            "oldest" => query.order_by_asc(charms::Column::BlockHeight),
-            _ => query.order_by_desc(charms::Column::BlockHeight), // "newest" is default
-        };
-        
-        // Get total count
-        let total = query.clone().count(&self.conn).await?;
-        
-        // Apply pagination
-        let paginator = query
-            .paginate(&self.conn, pagination.limit);
-        
-        let charms = paginator
-            .fetch_page(pagination.page - 1) // 0-indexed page
-            .await?;
-        
-        Ok((charms, total))
-    }
-
-    /// Retrieves all charms with pagination, sorting, and network filtering
-    pub async fn get_all_paginated_by_network(
-        &self,
-        pagination: &PaginationParams,
-        network: Option<&str>,
-    ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        let mut query = charms::Entity::find();
-        
-        // Apply network filter if provided
-        if let Some(network) = network {
-            query = query.filter(charms::Column::Network.eq(network));
-        }
-        
-        // Apply sorting
-        query = match pagination.sort.as_str() {
-            "oldest" => query.order_by_asc(charms::Column::BlockHeight),
-            _ => query.order_by_desc(charms::Column::BlockHeight), // "newest" is default
-        };
-        
-        // Get total count
-        let total = query.clone().count(&self.conn).await?;
-        
-        // Apply pagination
-        let paginator = query
-            .paginate(&self.conn, pagination.limit);
-        
-        let charms = paginator
-            .fetch_page(pagination.page - 1) // 0-indexed page
-            .await?;
-        
-        Ok((charms, total))
-    }
-    
-    /// Retrieves all charms ordered by descending block height (legacy method)
-    pub async fn get_all(&self) -> Result<Vec<charms::Model>, DbError> {
+    /// Finds charms by charm ID (app_id)
+    pub async fn find_by_charmid(&self, charmid: &str) -> Result<Vec<charms::Model>, DbError> {
         charms::Entity::find()
+            .filter(charms::Column::AppId.eq(charmid))
+            .all(&self.conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// [RJJ-ADDRESS-SEARCH] Finds UNSPENT charms by address
+    /// Returns only charms where spent = false
+    pub async fn find_by_address(&self, address: &str) -> Result<Vec<charms::Model>, DbError> {
+        charms::Entity::find()
+            .filter(charms::Column::Address.eq(address))
+            .filter(charms::Column::Spent.eq(false))
             .order_by_desc(charms::Column::BlockHeight)
             .all(&self.conn)
             .await
@@ -165,7 +137,7 @@ impl CharmRepository {
             .all(&self.conn)
             .await?;
 
-        let charm_numbers = charms.into_iter().map(|c| c.charmid).collect();
+        let charm_numbers = charms.into_iter().map(|c| c.app_id).collect();
 
         Ok(charm_numbers)
     }

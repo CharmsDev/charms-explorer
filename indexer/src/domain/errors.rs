@@ -1,15 +1,13 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::infrastructure::api::error::ApiClientError;
-use crate::infrastructure::bitcoin::error::BitcoinClientError;
+use crate::infrastructure::bitcoin::BitcoinClientError;
 use crate::infrastructure::persistence::error::DbError;
 
 /// Error type for charm detection and processing
 #[derive(Debug)]
 pub enum CharmError {
     BitcoinClientError(BitcoinClientError),
-    ApiClientError(ApiClientError),
     DbError(DbError),
     DetectionError(String),
     ProcessingError(String),
@@ -19,7 +17,6 @@ impl fmt::Display for CharmError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             CharmError::BitcoinClientError(e) => write!(f, "Bitcoin client error: {}", e),
-            CharmError::ApiClientError(e) => write!(f, "API client error: {}", e),
             CharmError::DbError(e) => write!(f, "Database error: {}", e),
             CharmError::DetectionError(msg) => write!(f, "Charm detection error: {}", msg),
             CharmError::ProcessingError(msg) => write!(f, "Charm processing error: {}", msg),
@@ -27,17 +24,20 @@ impl fmt::Display for CharmError {
     }
 }
 
-impl Error for CharmError {}
+impl Error for CharmError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            CharmError::BitcoinClientError(e) => Some(e),
+            CharmError::DbError(e) => Some(e),
+            CharmError::DetectionError(_) => None,
+            CharmError::ProcessingError(_) => None,
+        }
+    }
+}
 
 impl From<BitcoinClientError> for CharmError {
     fn from(error: BitcoinClientError) -> Self {
         CharmError::BitcoinClientError(error)
-    }
-}
-
-impl From<ApiClientError> for CharmError {
-    fn from(error: ApiClientError) -> Self {
-        CharmError::ApiClientError(error)
     }
 }
 
@@ -51,7 +51,6 @@ impl From<DbError> for CharmError {
 #[derive(Debug)]
 pub enum BlockProcessorError {
     BitcoinClientError(BitcoinClientError),
-    ApiClientError(ApiClientError),
     CharmError(CharmError),
     DbError(DbError),
     ConfigError(String),
@@ -62,7 +61,6 @@ impl fmt::Display for BlockProcessorError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             BlockProcessorError::BitcoinClientError(e) => write!(f, "Bitcoin client error: {}", e),
-            BlockProcessorError::ApiClientError(e) => write!(f, "API client error: {}", e),
             BlockProcessorError::CharmError(e) => write!(f, "Charm error: {}", e),
             BlockProcessorError::DbError(e) => write!(f, "Database error: {}", e),
             BlockProcessorError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
@@ -76,12 +74,6 @@ impl Error for BlockProcessorError {}
 impl From<BitcoinClientError> for BlockProcessorError {
     fn from(error: BitcoinClientError) -> Self {
         BlockProcessorError::BitcoinClientError(error)
-    }
-}
-
-impl From<ApiClientError> for BlockProcessorError {
-    fn from(error: ApiClientError) -> Self {
-        BlockProcessorError::ApiClientError(error)
     }
 }
 

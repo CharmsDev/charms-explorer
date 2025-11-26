@@ -33,11 +33,12 @@ pub async fn get_charm_numbers_by_type(
 pub async fn get_all_charms_paginated_by_network(
     state: &AppState,
     pagination: &PaginationParams,
-    user_id: i32,
+    _user_id: i32,
     network: Option<&str>,
 ) -> ExplorerResult<PaginatedResponse<CharmsResponse>> {
     // Handle database query with graceful error handling
-    let (charms, total) = match state.repositories.charm.get_all_paginated_by_network(pagination, network).await {
+    let network_str = network.unwrap_or("mainnet");
+    let (charms, total) = match state.repositories.charm.get_all_paginated_by_network(pagination, network_str).await {
         Ok(result) => result,
         Err(err) => {
             // Log database error for monitoring
@@ -65,7 +66,7 @@ pub async fn get_all_charms_paginated_by_network(
         
         let charm_data_item = CharmData {
             txid: charm.txid,
-            charmid: charm.charmid,
+            charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data,
             date_created: charm.date_created.to_string(),
@@ -127,20 +128,14 @@ pub async fn get_all_charms_paginated(
         }
         
         // Get likes count for this charm
-        let likes_count = match state.repositories.likes.get_likes_count(&charm.charmid).await {
-            Ok(count) => count,
-            Err(_) => 0, // Default to 0 if there's an error
-        };
+        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
         
         // Check if the user has liked this charm
-        let user_liked = match state.repositories.likes.has_user_liked(&charm.charmid, user_id).await {
-            Ok(liked) => liked,
-            Err(_) => false, // Default to false if there's an error
-        };
+        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
         
         charm_data.push(CharmData {
             txid: charm.txid,
-            charmid: charm.charmid,
+            charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
@@ -167,6 +162,7 @@ pub async fn get_all_charms_paginated(
     })
 }
 
+#[allow(dead_code)]
 pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<CharmsResponse> {
     // Wrap the database call in a try-catch to provide more detailed error information
     let charms = match state.repositories.charm.get_all().await {
@@ -188,20 +184,14 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
         }
         
         // Get likes count for this charm
-        let likes_count = match state.repositories.likes.get_likes_count(&charm.charmid).await {
-            Ok(count) => count,
-            Err(_) => 0, // Default to 0 if there's an error
-        };
+        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
         
         // Check if the user has liked this charm
-        let user_liked = match state.repositories.likes.has_user_liked(&charm.charmid, user_id).await {
-            Ok(liked) => liked,
-            Err(_) => false, // Default to false if there's an error
-        };
+        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
         
         charm_data.push(CharmData {
             txid: charm.txid,
-            charmid: charm.charmid,
+            charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
@@ -252,20 +242,14 @@ pub async fn get_charms_by_type_paginated(
         }
         
         // Get likes count for this charm
-        let likes_count = match state.repositories.likes.get_likes_count(&charm.charmid).await {
-            Ok(count) => count,
-            Err(_) => 0, // Default to 0 if there's an error
-        };
+        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
         
         // Check if the user has liked this charm
-        let user_liked = match state.repositories.likes.has_user_liked(&charm.charmid, user_id).await {
-            Ok(liked) => liked,
-            Err(_) => false, // Default to false if there's an error
-        };
+        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
         
         charm_data.push(CharmData {
             txid: charm.txid,
-            charmid: charm.charmid,
+            charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
@@ -292,6 +276,7 @@ pub async fn get_charms_by_type_paginated(
     })
 }
 
+#[allow(dead_code)]
 pub async fn get_charms_by_type(
     state: &AppState,
     asset_type: &str,
@@ -321,20 +306,14 @@ pub async fn get_charms_by_type(
         }
         
         // Get likes count for this charm
-        let likes_count = match state.repositories.likes.get_likes_count(&charm.charmid).await {
-            Ok(count) => count,
-            Err(_) => 0, // Default to 0 if there's an error
-        };
+        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
         
         // Check if the user has liked this charm
-        let user_liked = match state.repositories.likes.has_user_liked(&charm.charmid, user_id).await {
-            Ok(liked) => liked,
-            Err(_) => false, // Default to false if there's an error
-        };
+        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
         
         charm_data.push(CharmData {
             txid: charm.txid,
-            charmid: charm.charmid,
+            charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
@@ -385,20 +364,14 @@ pub async fn get_charm_by_txid(state: &AppState, txid: &str, user_id: i32) -> Ex
     };
 
     // Get likes count for this charm
-    let likes_count = match state.repositories.likes.get_likes_count(&charm.charmid).await {
-        Ok(count) => count,
-        Err(_) => 0, // Default to 0 if there's an error
-    };
+    let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
     
     // Check if the user has liked this charm
-    let user_liked = match state.repositories.likes.has_user_liked(&charm.charmid, user_id).await {
-        Ok(liked) => liked,
-        Err(_) => false, // Default to false if there's an error
-    };
+    let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
 
     Ok(CharmData {
         txid: charm.txid,
-        charmid: charm.charmid,
+        charmid: charm.app_id,
         block_height: charm.block_height,
         data: charm.data,
         date_created: charm.date_created.to_string(),
@@ -429,23 +402,17 @@ pub async fn get_charm_by_charmid(state: &AppState, charmid: &str, user_id: i32)
     }
 
     // Get likes count for this charm
-    let likes_count = match state.repositories.likes.get_likes_count(charmid).await {
-        Ok(count) => count,
-        Err(_) => 0, // Default to 0 if there's an error
-    };
+    let likes_count = (state.repositories.likes.get_likes_count(charmid).await).unwrap_or(0);
     
     // Check if the user has liked this charm
-    let user_liked = match state.repositories.likes.has_user_liked(charmid, user_id).await {
-        Ok(liked) => liked,
-        Err(_) => false, // Default to false if there's an error
-    };
+    let user_liked = (state.repositories.likes.has_user_liked(charmid, user_id).await).unwrap_or(false);
 
     // First try to find a non-empty spell charm
     for charm in &charms {
         if !is_empty_spell_charm(&charm.data) {
             return Ok(CharmData {
                 txid: charm.txid.clone(),
-                charmid: charm.charmid.clone(),
+                charmid: charm.app_id.clone(),
                 block_height: charm.block_height,
                 data: charm.data.clone(),
                 date_created: charm.date_created.to_string(),
@@ -460,7 +427,7 @@ pub async fn get_charm_by_charmid(state: &AppState, charmid: &str, user_id: i32)
     let first_charm = &charms[0];
     Ok(CharmData {
         txid: first_charm.txid.clone(),
-        charmid: first_charm.charmid.clone(),
+        charmid: first_charm.app_id.clone(),
         block_height: first_charm.block_height,
         data: first_charm.data.clone(),
         date_created: first_charm.date_created.to_string(),
@@ -507,5 +474,56 @@ pub async fn remove_like(state: &AppState, request: &LikeCharmRequest) -> Explor
             
             Err(DbError::QueryError("Failed to remove like".to_string()).into())
         }
+    }
+}
+
+/// [RJJ-ADDRESS-SEARCH] Get charms by address (UNSPENT only)
+/// Returns charms with enriched metadata from related assets
+pub async fn get_charms_by_address(
+    state: &AppState,
+    address: &str,
+    user_id: i32,
+) -> ExplorerResult<CharmsResponse> {
+    // Get unspent charms for this address
+    let charms = match state.repositories.charm.find_by_address(address).await {
+        Ok(result) => result,
+        Err(err) => {
+            eprintln!("Database error in get_charms_by_address: {:?}", err);
+            return Ok(CharmsResponse { charms: vec![] });
+        }
+    };
+
+    // Transform charms to CharmData format
+    let mut charm_data = Vec::new();
+    
+    for charm in charms {
+        // Get likes count for this charm
+        let likes_count = state.repositories.likes.get_likes_count(&charm.app_id).await.unwrap_or(0);
+        
+        // Check if the user has liked this charm
+        let user_liked = state.repositories.likes.has_user_liked(&charm.app_id, user_id).await.unwrap_or(false);
+
+        charm_data.push(CharmData {
+            txid: charm.txid,
+            charmid: charm.app_id.clone(), // Using app_id as charmid
+            block_height: charm.block_height,
+            data: charm.data,
+            date_created: charm.date_created.to_string(),
+            asset_type: charm.asset_type,
+            likes_count,
+            user_liked,
+        });
+    }
+
+    Ok(CharmsResponse { charms: charm_data })
+}
+
+/// Extract hash from app_id (removes t/ or n/ prefix) [RJJ-ADDRESS-SEARCH]
+fn extract_hash_from_app_id(app_id: &str) -> String {
+    let parts: Vec<&str> = app_id.split('/').collect();
+    if parts.len() >= 2 {
+        parts[1..].join("/")
+    } else {
+        app_id.to_string()
     }
 }

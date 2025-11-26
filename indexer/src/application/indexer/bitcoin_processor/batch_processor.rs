@@ -93,7 +93,7 @@ impl<'a> BatchProcessor<'a> {
     async fn execute_batch_save<F, Fut, E, ErrMapper>(
         &self,
         batch_type: &str,
-        batch_size: usize,
+        _batch_size: usize,
         height: u64,
         network_id: &NetworkId,
         operation: F,
@@ -108,18 +108,10 @@ impl<'a> BatchProcessor<'a> {
         const MAX_RETRIES: u32 = 3;
         const RETRY_DELAY_MS: u64 = 500;
 
-        logging::log_info(&format!(
-            "[{}] Saving batch of {} {}s for block {}",
-            network_id.name, batch_size, batch_type, height
-        ));
 
         for attempt in 1..=MAX_RETRIES {
             match operation().await {
                 Ok(_) => {
-                    logging::log_info(&format!(
-                        "[{}] Successfully saved {} batch for block {}",
-                        network_id.name, batch_type, height
-                    ));
                     return Ok(());
                 }
                 Err(e) => {
@@ -155,14 +147,17 @@ pub type TransactionBatchItem = (
 );
 
 /// Charm batch item for bulk operations
+/// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
 pub type CharmBatchItem = (
     String, // txid
-    String, // charmid
+    i32,    // vout
     u64,    // height
     Value,  // data
     String, // asset_type
     String, // blockchain
     String, // network
+    String, // app_id
+    i64,    // amount
 );
 
 /// Asset batch item for bulk operations

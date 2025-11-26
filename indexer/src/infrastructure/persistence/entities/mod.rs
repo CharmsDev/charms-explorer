@@ -5,5 +5,7 @@ pub mod prelude;
 pub mod assets;
 pub mod bookmark;
 pub mod charms;
+pub mod spells; // [RJJ-S01] New spells entity
+pub mod stats_holders; // [RJJ-STATS-HOLDERS]
 pub mod summary;
 pub mod transactions;

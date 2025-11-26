@@ -1,6 +1,6 @@
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set,
+    QueryOrder, Set, ConnectionTrait, Statement, DbBackend,
 };
 
 use crate::domain::models::Charm;
@@ -8,7 +8,7 @@ use crate::infrastructure::persistence::entities::charms;
 use crate::infrastructure::persistence::error::DbError;
 
 /// Repository for charm operations
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct CharmRepository {
     conn: DatabaseConnection,
 }
@@ -17,6 +17,20 @@ impl CharmRepository {
     /// Create a new CharmRepository
     pub fn new(conn: DatabaseConnection) -> Self {
         Self { conn }
+    }
+
+    /// Optimize the session for high-throughput writer by toggling synchronous_commit
+    pub async fn set_synchronous_commit(&self, on: bool) -> Result<(), DbError> {
+        let value = if on { "on" } else { "off" };
+        let stmt = Statement::from_string(
+            DbBackend::Postgres,
+            format!("SET synchronous_commit = {};", value),
+        );
+        self.conn
+            .execute(stmt)
+            .await
+            .map(|_| ())
+            .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
     /// Save a charm
@@ -28,15 +42,20 @@ impl CharmRepository {
         }
 
         // Create a new active model
+        // [RJJ-S01] Removed charmid field, added app_id and amount
         let charm_model = charms::ActiveModel {
             txid: Set(charm.txid.clone()),
-            charmid: Set(charm.charmid.clone()),
+            vout: Set(charm.vout),
             block_height: Set(charm.block_height as i32),
             data: Set(charm.data.clone()),
             date_created: Set(charm.date_created),
             asset_type: Set(charm.asset_type.clone()),
             blockchain: Set(charm.blockchain.clone()),
             network: Set(charm.network.clone()),
+            address: Set(charm.address.clone()),
+            spent: Set(charm.spent),
+            app_id: Set(charm.app_id.clone()),
+            amount: Set(charm.amount),
         };
 
         // Try to insert the charm, handle duplicate key violations gracefully
@@ -57,20 +76,37 @@ impl CharmRepository {
         }
     }
 
-    /// Get a charm by its transaction ID
+    /// Get a charm by its transaction ID and vout
+    /// [RJJ-S01] Updated: now requires both txid and vout (composite primary key)
+    pub async fn get_by_txid_vout(&self, txid: &str, vout: i32) -> Result<Option<Charm>, DbError> {
+        // Query the database for the charm using composite primary key
+        let result = charms::Entity::find_by_id((txid.to_string(), vout))
+            .one(&self.conn)
+            .await?;
+
+        // Convert to domain model if found
+        Ok(result.map(|c| self.to_domain_model(c)))
+    }
+    
+    /// Get a charm by its transaction ID (returns first match)
+    /// [RJJ-S01] Note: Since primary key is now (txid, vout), this returns the first charm found
     pub async fn get_by_txid(&self, txid: &str) -> Result<Option<Charm>, DbError> {
-        // Query the database for the charm
-        let result = charms::Entity::find_by_id(txid).one(&self.conn).await?;
+        // Query the database for the first charm with this txid
+        let result = charms::Entity::find()
+            .filter(charms::Column::Txid.eq(txid))
+            .one(&self.conn)
+            .await?;
 
         // Convert to domain model if found
         Ok(result.map(|c| self.to_domain_model(c)))
     }
 
-    /// Find charms by charm ID
-    pub async fn find_by_charmid(&self, charmid: &str) -> Result<Vec<Charm>, DbError> {
-        // Query the database for charms with the given charm ID
+    /// Find charms by app_id
+    /// [RJJ-S01] Updated: replaced charmid with app_id
+    pub async fn find_by_app_id(&self, app_id: &str) -> Result<Vec<Charm>, DbError> {
+        // Query the database for charms with the given app_id
         let results = charms::Entity::find()
-            .filter(charms::Column::Charmid.eq(charmid))
+            .filter(charms::Column::AppId.eq(app_id))
             .all(&self.conn)
             .await?;
 
@@ -143,16 +179,19 @@ impl CharmRepository {
     }
 
     /// Save multiple charms in a batch
+    /// [RJJ-S01] Updated signature: removed charmid, added vout, app_id, and amount
     pub async fn save_batch(
         &self,
         charms: Vec<(
-            String,
-            String,
-            u64,
-            serde_json::Value,
-            String,
-            String,
-            String,
+            String, // txid
+            i32,    // vout
+            u64,    // block_height
+            serde_json::Value, // data
+            String, // asset_type
+            String, // blockchain
+            String, // network
+            String, // app_id
+            i64,    // amount
         )>,
     ) -> Result<(), DbError> {
         // Skip individual existence checks - let database handle duplicates
@@ -165,16 +204,21 @@ impl CharmRepository {
         let models: Vec<charms::ActiveModel> = charms
             .into_iter()
             .map(
-                |(txid, charmid, block_height, data, asset_type, blockchain, network)| {
+                |(txid, vout, block_height, data, asset_type, blockchain, network, app_id, amount)| {
+                    // [RJJ-S01] Removed charmid, vout now comes from input, added app_id and amount
                     charms::ActiveModel {
                         txid: Set(txid),
-                        charmid: Set(charmid),
+                        vout: Set(vout),
                         block_height: Set(block_height as i32),
                         data: Set(data),
                         date_created: Set(now),
                         asset_type: Set(asset_type),
                         blockchain: Set(blockchain),
                         network: Set(network),
+                        address: Set(None), // For batch operations, address is not available
+                        spent: Set(false), // New charms are unspent by default
+                        app_id: Set(app_id),
+                        amount: Set(amount),
                     }
                 },
             )
@@ -198,17 +242,128 @@ impl CharmRepository {
         }
     }
 
+    /// Get charms by Bitcoin address
+    pub async fn get_charms_by_address(&self, address: &str, network: Option<&str>) -> Result<Vec<Charm>, DbError> {
+        let mut query = charms::Entity::find()
+            .filter(charms::Column::Address.eq(address));
+        
+        // Filter by network if provided
+        if let Some(net) = network {
+            query = query.filter(charms::Column::Network.eq(net));
+        }
+        
+        let entities = query
+            .order_by_desc(charms::Column::BlockHeight)
+            .all(&self.conn)
+            .await
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        Ok(entities.into_iter().map(|e| self.to_domain_model(e)).collect())
+    }
+
+    /// Get charm count by Bitcoin address
+    pub async fn get_charm_count_by_address(&self, address: &str, network: Option<&str>) -> Result<u64, DbError> {
+        let mut query = charms::Entity::find()
+            .filter(charms::Column::Address.eq(address));
+        
+        // Filter by network if provided
+        if let Some(net) = network {
+            query = query.filter(charms::Column::Network.eq(net));
+        }
+        
+        let count = query
+            .count(&self.conn)
+            .await
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        Ok(count)
+    }
+
     /// Convert a database entity to a domain model
+    /// [RJJ-S01] Removed charmid from conversion, added app_id and amount
     fn to_domain_model(&self, entity: charms::Model) -> Charm {
         Charm::new(
             entity.txid,
-            entity.charmid,
+            entity.vout,
             entity.block_height as u64,
             entity.data,
             entity.date_created,
             entity.asset_type,
             entity.blockchain,
             entity.network,
+            entity.address,
+            entity.spent,
+            entity.app_id,
+            entity.amount,
         )
+    }
+
+    /// Mark a charm as spent by its txid and vout
+    /// [RJJ-S01] Updated: now requires both txid and vout (composite primary key)
+    pub async fn mark_charm_as_spent(&self, txid: &str, vout: i32) -> Result<(), DbError> {
+        use sea_orm::ActiveValue::Set;
+
+        // Find the charm using composite primary key
+        if let Some(charm) = charms::Entity::find_by_id((txid.to_string(), vout))
+            .one(&self.conn)
+            .await?
+        {
+            // Update only if not already spent
+            if !charm.spent {
+                let mut active_model: charms::ActiveModel = charm.into();
+                active_model.spent = Set(true);
+                active_model.update(&self.conn).await?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Mark multiple charms as spent in a batch
+    pub async fn mark_charms_as_spent_batch(&self, txids: Vec<String>) -> Result<(), DbError> {
+        if txids.is_empty() {
+            return Ok(());
+        }
+
+        // Use raw SQL for efficient batch update
+        let txids_str = txids
+            .iter()
+            .map(|id| format!("'{}'", id))
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let stmt = Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "UPDATE charms SET spent = true WHERE txid IN ({}) AND spent = false",
+                txids_str
+            ),
+        );
+
+        self.conn
+            .execute(stmt)
+            .await
+            .map(|_| ())
+            .map_err(|e| DbError::QueryError(e.to_string()))
+    }
+
+    /// [RJJ-STATS-HOLDERS] Get charm info for stats_holders updates before marking as spent
+    /// Returns (app_id, address, amount) for charms that will be marked as spent
+    pub async fn get_charms_for_spent_update(&self, txids: Vec<String>) -> Result<Vec<(String, String, i64)>, DbError> {
+        if txids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let results = charms::Entity::find()
+            .filter(charms::Column::Txid.is_in(txids))
+            .filter(charms::Column::Spent.eq(false))
+            .all(&self.conn)
+            .await?;
+
+        Ok(results
+            .into_iter()
+            .filter_map(|c| {
+                c.address.map(|addr| (c.app_id, addr, c.amount))
+            })
+            .collect())
     }
 }

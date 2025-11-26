@@ -83,3 +83,14 @@ pub async fn unlike_charm(
     let response = charm_service::remove_like(&state, &request).await?;
     Ok(Json(response))
 }
+
+/// [RJJ-ADDRESS-SEARCH] Handler for GET /charms/by-address/{address}
+/// Returns UNSPENT charms for a Bitcoin address
+pub async fn get_charms_by_address(
+    State(state): State<AppState>,
+    Path(address): Path<String>,
+    Query(params): Query<GetCharmsQuery>,
+) -> ExplorerResult<Json<CharmsResponse>> {
+    let response = charm_service::get_charms_by_address(&state, &address, params.user_id).await?;
+    Ok(Json(response))
+}

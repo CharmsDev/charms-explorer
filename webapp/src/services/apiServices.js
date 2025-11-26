@@ -13,12 +13,9 @@ export const fetchRawCharmsData = async () => {
 
         // Even if response is not OK, try to parse it for error details
         const responseText = await response.text();
-        console.log('Raw API response:', responseText);
 
         try {
-            // Try to parse the JSON directly first
             const data = JSON.parse(responseText);
-            console.log('Parsed JSON data:', data);
 
             // Check if the response contains an error message
             if (!response.ok) {
@@ -34,11 +31,9 @@ export const fetchRawCharmsData = async () => {
             // If direct parsing fails, try to fix the JSON
             try {
                 const fixedJson = fixJsonResponse(responseText);
-                console.log('Fixed JSON:', fixedJson);
 
                 // Parse the fixed JSON
                 const data = JSON.parse(fixedJson);
-                console.log('Parsed fixed JSON data:', data);
 
                 // Check if the response contains an error message
                 if (!response.ok) {
@@ -61,82 +56,128 @@ export const fetchRawCharmsData = async () => {
     }
 };
 
-// Fetches and transforms charm assets with pagination and sorting
+// Fetches assets from the new assets endpoint with type filtering
+export const fetchAssetsByType = async (assetType, page = 1, limit = 20, sort = 'newest', network = null) => {
+    try {
+
+        // Build URL with parameters
+        let url = `${ENDPOINTS.ASSETS}`;
+        const params = new URLSearchParams();
+
+        if (assetType && assetType !== 'all') {
+            params.append('asset_type', assetType);
+        }
+
+        if (network && network !== 'all') {
+            params.append('network', network);
+        }
+
+        params.append('page', page.toString());
+        params.append('limit', limit.toString());
+        params.append('sort', sort);
+
+        if (params.toString()) {
+            url += `?${params.toString()}`;
+        }
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.data || !data.data.assets) {
+            console.warn('[API] No assets data in response');
+            return {
+                assets: [],
+                total: 0,
+                page: 1,
+                totalPages: 1
+            };
+        }
+
+        const assets = data.data.assets;
+
+        return {
+            assets: assets,
+            total: data.pagination.total,
+            page: data.pagination.page,
+            totalPages: data.pagination.total_pages
+        };
+    } catch (error) {
+        console.error('[API] Error fetching assets by type:', error);
+        throw error;
+    }
+};
+
+// Fetches and transforms charm assets with pagination and sorting (for "All" tab)
 export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network = null) => {
-  try {
-    console.log(`[API] Fetching assets - page: ${page}, limit: ${limit}, sort: ${sort}, network: ${network}`);
-    
-    // Build URL with network parameter if provided
-    let url = `${ENDPOINTS.CHARMS}`;
-    const params = new URLSearchParams();
-    
-    if (network) {
-      params.append('network', network);
+    try {
+
+        // Build URL with network parameter if provided
+        let url = `${ENDPOINTS.CHARMS}`;
+        const params = new URLSearchParams();
+
+        if (network) {
+            params.append('network', network);
+        }
+
+        if (params.toString()) {
+            url += `?${params.toString()}`;
+        }
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        if (!data.data || !data.data.charms) {
+            console.warn('[API] No charms data in response');
+            return {
+                assets: [],
+                total: 0,
+                page: 1,
+                totalPages: 1
+            };
+        }
+
+        let charms = data.data.charms;
+
+        const transformedCharms = transformCharmsArray(charms);
+
+        // Apply client-side sorting
+        const sortedCharms = transformedCharms.sort((a, b) => {
+            if (sort === 'oldest') {
+                return a.block_height - b.block_height;
+            } else {
+                return b.block_height - a.block_height; // newest first (default)
+            }
+        });
+
+        // Apply client-side pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + limit;
+        const paginatedCharms = sortedCharms.slice(startIndex, endIndex);
+
+        const totalPages = Math.ceil(sortedCharms.length / limit);
+
+        const totalCount = data.pagination?.total || sortedCharms.length;
+
+        return {
+            assets: paginatedCharms,
+            total: totalCount,
+            page: page,
+            totalPages: totalPages
+        };
+    } catch (error) {
+        console.error('[API] Error fetching assets:', error);
+        throw error;
     }
-    
-    if (params.toString()) {
-      url += `?${params.toString()}`;
-    }
-    
-    console.log(`[API] Request URL: ${url}`);
-    
-    const response = await fetch(url);
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log('[API] Raw response data:', data);
-    
-    if (!data.data || !data.data.charms) {
-      console.warn('[API] No charms data in response');
-      return {
-        assets: [],
-        total: 0,
-        page: 1,
-        totalPages: 1
-      };
-    }
-    
-    let charms = data.data.charms;
-    console.log(`[API] Received ${charms.length} charms from API`);
-    
-    // Transform the charms data
-    const transformedCharms = transformCharmsArray(charms);
-    console.log(`[API] Transformed ${transformedCharms.length} charms`);
-    
-    // Apply client-side sorting
-    const sortedCharms = transformedCharms.sort((a, b) => {
-      if (sort === 'oldest') {
-        return a.block_height - b.block_height;
-      } else {
-        return b.block_height - a.block_height; // newest first (default)
-      }
-    });
-    
-    // Apply client-side pagination
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + limit;
-    const paginatedCharms = sortedCharms.slice(startIndex, endIndex);
-    
-    const totalPages = Math.ceil(sortedCharms.length / limit);
-    
-    // Use API total count if available, otherwise use client-side count
-    const totalCount = data.pagination?.total || sortedCharms.length;
-    
-    console.log(`[API] Returning page ${page} with ${paginatedCharms.length} charms, total: ${totalCount}, totalPages: ${totalPages}`);
-    
-    return {
-      assets: paginatedCharms,
-      total: totalCount,
-      page: page,
-      totalPages: totalPages
-    };
-  } catch (error) {
-    console.error('[API] Error fetching assets:', error);
-    throw error;
-  }
 };
 
 // Gets a specific asset by ID
@@ -175,15 +216,30 @@ export const getAssetById = async (id) => {
     }
 };
 
-// Gets counts of assets by type
+// Gets counts of assets by type from the new assets endpoint
 export const getAssetCounts = async () => {
     try {
-        const data = await fetchRawCharmsData();
-        return countCharmsByType(data.charms || []);
+        const response = await fetch(ENDPOINTS.ASSET_COUNTS);
+
+        if (!response.ok) {
+            console.warn('Asset counts endpoint not available, falling back to charms data');
+            // Fallback to old method
+            const data = await fetchRawCharmsData();
+            return countCharmsByType(data.charms || []);
+        }
+
+        const counts = await response.json();
+        return counts;
     } catch (error) {
         console.error('Error getting asset counts:', error);
-        // Return default counts instead of throwing
-        return { total: 0, nft: 0, token: 0, dapp: 0 };
+        // Fallback to old method
+        try {
+            const data = await fetchRawCharmsData();
+            return countCharmsByType(data.charms || []);
+        } catch (fallbackError) {
+            console.error('Fallback asset counts also failed:', fallbackError);
+            return { total: 0, nft: 0, token: 0, dapp: 0 };
+        }
     }
 };
 
@@ -273,5 +329,41 @@ export const unlikeCharm = async (charmId, userId = 1) => {
     } catch (error) {
         console.error('Error unliking charm:', error);
         throw handleApiError(error, 'unlike charm');
+    }
+};
+
+export const fetchCharmsByAddress = async (address) => {
+    try {
+
+        const response = await fetch(`${ENDPOINTS.CHARMS_BY_ADDRESS(address)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        return data;
+    } catch (error) {
+        console.error('[API] Error fetching charms by address:', error);
+        throw error;
+    }
+};
+
+export const fetchAssetHolders = async (appId) => {
+    try {
+
+        const response = await fetch(`${ENDPOINTS.ASSET_HOLDERS(appId)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+
+        return data;
+    } catch (error) {
+        console.error('[API] Error fetching asset holders:', error);
+        throw error;
     }
 };
