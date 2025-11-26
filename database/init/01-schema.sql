@@ -1,5 +1,6 @@
--- Initial database schema for charms_indexer
--- This file is executed automatically when PostgreSQL container starts
+-- Complete database schema for charms_indexer
+-- This file contains the full schema with all migrations applied
+-- Use this to recreate the database without running migrations
 
 -- Create bookmark table
 CREATE TABLE IF NOT EXISTS bookmark (
@@ -38,6 +39,37 @@ CREATE TABLE IF NOT EXISTS transactions (
     network VARCHAR NOT NULL DEFAULT 'testnet4'
 );
 
+-- Create assets table (from migration m20250916_000001_create_assets_table)
+CREATE TABLE IF NOT EXISTS assets (
+    id SERIAL PRIMARY KEY,
+    app_id VARCHAR NOT NULL,
+    txid VARCHAR NOT NULL,
+    vout_index INTEGER NOT NULL,
+    charm_id VARCHAR NOT NULL,
+    block_height INTEGER NOT NULL,
+    date_created TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    data JSONB NOT NULL DEFAULT '{}',
+    asset_type VARCHAR NOT NULL,
+    blockchain VARCHAR NOT NULL DEFAULT 'Bitcoin',
+    network VARCHAR NOT NULL DEFAULT 'testnet4',
+    name VARCHAR,
+    symbol VARCHAR,
+    description TEXT,
+    image_url VARCHAR,
+    total_supply NUMERIC(30,0),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create likes table (from migration m20250619_000001_create_likes_table)
+CREATE TABLE IF NOT EXISTS likes (
+    id SERIAL PRIMARY KEY,
+    charm_id VARCHAR NOT NULL,
+    user_id VARCHAR NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(charm_id, user_id)
+);
+
 -- Create summary table for optimized stats queries
 CREATE TABLE IF NOT EXISTS summary (
     id SERIAL PRIMARY KEY,
@@ -68,30 +100,33 @@ CREATE TABLE IF NOT EXISTS seaql_migrations (
 
 -- Create indexes for bookmark table
 CREATE INDEX IF NOT EXISTS bookmark_height ON bookmark (height);
-
 CREATE INDEX IF NOT EXISTS bookmark_blockchain_network ON bookmark (blockchain, network);
-
 CREATE INDEX IF NOT EXISTS idx_bookmark_network_height ON bookmark (network, height);
-
 CREATE INDEX IF NOT EXISTS idx_bookmark_network_status ON bookmark (network, status, height);
 
 -- Create indexes for charms table
 CREATE INDEX IF NOT EXISTS charms_block_height ON charms (block_height);
-
 CREATE INDEX IF NOT EXISTS charms_asset_type ON charms (asset_type);
-
 CREATE INDEX IF NOT EXISTS charms_charmid ON charms (charmid);
-
 CREATE INDEX IF NOT EXISTS charms_blockchain_network ON charms (blockchain, network);
-
 CREATE INDEX IF NOT EXISTS idx_charms_network_block_height ON charms (network, block_height);
 
 -- Create indexes for transactions table
 CREATE INDEX IF NOT EXISTS transactions_block_height ON transactions (block_height);
-
 CREATE INDEX IF NOT EXISTS transactions_blockchain_network ON transactions (blockchain, network);
-
 CREATE INDEX IF NOT EXISTS idx_transactions_network_updated ON transactions (network, updated_at);
+
+-- Create indexes for assets table (from migration m20250916_000001_create_assets_table)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_app_id ON assets (app_id);
+CREATE INDEX IF NOT EXISTS idx_assets_utxo ON assets (txid, vout_index);
+CREATE INDEX IF NOT EXISTS idx_assets_charm_id ON assets (charm_id);
+CREATE INDEX IF NOT EXISTS idx_assets_blockchain_network ON assets (blockchain, network);
+CREATE INDEX IF NOT EXISTS idx_assets_block_height ON assets (block_height);
+CREATE INDEX IF NOT EXISTS idx_assets_asset_type ON assets (asset_type);
+
+-- Create indexes for likes table (from migration m20250619_000001_create_likes_table)
+CREATE INDEX IF NOT EXISTS idx_likes_charm_id ON likes (charm_id);
+CREATE INDEX IF NOT EXISTS idx_likes_user_id ON likes (user_id);
 
 -- Create unique index for summary table
 CREATE UNIQUE INDEX IF NOT EXISTS idx_summary_network ON summary (network);
@@ -127,10 +162,10 @@ VALUES (
     )
 ON CONFLICT (network) DO NOTHING;
 
--- Mark the initial migration as applied
-INSERT INTO
-    seaql_migrations (version)
-VALUES (
-        'm20250617_000001_create_complete_schema'
-    )
+-- Mark all migrations as applied
+INSERT INTO seaql_migrations (version) VALUES 
+    ('m20250617_000001_create_complete_schema'),
+    ('m20250618_000001_create_summary_table'),
+    ('m20250619_000001_create_likes_table'),
+    ('m20250916_000001_create_assets_table')
 ON CONFLICT (version) DO NOTHING;
