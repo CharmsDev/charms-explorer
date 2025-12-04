@@ -150,7 +150,7 @@ export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network
 
         const transformedCharms = transformCharmsArray(charms);
 
-        // Apply client-side sorting
+        // Apply client-side sorting only if needed (API likely handles this too but keeps consistent format)
         const sortedCharms = transformedCharms.sort((a, b) => {
             if (sort === 'oldest') {
                 return a.block_height - b.block_height;
@@ -159,13 +159,11 @@ export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network
             }
         });
 
-        // Apply client-side pagination
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + limit;
-        const paginatedCharms = sortedCharms.slice(startIndex, endIndex);
+        // NO client-side pagination needed as API already returns paginated results
+        // The API returns the specific page requested, so we use the full result set
+        const paginatedCharms = sortedCharms;
 
-        const totalPages = Math.ceil(sortedCharms.length / limit);
-
+        const totalPages = data.pagination?.total_pages || Math.ceil(data.pagination?.total / limit) || 1;
         const totalCount = data.pagination?.total || sortedCharms.length;
 
         return {
