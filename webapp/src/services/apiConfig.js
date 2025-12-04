@@ -10,6 +10,7 @@ export const ENDPOINTS = {
     CHARMS: `${API_BASE_URL}/charms`,
     CHARM_BY_CHARMID: (charmid) => `${API_BASE_URL}/charms/by-charmid/${charmid}`,
     CHARMS_BY_ADDRESS: (address) => `${API_BASE_URL}/charms/by-address/${address}`, // [RJJ-ADDRESS-SEARCH]
+    CHARMS_COUNT_BY_TYPE: `${API_BASE_URL}/charms/count-by-type`,
     ASSETS: `${API_BASE_URL}/assets`,
     ASSET_COUNTS: `${API_BASE_URL}/assets/count`,
     ASSET_HOLDERS: (appId) => `${API_BASE_URL}/assets/${encodeURIComponent(appId)}/holders`, // [RJJ-STATS-HOLDERS]

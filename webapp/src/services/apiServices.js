@@ -241,6 +241,35 @@ export const getAssetCounts = async () => {
     }
 };
 
+// Gets counts of charms by type from the new charms/count-by-type endpoint
+export const getCharmsCountByType = async (network = null) => {
+    try {
+        const url = network 
+            ? `${ENDPOINTS.CHARMS_COUNT_BY_TYPE}?network=${network}`
+            : ENDPOINTS.CHARMS_COUNT_BY_TYPE;
+        
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            console.warn('Charms count-by-type endpoint not available, falling back to asset counts');
+            // Fallback to asset counts
+            return await getAssetCounts();
+        }
+
+        const counts = await response.json();
+        return counts;
+    } catch (error) {
+        console.error('Error getting charms counts:', error);
+        // Fallback to asset counts
+        try {
+            return await getAssetCounts();
+        } catch (fallbackError) {
+            console.error('Fallback to asset counts also failed:', fallbackError);
+            return { total: 0, nft: 0, token: 0, dapp: 0 };
+        }
+    }
+};
+
 // Fetches indexer status information
 export const fetchIndexerStatus = async () => {
     try {

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import FilterTabs from '../components/FilterTabs';
 import AssetGrid from '../components/AssetGrid';
-import { fetchAssets, fetchAssetsByType, getAssetCounts } from '../services/api';
+import { fetchAssets, fetchAssetsByType, getCharmsCountByType } from '../services/api';
 import { Button } from '../components/ui/Button';
 
 export default function HomePage() {
@@ -23,9 +23,9 @@ export default function HomePage() {
         try {
             setIsLoading(true);
 
-            // Fetch asset counts if needed
+            // Fetch charm counts if needed
             if (counts.total === 0) {
-                const countsData = await getAssetCounts();
+                const countsData = await getCharmsCountByType(network === 'all' ? null : network);
                 setCounts(countsData);
             }
 
