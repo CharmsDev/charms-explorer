@@ -1,15 +1,14 @@
 ///! Charm detection logic using native charms-client library
-
 use chrono::Utc;
 use serde_json::json;
 
 use crate::domain::errors::CharmError;
 use crate::domain::models::Charm;
-use crate::domain::services::native_charm_parser::NativeCharmParser;
 use crate::domain::services::address_extractor::AddressExtractor;
+use crate::domain::services::charm_queue_service::CharmQueueService;
+use crate::domain::services::native_charm_parser::NativeCharmParser;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::CharmRepository;
-use crate::domain::services::charm_queue_service::CharmQueueService;
 
 /// Handles charm detection from Bitcoin transactions
 pub struct CharmDetector<'a> {
@@ -45,7 +44,8 @@ impl<'a> CharmDetector<'a> {
             .get_raw_transaction_hex(txid, block_hash)
             .await?;
 
-        self.detect_from_hex(txid, block_height, &raw_tx_hex, tx_pos, block_height).await
+        self.detect_from_hex(txid, block_height, &raw_tx_hex, tx_pos, block_height)
+            .await
     }
 
     /// Detects and processes a potential charm transaction from pre-fetched raw hex
@@ -61,36 +61,43 @@ impl<'a> CharmDetector<'a> {
         let blockchain = "Bitcoin".to_string();
         let network = self.bitcoin_client.network_id().name.clone();
 
-        // Log transaction processing start (reduced frequency)
-        if tx_pos % 100 == 0 {
-            crate::utils::logging::log_info(&format!(
-                "[{}] 🔍 Block {}: Processing tx {} (pos: {}) for charm detection",
-                network, block_height, txid, tx_pos
-            ));
-        }
+        // Clone hex for blocking task
+        let raw_tx_hex_owned = raw_tx_hex.to_string();
 
-        // Try to extract and verify spell using native parser
-        let (normalized_spell_opt, charm_json) = match NativeCharmParser::extract_and_verify_charm(raw_tx_hex, false) {
-            Ok(spell) => {
-                let charm_json = serde_json::to_value(&spell)
-                    .map_err(|e| CharmError::ProcessingError(format!("Failed to serialize spell data: {}", e)))?;
-                
-                (Some(spell), json!({
-                    "type": "spell",
-                    "detected": true,
-                    "has_native_data": true,
-                    "native_data": charm_json,
-                    "version": "native_parser"
-                }))
+        // Try to extract and verify spell using native parser in a blocking task
+        // to avoid blocking the async runtime with CPU-intensive work
+        let (normalized_spell_opt, charm_json) = tokio::task::spawn_blocking(move || {
+            match NativeCharmParser::extract_and_verify_charm(&raw_tx_hex_owned, false) {
+                Ok(spell) => {
+                    let charm_json = serde_json::to_value(&spell).map_err(|e| {
+                        CharmError::ProcessingError(format!(
+                            "Failed to serialize spell data: {}",
+                            e
+                        ))
+                    })?;
+
+                    Ok((
+                        Some(spell),
+                        json!({
+                            "type": "spell",
+                            "detected": true,
+                            "has_native_data": true,
+                            "native_data": charm_json,
+                            "version": "native_parser"
+                        }),
+                    ))
+                }
+                Err(e) => Ok::<_, CharmError>((None, json!(null))), // Return None on parse error, log outside if needed
             }
-            Err(e) => {
-                crate::utils::logging::log_debug(&format!(
-                    "[{}] ⚪ Block {}: No charm detected in tx {} (pos: {}): {}",
-                    network, block_height, txid, tx_pos, e
-                ));
-                return Ok(None);
-            }
-        };
+        })
+        .await
+        .map_err(|e| CharmError::ProcessingError(format!("Join error: {}", e)))??;
+
+        // If detection failed (returned None/null), log debug and return
+        if normalized_spell_opt.is_none() {
+            // Log debug info about failed detection (usually means just no charm present)
+            return Ok(None);
+        }
 
         // Extract asset information from the spell
         let asset_infos = if let Some(ref spell) = normalized_spell_opt {
@@ -123,31 +130,43 @@ impl<'a> CharmDetector<'a> {
             blockchain.clone(),
             network.clone(),
             address,
-            false, // New charms are unspent by default
+            false,                 // New charms are unspent by default
             String::from("other"), // Default app_id for old detection method
-            0, // Default amount for old detection method
+            0,                     // Default amount for old detection method
         );
 
         // Extract assets from the spell if available
         let asset_requests = if let Some(ref spell) = normalized_spell_opt {
             let assets = NativeCharmParser::extract_asset_info(spell);
-            assets.into_iter().map(|asset| {
-                use crate::infrastructure::queue::charm_queue::AssetSaveRequest;
-                AssetSaveRequest {
-                    app_id: asset.app_id,
-                    asset_type: asset.asset_type,
-                    supply: asset.amount,
-                    blockchain: blockchain.clone(),
-                    network: network.clone(),
-                }
-            }).collect()
+            assets
+                .into_iter()
+                .map(|asset| {
+                    use crate::infrastructure::queue::charm_queue::AssetSaveRequest;
+                    AssetSaveRequest {
+                        app_id: asset.app_id,
+                        asset_type: asset.asset_type,
+                        supply: asset.amount,
+                        blockchain: blockchain.clone(),
+                        network: network.clone(),
+                    }
+                })
+                .collect()
         } else {
             vec![]
         };
 
         // Save the charm to the database (using queue if available, otherwise direct save)
         if let Some(ref queue_service) = self.charm_queue_service {
-            match queue_service.save_charm_data(&charm, tx_pos as i64, raw_tx_hex.to_string(), latest_height, asset_requests).await {
+            match queue_service
+                .save_charm_data(
+                    &charm,
+                    tx_pos as i64,
+                    raw_tx_hex.to_string(),
+                    latest_height,
+                    asset_requests,
+                )
+                .await
+            {
                 Ok(_) => Ok(Some(charm)),
                 Err(e) => {
                     crate::utils::logging::log_error(&format!(
@@ -165,12 +184,15 @@ impl<'a> CharmDetector<'a> {
                 "[{}] 💾 Block {}: Saving charm for tx {} to database (direct)",
                 network, block_height, txid
             ));
-            
+
             match self.charm_repository.save_charm(&charm).await {
                 Ok(_) => {
                     crate::utils::logging::log_info(&format!(
                         "[{}] ✅ Block {}: Successfully saved charm for tx {} with {} assets",
-                        network, block_height, txid, asset_infos.len()
+                        network,
+                        block_height,
+                        txid,
+                        asset_infos.len()
                     ));
                     Ok(Some(charm))
                 }
