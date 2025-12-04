@@ -1,9 +1,64 @@
 // Charm-related business logic implementation
 
+use std::collections::{HashMap, HashSet};
+
 use crate::db::DbError;
 use crate::error::ExplorerResult;
 use crate::handlers::AppState;
-use crate::models::{CharmCountResponse, CharmData, CharmsResponse, LikeCharmRequest, LikeResponse, PaginatedResponse, PaginationMeta, PaginationParams};
+use crate::models::{
+    CharmCountResponse, CharmData, CharmsCountByTypeResponse, CharmsResponse, LikeCharmRequest,
+    LikeResponse, PaginatedResponse, PaginationMeta, PaginationParams,
+};
+
+pub async fn get_charms_count_by_type(
+    state: &AppState,
+    network: Option<&str>,
+) -> ExplorerResult<CharmsCountByTypeResponse> {
+    use crate::entity::charms::{Column, Entity as Charms};
+    use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
+
+    // Get counts by asset type from the database
+    let network_str = network.unwrap_or("mainnet");
+
+    // Query to count charms by asset_type
+    let conn = state.repositories.charm.get_connection();
+
+    // Count total
+    let total = Charms::find()
+        .filter(Column::Network.eq(network_str))
+        .count(conn)
+        .await
+        .unwrap_or(0);
+
+    // Count by type
+    let nft_count = Charms::find()
+        .filter(Column::Network.eq(network_str))
+        .filter(Column::AssetType.eq("nft"))
+        .count(conn)
+        .await
+        .unwrap_or(0);
+
+    let token_count = Charms::find()
+        .filter(Column::Network.eq(network_str))
+        .filter(Column::AssetType.eq("token"))
+        .count(conn)
+        .await
+        .unwrap_or(0);
+
+    let dapp_count = Charms::find()
+        .filter(Column::Network.eq(network_str))
+        .filter(Column::AssetType.eq("dapp"))
+        .count(conn)
+        .await
+        .unwrap_or(0);
+
+    Ok(CharmsCountByTypeResponse {
+        total,
+        nft: nft_count,
+        token: token_count,
+        dapp: dapp_count,
+    })
+}
 
 pub async fn get_charm_numbers_by_type(
     state: &AppState,
@@ -14,17 +69,18 @@ pub async fn get_charm_numbers_by_type(
         .repositories
         .charm
         .get_charm_numbers_by_type(asset_type)
-        .await {
-            Ok(result) => result,
-            Err(err) => {
-                // Log the error for debugging
-                eprintln!("Database error in get_charm_numbers_by_type: {:?}", err);
-                
-                // Return an empty vector instead of propagating the error
-                vec![]
-            }
-        };
-    
+        .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            // Log the error for debugging
+            eprintln!("Database error in get_charm_numbers_by_type: {:?}", err);
+
+            // Return an empty vector instead of propagating the error
+            vec![]
+        }
+    };
+
     Ok(CharmCountResponse {
         count: charm_numbers.len(),
     })
@@ -38,12 +94,20 @@ pub async fn get_all_charms_paginated_by_network(
 ) -> ExplorerResult<PaginatedResponse<CharmsResponse>> {
     // Handle database query with graceful error handling
     let network_str = network.unwrap_or("mainnet");
-    let (charms, total) = match state.repositories.charm.get_all_paginated_by_network(pagination, network_str).await {
+    let (charms, total) = match state
+        .repositories
+        .charm
+        .get_all_paginated_by_network(pagination, network_str)
+        .await
+    {
         Ok(result) => result,
         Err(err) => {
             // Log database error for monitoring
-            eprintln!("Database error in get_all_charms_paginated_by_network: {:?}", err);
-            
+            eprintln!(
+                "Database error in get_all_charms_paginated_by_network: {:?}",
+                err
+            );
+
             // Return empty response on database error
             return Ok(PaginatedResponse {
                 data: CharmsResponse { charms: vec![] },
@@ -56,14 +120,24 @@ pub async fn get_all_charms_paginated_by_network(
             });
         }
     };
-    
+
+    // [RJJ-METADATA] Enrich charms with metadata from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let metadata_map = get_metadata_map(state, app_ids).await;
+
     let mut charm_data = Vec::new();
-    
+
     for charm in charms {
         if is_empty_spell_charm(&charm.data) {
             continue;
         }
-        
+
+        // Get metadata for this charm
+        let (name, image, ticker, description) = metadata_map
+            .get(&charm.app_id)
+            .cloned()
+            .unwrap_or((None, None, None, None));
+
         let charm_data_item = CharmData {
             txid: charm.txid,
             charmid: charm.app_id.clone(),
@@ -73,17 +147,21 @@ pub async fn get_all_charms_paginated_by_network(
             asset_type: charm.asset_type,
             likes_count: 0,
             user_liked: false,
+            name,
+            image,
+            ticker,
+            description,
         };
-        
+
         charm_data.push(charm_data_item);
     }
-    
+
     let total_pages = if pagination.limit > 0 {
         (total as f64 / pagination.limit as f64).ceil() as u64
     } else {
         1
     };
-    
+
     Ok(PaginatedResponse {
         data: CharmsResponse { charms: charm_data },
         pagination: PaginationMeta {
@@ -106,7 +184,7 @@ pub async fn get_all_charms_paginated(
         Err(err) => {
             // Log database error for monitoring
             eprintln!("Database error in get_all_charms_paginated: {:?}", err);
-            
+
             // Return empty response on database error
             return Ok(PaginatedResponse {
                 data: CharmsResponse { charms: vec![] },
@@ -119,20 +197,40 @@ pub async fn get_all_charms_paginated(
             });
         }
     };
-    
+
+    // [RJJ-METADATA] Enrich charms with metadata from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let metadata_map = get_metadata_map(state, app_ids).await;
+
     let mut charm_data = Vec::new();
-    
+
     for charm in charms {
         if is_empty_spell_charm(&charm.data) {
             continue;
         }
-        
+
         // Get likes count for this charm
-        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
-        
+        let likes_count = (state
+            .repositories
+            .likes
+            .get_likes_count(&charm.app_id)
+            .await)
+            .unwrap_or(0);
+
         // Check if the user has liked this charm
-        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
-        
+        let user_liked = (state
+            .repositories
+            .likes
+            .has_user_liked(&charm.app_id, user_id)
+            .await)
+            .unwrap_or(false);
+
+        // Get metadata for this charm
+        let (name, image, ticker, description) = metadata_map
+            .get(&charm.app_id)
+            .cloned()
+            .unwrap_or((None, None, None, None));
+
         charm_data.push(CharmData {
             txid: charm.txid,
             charmid: charm.app_id.clone(),
@@ -142,15 +240,19 @@ pub async fn get_all_charms_paginated(
             asset_type: charm.asset_type,
             likes_count,
             user_liked,
+            name,
+            image,
+            ticker,
+            description,
         });
     }
-    
+
     let total_pages = if pagination.limit > 0 {
         (total as f64 / pagination.limit as f64).ceil() as u64
     } else {
         1 // Avoid division by zero
     };
-    
+
     Ok(PaginatedResponse {
         data: CharmsResponse { charms: charm_data },
         pagination: PaginationMeta {
@@ -170,25 +272,45 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
         Err(err) => {
             // Log the error for debugging
             eprintln!("Database error in get_all_charms: {:?}", err);
-            
+
             // Return an empty vector instead of propagating the error
             vec![]
         }
     };
-    
+
+    // [RJJ-METADATA] Enrich charms with metadata from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let metadata_map = get_metadata_map(state, app_ids).await;
+
     let mut charm_data = Vec::new();
-    
+
     for charm in charms {
         if is_empty_spell_charm(&charm.data) {
             continue;
         }
-        
+
         // Get likes count for this charm
-        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
-        
+        let likes_count = (state
+            .repositories
+            .likes
+            .get_likes_count(&charm.app_id)
+            .await)
+            .unwrap_or(0);
+
         // Check if the user has liked this charm
-        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
-        
+        let user_liked = (state
+            .repositories
+            .likes
+            .has_user_liked(&charm.app_id, user_id)
+            .await)
+            .unwrap_or(false);
+
+        // Get metadata for this charm
+        let (name, image, ticker, description) = metadata_map
+            .get(&charm.app_id)
+            .cloned()
+            .unwrap_or((None, None, None, None));
+
         charm_data.push(CharmData {
             txid: charm.txid,
             charmid: charm.app_id.clone(),
@@ -198,9 +320,13 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
             asset_type: charm.asset_type,
             likes_count,
             user_liked,
+            name,
+            image,
+            ticker,
+            description,
         });
     }
-    
+
     Ok(CharmsResponse { charms: charm_data })
 }
 
@@ -215,38 +341,59 @@ pub async fn get_charms_by_type_paginated(
         .repositories
         .charm
         .find_by_asset_type_paginated(asset_type, pagination)
-        .await {
-            Ok(result) => result,
-            Err(err) => {
-                // Log the error for debugging
-                eprintln!("Database error in get_charms_by_type_paginated: {:?}", err);
-                
-                // Return a fallback empty response instead of propagating the error
-                return Ok(PaginatedResponse {
-                    data: CharmsResponse { charms: vec![] },
-                    pagination: PaginationMeta {
-                        total: 0,
-                        page: pagination.page,
-                        limit: pagination.limit,
-                        total_pages: 0,
-                    },
-                });
-            }
-        };
-    
+        .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            // Log the error for debugging
+            eprintln!("Database error in get_charms_by_type_paginated: {:?}", err);
+
+            // Return a fallback empty response instead of propagating the error
+            return Ok(PaginatedResponse {
+                data: CharmsResponse { charms: vec![] },
+                pagination: PaginationMeta {
+                    total: 0,
+                    page: pagination.page,
+                    limit: pagination.limit,
+                    total_pages: 0,
+                },
+            });
+        }
+    };
+
+    // [RJJ-METADATA] Enrich charms with metadata from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let metadata_map = get_metadata_map(state, app_ids).await;
+
     let mut charm_data = Vec::new();
-    
+
     for charm in charms {
         if is_empty_spell_charm(&charm.data) {
             continue;
         }
-        
+
         // Get likes count for this charm
-        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
-        
+        let likes_count = (state
+            .repositories
+            .likes
+            .get_likes_count(&charm.app_id)
+            .await)
+            .unwrap_or(0);
+
         // Check if the user has liked this charm
-        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
-        
+        let user_liked = (state
+            .repositories
+            .likes
+            .has_user_liked(&charm.app_id, user_id)
+            .await)
+            .unwrap_or(false);
+
+        // Get metadata for this charm
+        let (name, image, ticker, description) = metadata_map
+            .get(&charm.app_id)
+            .cloned()
+            .unwrap_or((None, None, None, None));
+
         charm_data.push(CharmData {
             txid: charm.txid,
             charmid: charm.app_id.clone(),
@@ -256,15 +403,19 @@ pub async fn get_charms_by_type_paginated(
             asset_type: charm.asset_type,
             likes_count,
             user_liked,
+            name,
+            image,
+            ticker,
+            description,
         });
     }
-    
+
     let total_pages = if pagination.limit > 0 {
         (total as f64 / pagination.limit as f64).ceil() as u64
     } else {
         1 // Avoid division by zero
     };
-    
+
     Ok(PaginatedResponse {
         data: CharmsResponse { charms: charm_data },
         pagination: PaginationMeta {
@@ -287,30 +438,51 @@ pub async fn get_charms_by_type(
         .repositories
         .charm
         .find_by_asset_type(asset_type)
-        .await {
-            Ok(result) => result,
-            Err(err) => {
-                // Log the error for debugging
-                eprintln!("Database error in get_charms_by_type: {:?}", err);
-                
-                // Return an empty vector instead of propagating the error
-                vec![]
-            }
-        };
-    
+        .await
+    {
+        Ok(result) => result,
+        Err(err) => {
+            // Log the error for debugging
+            eprintln!("Database error in get_charms_by_type: {:?}", err);
+
+            // Return an empty vector instead of propagating the error
+            vec![]
+        }
+    };
+
+    // [RJJ-METADATA] Enrich charms with metadata from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let metadata_map = get_metadata_map(state, app_ids).await;
+
     let mut charm_data = Vec::new();
-    
+
     for charm in charms {
         if is_empty_spell_charm(&charm.data) {
             continue;
         }
-        
+
         // Get likes count for this charm
-        let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
-        
+        let likes_count = (state
+            .repositories
+            .likes
+            .get_likes_count(&charm.app_id)
+            .await)
+            .unwrap_or(0);
+
         // Check if the user has liked this charm
-        let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
-        
+        let user_liked = (state
+            .repositories
+            .likes
+            .has_user_liked(&charm.app_id, user_id)
+            .await)
+            .unwrap_or(false);
+
+        // Get metadata for this charm
+        let (name, image, ticker, description) = metadata_map
+            .get(&charm.app_id)
+            .cloned()
+            .unwrap_or((None, None, None, None));
+
         charm_data.push(CharmData {
             txid: charm.txid,
             charmid: charm.app_id.clone(),
@@ -320,9 +492,13 @@ pub async fn get_charms_by_type(
             asset_type: charm.asset_type,
             likes_count,
             user_liked,
+            name,
+            image,
+            ticker,
+            description,
         });
     }
-    
+
     Ok(CharmsResponse { charms: charm_data })
 }
 
@@ -342,19 +518,27 @@ fn is_empty_spell_charm(data: &serde_json::Value) -> bool {
     false
 }
 
-pub async fn get_charm_by_txid(state: &AppState, txid: &str, user_id: i32) -> ExplorerResult<CharmData> {
+pub async fn get_charm_by_txid(
+    state: &AppState,
+    txid: &str,
+    user_id: i32,
+) -> ExplorerResult<CharmData> {
     // Wrap the database call in a try-catch to provide more detailed error information
     let charm_result = match state.repositories.charm.get_by_txid(txid).await {
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
             eprintln!("Database error in get_charm_by_txid: {:?}", err);
-            
+
             // Return a not found error with a friendly message
-            return Err(DbError::QueryError(format!("Charm with txid {} not found or database error occurred", txid)).into());
+            return Err(DbError::QueryError(format!(
+                "Charm with txid {} not found or database error occurred",
+                txid
+            ))
+            .into());
         }
     };
-    
+
     // Check if the charm was found
     let charm = match charm_result {
         Some(charm) => charm,
@@ -364,10 +548,28 @@ pub async fn get_charm_by_txid(state: &AppState, txid: &str, user_id: i32) -> Ex
     };
 
     // Get likes count for this charm
-    let likes_count = (state.repositories.likes.get_likes_count(&charm.app_id).await).unwrap_or(0);
-    
+    let likes_count = (state
+        .repositories
+        .likes
+        .get_likes_count(&charm.app_id)
+        .await)
+        .unwrap_or(0);
+
     // Check if the user has liked this charm
-    let user_liked = (state.repositories.likes.has_user_liked(&charm.app_id, user_id).await).unwrap_or(false);
+    let user_liked = (state
+        .repositories
+        .likes
+        .has_user_liked(&charm.app_id, user_id)
+        .await)
+        .unwrap_or(false);
+
+    // Get metadata for this charm
+    let app_ids = vec![charm.app_id.clone()];
+    let metadata_map = get_metadata_map(state, app_ids).await;
+    let (name, image, ticker, description) = metadata_map
+        .get(&charm.app_id)
+        .cloned()
+        .unwrap_or((None, None, None, None));
 
     Ok(CharmData {
         txid: charm.txid,
@@ -378,20 +580,32 @@ pub async fn get_charm_by_txid(state: &AppState, txid: &str, user_id: i32) -> Ex
         asset_type: charm.asset_type,
         likes_count,
         user_liked,
+        name,
+        image,
+        ticker,
+        description,
     })
 }
 
 /// Gets a charm by its charm ID
-pub async fn get_charm_by_charmid(state: &AppState, charmid: &str, user_id: i32) -> ExplorerResult<CharmData> {
+pub async fn get_charm_by_charmid(
+    state: &AppState,
+    charmid: &str,
+    user_id: i32,
+) -> ExplorerResult<CharmData> {
     // Wrap the database call in a try-catch to provide more detailed error information
     let charms = match state.repositories.charm.find_by_charmid(charmid).await {
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
             eprintln!("Database error in get_charm_by_charmid: {:?}", err);
-            
+
             // Return a not found error with a friendly message
-            return Err(DbError::QueryError(format!("Charm with charmid {} not found or database error occurred", charmid)).into());
+            return Err(DbError::QueryError(format!(
+                "Charm with charmid {} not found or database error occurred",
+                charmid
+            ))
+            .into());
         }
     };
 
@@ -403,9 +617,22 @@ pub async fn get_charm_by_charmid(state: &AppState, charmid: &str, user_id: i32)
 
     // Get likes count for this charm
     let likes_count = (state.repositories.likes.get_likes_count(charmid).await).unwrap_or(0);
-    
+
     // Check if the user has liked this charm
-    let user_liked = (state.repositories.likes.has_user_liked(charmid, user_id).await).unwrap_or(false);
+    let user_liked = (state
+        .repositories
+        .likes
+        .has_user_liked(charmid, user_id)
+        .await)
+        .unwrap_or(false);
+
+    // Get metadata for charms (all share same app_id)
+    let app_ids = vec![charmid.to_string()];
+    let metadata_map = get_metadata_map(state, app_ids).await;
+    let (name, image, ticker, description) = metadata_map
+        .get(charmid)
+        .cloned()
+        .unwrap_or((None, None, None, None));
 
     // First try to find a non-empty spell charm
     for charm in &charms {
@@ -419,6 +646,10 @@ pub async fn get_charm_by_charmid(state: &AppState, charmid: &str, user_id: i32)
                 asset_type: charm.asset_type.clone(),
                 likes_count,
                 user_liked,
+                name: name.clone(),
+                image: image.clone(),
+                ticker: ticker.clone(),
+                description: description.clone(),
             });
         }
     }
@@ -434,44 +665,58 @@ pub async fn get_charm_by_charmid(state: &AppState, charmid: &str, user_id: i32)
         asset_type: first_charm.asset_type.clone(),
         likes_count,
         user_liked,
+        name,
+        image,
+        ticker,
+        description,
     })
 }
 
 /// Adds a like to a charm
-pub async fn add_like(state: &AppState, request: &LikeCharmRequest) -> ExplorerResult<LikeResponse> {
+pub async fn add_like(
+    state: &AppState,
+    request: &LikeCharmRequest,
+) -> ExplorerResult<LikeResponse> {
     // Add the like
-    match state.repositories.likes.add_like(&request.charm_id, request.user_id).await {
-        Ok(likes_count) => {
-            
-            Ok(LikeResponse {
-                success: true,
-                message: "Like added successfully".to_string(),
-                likes_count,
-            })
-        },
+    match state
+        .repositories
+        .likes
+        .add_like(&request.charm_id, request.user_id)
+        .await
+    {
+        Ok(likes_count) => Ok(LikeResponse {
+            success: true,
+            message: "Like added successfully".to_string(),
+            likes_count,
+        }),
         Err(err) => {
             eprintln!("Database error in add_like: {:?}", err);
-            
+
             Err(DbError::QueryError("Failed to add like".to_string()).into())
         }
     }
 }
 
 /// Removes a like from a charm
-pub async fn remove_like(state: &AppState, request: &LikeCharmRequest) -> ExplorerResult<LikeResponse> {
+pub async fn remove_like(
+    state: &AppState,
+    request: &LikeCharmRequest,
+) -> ExplorerResult<LikeResponse> {
     // Remove the like
-    match state.repositories.likes.remove_like(&request.charm_id, request.user_id).await {
-        Ok(likes_count) => {
-            
-            Ok(LikeResponse {
-                success: true,
-                message: "Like removed successfully".to_string(),
-                likes_count,
-            })
-        },
+    match state
+        .repositories
+        .likes
+        .remove_like(&request.charm_id, request.user_id)
+        .await
+    {
+        Ok(likes_count) => Ok(LikeResponse {
+            success: true,
+            message: "Like removed successfully".to_string(),
+            likes_count,
+        }),
         Err(err) => {
             eprintln!("Database error in remove_like: {:?}", err);
-            
+
             Err(DbError::QueryError("Failed to remove like".to_string()).into())
         }
     }
@@ -493,15 +738,35 @@ pub async fn get_charms_by_address(
         }
     };
 
+    // [RJJ-METADATA] Enrich charms with metadata from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let metadata_map = get_metadata_map(state, app_ids).await;
+
     // Transform charms to CharmData format
     let mut charm_data = Vec::new();
-    
+
     for charm in charms {
         // Get likes count for this charm
-        let likes_count = state.repositories.likes.get_likes_count(&charm.app_id).await.unwrap_or(0);
-        
+        let likes_count = state
+            .repositories
+            .likes
+            .get_likes_count(&charm.app_id)
+            .await
+            .unwrap_or(0);
+
         // Check if the user has liked this charm
-        let user_liked = state.repositories.likes.has_user_liked(&charm.app_id, user_id).await.unwrap_or(false);
+        let user_liked = state
+            .repositories
+            .likes
+            .has_user_liked(&charm.app_id, user_id)
+            .await
+            .unwrap_or(false);
+
+        // Get metadata for this charm
+        let (name, image, ticker, description) = metadata_map
+            .get(&charm.app_id)
+            .cloned()
+            .unwrap_or((None, None, None, None));
 
         charm_data.push(CharmData {
             txid: charm.txid,
@@ -512,6 +777,10 @@ pub async fn get_charms_by_address(
             asset_type: charm.asset_type,
             likes_count,
             user_liked,
+            name,
+            image,
+            ticker,
+            description,
         });
     }
 
@@ -526,4 +795,51 @@ fn extract_hash_from_app_id(app_id: &str) -> String {
     } else {
         app_id.to_string()
     }
+}
+
+// Helper to enrich charms with metadata from assets table
+async fn get_metadata_map(
+    state: &AppState,
+    app_ids: Vec<String>,
+) -> HashMap<
+    String,
+    (
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ),
+> {
+    let unique_app_ids: Vec<String> = app_ids
+        .iter()
+        .cloned()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+
+    if unique_app_ids.is_empty() {
+        return HashMap::new();
+    }
+
+    let assets = match state
+        .repositories
+        .asset_repository
+        .find_by_app_ids(unique_app_ids)
+        .await
+    {
+        Ok(assets) => assets,
+        Err(err) => {
+            eprintln!("Error fetching assets metadata: {:?}", err);
+            vec![]
+        }
+    };
+
+    let mut map = HashMap::new();
+    for asset in assets {
+        map.insert(
+            asset.app_id,
+            (asset.name, asset.image_url, asset.symbol, asset.description),
+        );
+    }
+    map
 }

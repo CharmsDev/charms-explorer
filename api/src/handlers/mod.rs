@@ -14,10 +14,10 @@ use crate::config::ApiConfig;
 use crate::db::Repositories;
 
 // Handler function re-exports
-pub use assets::{get_assets, get_asset_counts, get_asset_by_id};
+pub use assets::{get_asset_by_id, get_asset_counts, get_assets};
 pub use charms::{
-    get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_address, get_charms_by_type,
-    like_charm, unlike_charm,
+    get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_address,
+    get_charms_by_type, get_charms_count_by_type, like_charm, unlike_charm,
 };
 pub use diagnostic::diagnose_database;
 pub use health::health_check;
