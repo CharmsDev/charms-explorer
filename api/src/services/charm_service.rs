@@ -14,40 +14,38 @@ pub async fn get_charms_count_by_type(
     state: &AppState,
     network: Option<&str>,
 ) -> ExplorerResult<CharmsCountByTypeResponse> {
-    use crate::entity::charms::{Column, Entity as Charms};
+    use crate::entity::assets::{Column as AssetColumn, Entity as Assets};
+    use crate::entity::charms::{Column as CharmColumn, Entity as Charms};
     use sea_orm::{ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter};
 
-    // Get counts by asset type from the database
     let network_str = network.unwrap_or("mainnet");
-
-    // Query to count charms by asset_type
     let conn = state.repositories.charm.get_connection();
 
-    // Count total
+    // Count total charms
     let total = Charms::find()
-        .filter(Column::Network.eq(network_str))
+        .filter(CharmColumn::Network.eq(network_str))
         .count(conn)
         .await
         .unwrap_or(0);
 
-    // Count by type
-    let nft_count = Charms::find()
-        .filter(Column::Network.eq(network_str))
-        .filter(Column::AssetType.eq("nft"))
+    // Count assets by type (unique assets, not charm instances)
+    let nft_count = Assets::find()
+        .filter(AssetColumn::Network.eq(network_str))
+        .filter(AssetColumn::AssetType.eq("nft"))
         .count(conn)
         .await
         .unwrap_or(0);
 
-    let token_count = Charms::find()
-        .filter(Column::Network.eq(network_str))
-        .filter(Column::AssetType.eq("token"))
+    let token_count = Assets::find()
+        .filter(AssetColumn::Network.eq(network_str))
+        .filter(AssetColumn::AssetType.eq("token"))
         .count(conn)
         .await
         .unwrap_or(0);
 
-    let dapp_count = Charms::find()
-        .filter(Column::Network.eq(network_str))
-        .filter(Column::AssetType.eq("dapp"))
+    let dapp_count = Assets::find()
+        .filter(AssetColumn::Network.eq(network_str))
+        .filter(AssetColumn::AssetType.eq("dapp"))
         .count(conn)
         .await
         .unwrap_or(0);
