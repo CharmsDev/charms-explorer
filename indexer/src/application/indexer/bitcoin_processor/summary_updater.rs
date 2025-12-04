@@ -10,17 +10,14 @@ use super::retry_handler::RetryHandler;
 
 /// Handles updating summary statistics after block processing
 #[derive(Debug)]
-pub struct SummaryUpdater<'a> {
-    bitcoin_client: &'a BitcoinClient,
-    summary_repository: &'a SummaryRepository,
+pub struct SummaryUpdater {
+    bitcoin_client: BitcoinClient,
+    summary_repository: SummaryRepository,
     retry_handler: RetryHandler,
 }
 
-impl<'a> SummaryUpdater<'a> {
-    pub fn new(
-        bitcoin_client: &'a BitcoinClient,
-        summary_repository: &'a SummaryRepository,
-    ) -> Self {
+impl SummaryUpdater {
+    pub fn new(bitcoin_client: BitcoinClient, summary_repository: SummaryRepository) -> Self {
         Self {
             bitcoin_client,
             summary_repository,
@@ -38,14 +35,14 @@ impl<'a> SummaryUpdater<'a> {
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
         // Get bitcoin node information
-        let (bitcoin_node_status, bitcoin_node_block_count, bitcoin_node_best_block_hash) = 
+        let (bitcoin_node_status, bitcoin_node_block_count, bitcoin_node_best_block_hash) =
             match self.bitcoin_client.get_best_block_hash().await {
-                Ok(best_hash) => {
-                    ("connected".to_string(), latest_height as i64, best_hash.to_string())
-                }
-                Err(_) => {
-                    ("error".to_string(), 0i64, "unknown".to_string())
-                }
+                Ok(best_hash) => (
+                    "connected".to_string(),
+                    latest_height as i64,
+                    best_hash.to_string(),
+                ),
+                Err(_) => ("error".to_string(), 0i64, "unknown".to_string()),
             };
 
         let latest_confirmed_block = if latest_height >= 6 {
@@ -56,7 +53,7 @@ impl<'a> SummaryUpdater<'a> {
 
         // Calculate asset type counts from current batch
         let asset_counts = self.calculate_asset_counts(charm_batch);
-        
+
         // Count confirmed transactions in current batch
         let confirmed_transactions = transaction_batch
             .iter()
@@ -64,7 +61,10 @@ impl<'a> SummaryUpdater<'a> {
             .count() as i64;
 
         // Get current totals from database to add to them
-        let current_summary = self.summary_repository.get_summary(network_id).await
+        let current_summary = self
+            .summary_repository
+            .get_summary(network_id)
+            .await
             .map_err(BlockProcessorError::DbError)?;
 
         let totals = self.calculate_totals(
@@ -103,13 +103,12 @@ impl<'a> SummaryUpdater<'a> {
             .await
             .map_err(BlockProcessorError::DbError)?;
 
-
         Ok(())
     }
     /// Calculate asset type counts from charm batch
     fn calculate_asset_counts(&self, charm_batch: &[CharmBatchItem]) -> AssetCounts {
         let mut counts = AssetCounts::default();
-        
+
         for charm_item in charm_batch {
             let asset_type = &charm_item.4; // asset_type is still the 5th element (index 4)
             match asset_type.as_str() {
@@ -118,7 +117,7 @@ impl<'a> SummaryUpdater<'a> {
                 _ => counts.other_count += 1,
             }
         }
-        
+
         counts
     }
     /// Calculate total counts by adding current batch to existing totals
@@ -134,7 +133,8 @@ impl<'a> SummaryUpdater<'a> {
             SummaryTotals {
                 total_charms: summary.total_charms + charm_batch.len() as i64,
                 total_transactions: summary.total_transactions + transaction_batch.len() as i64,
-                total_confirmed_transactions: summary.confirmed_transactions + confirmed_transactions,
+                total_confirmed_transactions: summary.confirmed_transactions
+                    + confirmed_transactions,
                 total_nft_count: summary.nft_count + asset_counts.nft_count,
                 total_token_count: summary.token_count + asset_counts.token_count,
                 total_dapp_count: summary.dapp_count + asset_counts.dapp_count,

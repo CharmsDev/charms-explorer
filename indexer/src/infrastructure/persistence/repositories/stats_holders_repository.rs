@@ -1,11 +1,7 @@
 // [RJJ-STATS-HOLDERS] Repository for stats_holders table operations in indexer
 
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set,
-    ConnectionTrait, Statement, DbBackend,
-};
+use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 
-use crate::infrastructure::persistence::entities::stats_holders;
 use crate::infrastructure::persistence::error::DbError;
 
 /// Repository for holder statistics operations
@@ -103,7 +99,7 @@ impl StatsHoldersRepository {
         // Group by (app_id, address) and sum amounts
         use std::collections::HashMap;
         let mut grouped: HashMap<(String, String), (i64, i32)> = HashMap::new();
-        
+
         for (app_id, address, amount, block_height) in updates {
             let key = (app_id, address);
             let entry = grouped.entry(key).or_insert((0, block_height));
@@ -113,7 +109,8 @@ impl StatsHoldersRepository {
 
         // Apply each grouped update
         for ((app_id, address), (total_delta, block_height)) in grouped {
-            self.update_holder_stats(&app_id, &address, total_delta, block_height).await?;
+            self.update_holder_stats(&app_id, &address, total_delta, block_height)
+                .await?;
         }
 
         Ok(())

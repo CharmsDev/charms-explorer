@@ -10,16 +10,13 @@ use crate::utils::logging;
 
 /// Handles batch processing of charms and transactions
 #[derive(Debug)]
-pub struct BatchProcessor<'a> {
-    charm_service: &'a CharmService,
-    transaction_repository: &'a TransactionRepository,
+pub struct BatchProcessor {
+    charm_service: CharmService,
+    transaction_repository: TransactionRepository,
 }
 
-impl<'a> BatchProcessor<'a> {
-    pub fn new(
-        charm_service: &'a CharmService,
-        transaction_repository: &'a TransactionRepository,
-    ) -> Self {
+impl BatchProcessor {
+    pub fn new(charm_service: CharmService, transaction_repository: TransactionRepository) -> Self {
         Self {
             charm_service,
             transaction_repository,
@@ -44,7 +41,8 @@ impl<'a> BatchProcessor<'a> {
             network_id,
             || async { self.transaction_repository.save_batch(batch.clone()).await },
             |e| BlockProcessorError::DbError(e),
-        ).await
+        )
+        .await
     }
 
     /// Save charm batch with retry logic
@@ -65,7 +63,8 @@ impl<'a> BatchProcessor<'a> {
             network_id,
             || async { self.charm_service.save_batch(batch.clone()).await },
             |e| BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e)),
-        ).await
+        )
+        .await
     }
 
     /// Save asset batch with retry logic
@@ -86,7 +85,8 @@ impl<'a> BatchProcessor<'a> {
             network_id,
             || async { self.charm_service.save_asset_batch(batch.clone()).await },
             |e| BlockProcessorError::ProcessingError(format!("Failed to save asset batch: {}", e)),
-        ).await
+        )
+        .await
     }
 
     /// Generic batch save execution with retry logic to eliminate code duplication
@@ -107,7 +107,6 @@ impl<'a> BatchProcessor<'a> {
     {
         const MAX_RETRIES: u32 = 3;
         const RETRY_DELAY_MS: u64 = 500;
-
 
         for attempt in 1..=MAX_RETRIES {
             match operation().await {

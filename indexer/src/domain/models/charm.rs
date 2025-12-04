@@ -4,6 +4,7 @@ use serde_json::Value;
 
 /// Represents a Charm asset found in a blockchain transaction
 /// [RJJ-S01] Updated: Removed charmid field, added app_id field
+/// [RJJ-MEMPOOL] Updated: block_height is now Option<u64> to support mempool charms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Charm {
     /// Transaction ID
@@ -12,8 +13,8 @@ pub struct Charm {
     /// Output index (vout) where the charm is located in the transaction
     pub vout: i32,
 
-    /// Block height where the charm was found
-    pub block_height: u64,
+    /// Block height where the charm was found (None if still in mempool)
+    pub block_height: Option<u64>,
 
     /// JSON data associated with the charm
     pub data: Value,
@@ -41,15 +42,19 @@ pub struct Charm {
 
     /// Amount of the charm (with 8 decimals, stored as satoshis/units)
     pub amount: i64,
+
+    /// Timestamp when charm was first detected in mempool (None if indexed directly from block)
+    pub mempool_detected_at: Option<NaiveDateTime>,
 }
 
 impl Charm {
     /// Creates a new Charm with specified parameters
     /// [RJJ-S01] Updated: Removed charmid parameter, added app_id and amount
+    /// [RJJ-MEMPOOL] Updated: block_height is now Option<u64>, added mempool_detected_at
     pub fn new(
         txid: String,
         vout: i32,
-        block_height: u64,
+        block_height: Option<u64>,
         data: Value,
         date_created: NaiveDateTime,
         asset_type: String,
@@ -73,6 +78,7 @@ impl Charm {
             spent,
             app_id,
             amount,
+            mempool_detected_at: None, // Will be set by repository if charm is from mempool
         }
     }
 }

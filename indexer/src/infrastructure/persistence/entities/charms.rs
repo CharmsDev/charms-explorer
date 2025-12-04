@@ -7,6 +7,7 @@ use serde_json::Value;
 
 // [RJJ-S01] Updated to use composite primary key (txid, vout)
 // Removed charmid field, added app_id field
+// [RJJ-MEMPOOL] Added support for mempool tracking with nullable block_height
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "charms")]
 pub struct Model {
@@ -14,7 +15,8 @@ pub struct Model {
     pub txid: String,
     #[sea_orm(primary_key)]
     pub vout: i32,
-    pub block_height: i32,
+    #[sea_orm(nullable)]
+    pub block_height: Option<i32>,
     pub data: Value,
     pub date_created: NaiveDateTime,
     #[sea_orm(column_type = "Text")]
@@ -29,6 +31,8 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub app_id: String,
     pub amount: i64,
+    #[sea_orm(nullable)]
+    pub mempool_detected_at: Option<NaiveDateTime>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
