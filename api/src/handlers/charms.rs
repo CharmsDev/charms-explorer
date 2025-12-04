@@ -8,8 +8,8 @@ use axum::{
 use crate::error::ExplorerResult;
 use crate::handlers::AppState;
 use crate::models::{
-    CharmCountResponse, CharmData, CharmsResponse, GetCharmNumbersQuery, GetCharmsByTypeQuery,
-    GetCharmsQuery, LikeCharmRequest, LikeResponse, PaginatedResponse,
+    CharmCountResponse, CharmData, CharmsCountByTypeResponse, CharmsResponse, GetCharmNumbersQuery,
+    GetCharmsByTypeQuery, GetCharmsQuery, LikeCharmRequest, LikeResponse, PaginatedResponse,
 };
 use crate::services::charm_service;
 
@@ -23,13 +23,29 @@ pub async fn get_charm_numbers(
     Ok(Json(response))
 }
 
+/// Handler for GET /charms/count-by-type - Returns counts of charms grouped by asset type
+pub async fn get_charms_count_by_type(
+    State(state): State<AppState>,
+    Query(params): Query<GetCharmsQuery>,
+) -> ExplorerResult<Json<CharmsCountByTypeResponse>> {
+    let network = params.network.as_deref();
+    let response = charm_service::get_charms_count_by_type(&state, network).await?;
+    Ok(Json(response))
+}
+
 /// Handler for GET /charms - Returns all charms with pagination, optionally filtered by network
 pub async fn get_charms(
     State(state): State<AppState>,
     Query(params): Query<GetCharmsQuery>,
 ) -> ExplorerResult<Json<PaginatedResponse<CharmsResponse>>> {
     let response = if let Some(network) = &params.network {
-        charm_service::get_all_charms_paginated_by_network(&state, &params.pagination, params.user_id, Some(network)).await?
+        charm_service::get_all_charms_paginated_by_network(
+            &state,
+            &params.pagination,
+            params.user_id,
+            Some(network),
+        )
+        .await?
     } else {
         charm_service::get_all_charms_paginated(&state, &params.pagination, params.user_id).await?
     };
@@ -42,7 +58,13 @@ pub async fn get_charms_by_type(
     Query(params): Query<GetCharmsByTypeQuery>,
 ) -> ExplorerResult<Json<PaginatedResponse<CharmsResponse>>> {
     // Use default user_id of 1 as specified in requirements
-    let response = charm_service::get_charms_by_type_paginated(&state, &params.asset_type, &params.pagination, 1).await?;
+    let response = charm_service::get_charms_by_type_paginated(
+        &state,
+        &params.asset_type,
+        &params.pagination,
+        1,
+    )
+    .await?;
     Ok(Json(response))
 }
 

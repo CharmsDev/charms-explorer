@@ -13,9 +13,15 @@ where
 /// Common pagination parameters for API endpoints
 #[derive(Debug, Deserialize, Default)]
 pub struct PaginationParams {
-    #[serde(default = "default_page", deserialize_with = "deserialize_string_to_u64")]
+    #[serde(
+        default = "default_page",
+        deserialize_with = "deserialize_string_to_u64"
+    )]
     pub page: u64,
-    #[serde(default = "default_limit", deserialize_with = "deserialize_string_to_u64")]
+    #[serde(
+        default = "default_limit",
+        deserialize_with = "deserialize_string_to_u64"
+    )]
     pub limit: u64,
     #[serde(default = "default_sort_order")]
     pub sort: String,
@@ -46,6 +52,15 @@ pub struct CharmCountResponse {
     pub count: usize,
 }
 
+/// Response structure for GET /charms/count-by-type endpoint
+#[derive(Debug, Serialize)]
+pub struct CharmsCountByTypeResponse {
+    pub total: u64,
+    pub nft: u64,
+    pub token: u64,
+    pub dapp: u64,
+}
+
 /// Response structure for GET /charms endpoint
 #[derive(Debug, Serialize)]
 pub struct CharmsResponse {
@@ -65,6 +80,15 @@ pub struct CharmData {
     pub likes_count: i64,
     #[serde(default = "default_user_liked")]
     pub user_liked: bool,
+    // [RJJ-METADATA] Enriched metadata from assets table
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ticker: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 fn default_likes_count() -> i64 {

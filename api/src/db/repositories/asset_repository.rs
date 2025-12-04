@@ -87,6 +87,18 @@ impl AssetRepository {
         Ok(asset)
     }
 
+    /// Find assets by multiple app_ids
+    pub async fn find_by_app_ids(
+        &self,
+        app_ids: Vec<String>,
+    ) -> Result<Vec<Model>, Box<dyn std::error::Error + Send + Sync>> {
+        let assets = Asset::find()
+            .filter(Column::AppId.is_in(app_ids))
+            .all(self.db.as_ref())
+            .await?;
+        Ok(assets)
+    }
+
     /// Find assets by asset type
     pub async fn find_by_asset_type(
         &self,
