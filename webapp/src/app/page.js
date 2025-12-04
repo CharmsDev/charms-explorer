@@ -47,7 +47,7 @@ export default function HomePage() {
             const totalItems = response.total || counts.total || response.assets?.length || 0;
 
             // Update counts with the real total from API
-            if (response.total && counts.total === 0) {
+            if (response.total) {
                 setCounts(prevCounts => ({
                     ...prevCounts,
                     total: response.total
