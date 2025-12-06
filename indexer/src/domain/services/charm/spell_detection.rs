@@ -167,6 +167,8 @@ impl<'a> SpellDetector<'a> {
                 "token"
             } else if asset_info.app_id.starts_with("n/") {
                 "nft"
+            } else if asset_info.app_id.starts_with("B/") {
+                "dapp"
             } else {
                 "other"
             };
