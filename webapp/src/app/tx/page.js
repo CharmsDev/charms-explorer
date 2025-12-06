@@ -20,12 +20,41 @@ export default function TransactionPage() {
 
             try {
                 setLoading(true);
-                const data = await getCharmByTxId(txid);
-                setCharm(data);
-                setError(null);
-            } catch (err) {
-                console.error('Error loading transaction:', err);
-                setError('Transaction not found or error loading data.');
+                
+                // Try to get charm data first
+                try {
+                    const data = await getCharmByTxId(txid);
+                    setCharm(data);
+                    setError(null);
+                } catch (charmErr) {
+                    // If charm not found, try to get Bitcoin transaction data
+                    console.log('Charm not found, fetching Bitcoin transaction data...');
+                    
+                    try {
+                        const response = await fetch(`https://mempool.space/api/tx/${txid}`);
+                        if (!response.ok) {
+                            throw new Error('Transaction not found');
+                        }
+                        
+                        const btcTx = await response.json();
+                        
+                        // Transform Bitcoin transaction to charm-like format for display
+                        setCharm({
+                            txid: btcTx.txid,
+                            asset_type: 'bitcoin',
+                            name: 'Bitcoin Transaction',
+                            date_created: new Date(btcTx.status.block_time * 1000).toISOString(),
+                            block_height: btcTx.status.block_height,
+                            vout: 0,
+                            data: btcTx,
+                            isBitcoinTx: true, // Flag to identify Bitcoin-only transactions
+                        });
+                        setError(null);
+                    } catch (btcErr) {
+                        console.error('Error loading Bitcoin transaction:', btcErr);
+                        setError('Transaction not found on blockchain.');
+                    }
+                }
             } finally {
                 setLoading(false);
             }
@@ -130,58 +159,154 @@ export default function TransactionPage() {
                             </div>
                         </div>
 
-                        {/* Spell / Charm Data */}
-                        <div className="card p-6">
-                            <h2 className="text-xl font-semibold text-white mb-6">Spell Data (Raw JSON)</h2>
-                            <div className="bg-dark-900/50 rounded-lg p-4 overflow-x-auto">
-                                <pre className="text-xs sm:text-sm text-green-400 font-mono whitespace-pre-wrap break-all">
-                                    {JSON.stringify(charm.data, null, 2)}
-                                </pre>
+                        {/* Bitcoin Transaction Details or Spell Data */}
+                        {charm.isBitcoinTx ? (
+                            <>
+                                {/* Inputs */}
+                                <div className="card p-6">
+                                    <h2 className="text-xl font-semibold text-white mb-6">
+                                        Inputs ({charm.data.vin?.length || 0})
+                                    </h2>
+                                    <div className="space-y-3">
+                                        {charm.data.vin?.map((input, idx) => (
+                                            <div key={idx} className="bg-dark-900/50 rounded-lg p-4">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-dark-400 text-sm">Input #{idx}</span>
+                                                    {input.prevout?.value && (
+                                                        <span className="text-primary-400 font-mono text-sm">
+                                                            {(input.prevout.value / 100000000).toFixed(8)} BTC
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-dark-300 font-mono break-all">
+                                                    {input.txid}:{input.vout}
+                                                </div>
+                                                {input.prevout?.scriptpubkey_address && (
+                                                    <div className="text-xs text-dark-400 mt-2">
+                                                        From: {input.prevout.scriptpubkey_address}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Outputs */}
+                                <div className="card p-6">
+                                    <h2 className="text-xl font-semibold text-white mb-6">
+                                        Outputs ({charm.data.vout?.length || 0})
+                                    </h2>
+                                    <div className="space-y-3">
+                                        {charm.data.vout?.map((output, idx) => (
+                                            <div key={idx} className="bg-dark-900/50 rounded-lg p-4">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <span className="text-dark-400 text-sm">Output #{idx}</span>
+                                                    <span className="text-primary-400 font-mono text-sm">
+                                                        {(output.value / 100000000).toFixed(8)} BTC
+                                                    </span>
+                                                </div>
+                                                {output.scriptpubkey_address && (
+                                                    <div className="text-xs text-dark-300 break-all">
+                                                        To: {output.scriptpubkey_address}
+                                                    </div>
+                                                )}
+                                                {output.scriptpubkey_type && (
+                                                    <div className="text-xs text-dark-500 mt-1">
+                                                        Type: {output.scriptpubkey_type}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="card p-6">
+                                <h2 className="text-xl font-semibold text-white mb-6">Spell Data (Raw JSON)</h2>
+                                <div className="bg-dark-900/50 rounded-lg p-4 overflow-x-auto">
+                                    <pre className="text-xs sm:text-sm text-green-400 font-mono whitespace-pre-wrap break-all">
+                                        {JSON.stringify(charm.data, null, 2)}
+                                    </pre>
+                                </div>
                             </div>
-                        </div>
+                        )}
                     </div>
 
-                    {/* Right Column - Related Charm */}
+                    {/* Right Column - Related Charm or Bitcoin TX Info */}
                     <div className="space-y-6">
                         <div className="card p-6">
-                            <h2 className="text-xl font-semibold text-white mb-6">Related Asset</h2>
+                            <h2 className="text-xl font-semibold text-white mb-6">
+                                {charm.isBitcoinTx ? 'Transaction Info' : 'Related Asset'}
+                            </h2>
                             
                             <div className="flex flex-col items-center text-center">
-                                {charm.image ? (
-                                    <img src={charm.image} alt={charm.name} className="w-24 h-24 rounded-lg object-cover mb-4 shadow-lg" />
-                                ) : (
-                                    <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
-                                        <span className="text-3xl">
-                                            {charm.asset_type === 'nft' ? '🎨' : 
-                                             charm.asset_type === 'token' ? '🪙' : 
-                                             charm.asset_type === 'dapp' ? '⚙️' :
-                                             charm.asset_type === 'other' ? '📦' : '⚡'}
+                                {charm.isBitcoinTx ? (
+                                    <>
+                                        <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
+                                            <span className="text-3xl">₿</span>
+                                        </div>
+                                        <h3 className="text-lg font-bold text-white mb-1">Bitcoin Transaction</h3>
+                                        <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-4 uppercase tracking-wider">
+                                            BTC Transfer
                                         </span>
-                                    </div>
+                                        <div className="w-full space-y-2 text-sm">
+                                            <div className="flex justify-between">
+                                                <span className="text-dark-400">Size</span>
+                                                <span className="text-white">{charm.data.size} bytes</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-dark-400">Weight</span>
+                                                <span className="text-white">{charm.data.weight} WU</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-dark-400">Fee</span>
+                                                <span className="text-white">{(charm.data.fee / 100000000).toFixed(8)} BTC</span>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-dark-400">Fee Rate</span>
+                                                <span className="text-white">{(charm.data.fee / charm.data.weight * 4).toFixed(2)} sat/vB</span>
+                                            </div>
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        {charm.image ? (
+                                            <img src={charm.image} alt={charm.name} className="w-24 h-24 rounded-lg object-cover mb-4 shadow-lg" />
+                                        ) : (
+                                            <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
+                                                <span className="text-3xl">
+                                                    {charm.asset_type === 'nft' ? '🎨' : 
+                                                     charm.asset_type === 'token' ? '🪙' : 
+                                                     charm.asset_type === 'dapp' ? '⚙️' :
+                                                     charm.asset_type === 'other' ? '📦' : '⚡'}
+                                                </span>
+                                            </div>
+                                        )}
+                                        
+                                        <h3 className="text-lg font-bold text-white mb-1">{charm.name || 'Unnamed Asset'}</h3>
+                                        <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-4 uppercase tracking-wider">
+                                            {charm.asset_type}
+                                        </span>
+
+                                        <Link 
+                                            href={`/asset?appid=${encodeURIComponent(charm.app_id || charm.charmid)}`}
+                                            className="btn btn-primary w-full justify-center"
+                                        >
+                                            View Asset Details
+                                        </Link>
+
+                                        <div className="mt-6 pt-6 border-t border-dark-800/50 w-full">
+                                            <div className="flex justify-between text-sm mb-2">
+                                                <span className="text-dark-400">Vout</span>
+                                                <span className="text-white font-mono">{charm.vout}</span>
+                                            </div>
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-dark-400">Charm ID</span>
+                                                <span className="text-white font-mono truncate w-32" title={charm.charmid}>{charm.charmid}</span>
+                                            </div>
+                                        </div>
+                                    </>
                                 )}
-                                
-                                <h3 className="text-lg font-bold text-white mb-1">{charm.name || 'Unnamed Asset'}</h3>
-                                <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-4 uppercase tracking-wider">
-                                    {charm.asset_type}
-                                </span>
-
-                                <Link 
-                                    href={`/asset?appid=${encodeURIComponent(charm.app_id || charm.charmid)}`}
-                                    className="btn btn-primary w-full justify-center"
-                                >
-                                    View Asset Details
-                                </Link>
-                            </div>
-
-                            <div className="mt-6 pt-6 border-t border-dark-800/50">
-                                <div className="flex justify-between text-sm mb-2">
-                                    <span className="text-dark-400">Vout</span>
-                                    <span className="text-white font-mono">{charm.vout}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-dark-400">Charm ID</span>
-                                    <span className="text-white font-mono truncate w-32" title={charm.charmid}>{charm.charmid}</span>
-                                </div>
                             </div>
                         </div>
                     </div>
