@@ -118,42 +118,63 @@ impl<'a> CharmDetector<'a> {
             }
         };
 
+        // Extract assets from the spell if available
+        let asset_infos = if let Some(ref spell) = normalized_spell_opt {
+            NativeCharmParser::extract_asset_info(spell)
+        } else {
+            vec![]
+        };
+
+        // Extract app_id, asset_type and amount from asset_infos
+        let (app_id, asset_type, amount) = if let Some(first_asset) = asset_infos.first() {
+            let asset_type = if first_asset.app_id.starts_with("t/") {
+                "token".to_string()
+            } else if first_asset.app_id.starts_with("n/") {
+                "nft".to_string()
+            } else {
+                "other".to_string()
+            };
+            (
+                first_asset.app_id.clone(),
+                asset_type,
+                first_asset.amount as i64,
+            )
+        } else {
+            (String::from("other"), "spell".to_string(), 0)
+        };
+
         // Create charm with appropriate data
         // [RJJ-S01] Removed charmid parameter, added app_id and amount
         let charm = Charm::new(
             txid.to_string(),
             0, // vout - Charms are always in output 0 per protocol
-            block_height,
+            Some(block_height),
             charm_json,
             Utc::now().naive_utc(),
-            "spell".to_string(),
+            asset_type,
             blockchain.clone(),
             network.clone(),
             address,
-            false,                 // New charms are unspent by default
-            String::from("other"), // Default app_id for old detection method
-            0,                     // Default amount for old detection method
+            false, // New charms are unspent by default
+            app_id,
+            amount,
         );
 
-        // Extract assets from the spell if available
-        let asset_requests = if let Some(ref spell) = normalized_spell_opt {
-            let assets = NativeCharmParser::extract_asset_info(spell);
-            assets
-                .into_iter()
-                .map(|asset| {
-                    use crate::infrastructure::queue::charm_queue::AssetSaveRequest;
-                    AssetSaveRequest {
-                        app_id: asset.app_id,
-                        asset_type: asset.asset_type,
-                        supply: asset.amount,
-                        blockchain: blockchain.clone(),
-                        network: network.clone(),
-                    }
-                })
-                .collect()
-        } else {
-            vec![]
-        };
+        // Create asset save requests
+        let asset_count = asset_infos.len();
+        let asset_requests: Vec<_> = asset_infos
+            .into_iter()
+            .map(|asset| {
+                use crate::infrastructure::queue::charm_queue::AssetSaveRequest;
+                AssetSaveRequest {
+                    app_id: asset.app_id,
+                    asset_type: asset.asset_type,
+                    supply: asset.amount,
+                    blockchain: blockchain.clone(),
+                    network: network.clone(),
+                }
+            })
+            .collect();
 
         // Save the charm to the database (using queue if available, otherwise direct save)
         if let Some(ref queue_service) = self.charm_queue_service {
@@ -189,10 +210,7 @@ impl<'a> CharmDetector<'a> {
                 Ok(_) => {
                     crate::utils::logging::log_info(&format!(
                         "[{}] ✅ Block {}: Successfully saved charm for tx {} with {} assets",
-                        network,
-                        block_height,
-                        txid,
-                        asset_infos.len()
+                        network, block_height, txid, asset_count
                     ));
                     Ok(Some(charm))
                 }

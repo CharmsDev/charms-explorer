@@ -63,7 +63,7 @@ impl CharmQueueService {
             charm,
             tx_position,
             String::new(),
-            charm.block_height,
+            charm.block_height.unwrap_or(0),
             vec![],
         )
         .await

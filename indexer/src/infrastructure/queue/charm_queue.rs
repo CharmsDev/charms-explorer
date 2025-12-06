@@ -1,12 +1,12 @@
 //! Asynchronous queue system for charm processing
-//! 
+//!
 //! This module provides a high-performance, thread-safe queue that decouples
 //! charm detection from database operations, preventing I/O bottlenecks.
 
+use crate::domain::models::Charm;
+use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use serde_json::Value;
-use crate::domain::models::Charm;
 
 /// Request to save a transaction to the database
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ impl CharmSaveRequest {
         Self {
             txid: charm.txid.clone(),
             vout: charm.vout,
-            block_height: charm.block_height,
+            block_height: charm.block_height.unwrap_or(0),
             data: charm.data.clone(),
             asset_type: charm.asset_type.clone(),
             blockchain: charm.blockchain.clone(),
@@ -81,7 +81,7 @@ impl CharmSaveRequest {
         Charm::new(
             self.txid.clone(),
             self.vout,
-            self.block_height,
+            Some(self.block_height),
             self.data.clone(),
             chrono::Utc::now().naive_utc(),
             self.asset_type.clone(),
@@ -104,14 +104,14 @@ impl CharmDataSaveRequest {
         latest_height: u64,
         assets: Vec<AssetSaveRequest>,
     ) -> Self {
-        let confirmations = (latest_height - charm.block_height + 1) as i32;
+        let confirmations = (latest_height - charm.block_height.unwrap_or(0) + 1) as i32;
         let is_confirmed = confirmations >= 6;
 
         Self {
             charm: CharmSaveRequest::from_charm(charm, tx_position),
             transaction: TransactionSaveRequest {
                 txid: charm.txid.clone(),
-                block_height: charm.block_height,
+                block_height: charm.block_height.unwrap_or(0),
                 tx_position,
                 raw_hex,
                 confirmations,
@@ -144,10 +144,18 @@ impl QueueMetrics {
     /// Get current queue statistics
     pub fn get_stats(&self) -> QueueStats {
         QueueStats {
-            total_enqueued: self.total_enqueued.load(std::sync::atomic::Ordering::Relaxed),
-            total_processed: self.total_processed.load(std::sync::atomic::Ordering::Relaxed),
-            current_queue_size: self.current_queue_size.load(std::sync::atomic::Ordering::Relaxed),
-            processing_errors: self.processing_errors.load(std::sync::atomic::Ordering::Relaxed),
+            total_enqueued: self
+                .total_enqueued
+                .load(std::sync::atomic::Ordering::Relaxed),
+            total_processed: self
+                .total_processed
+                .load(std::sync::atomic::Ordering::Relaxed),
+            current_queue_size: self
+                .current_queue_size
+                .load(std::sync::atomic::Ordering::Relaxed),
+            processing_errors: self
+                .processing_errors
+                .load(std::sync::atomic::Ordering::Relaxed),
         }
     }
 }
@@ -167,10 +175,7 @@ impl CharmQueue {
         let (sender, receiver) = mpsc::unbounded_channel();
         let metrics = Arc::new(QueueMetrics::default());
 
-        let queue = Self {
-            sender,
-            metrics,
-        };
+        let queue = Self { sender, metrics };
 
         (queue, receiver)
     }
@@ -180,19 +185,27 @@ impl CharmQueue {
     pub fn enqueue_charm_data(&self, request: CharmDataSaveRequest) -> Result<(), QueueError> {
         match self.sender.send(request) {
             Ok(_) => {
-                self.metrics.total_enqueued.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                self.metrics.current_queue_size.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                
+                self.metrics
+                    .total_enqueued
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .current_queue_size
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
                 crate::utils::logging::log_debug(&format!(
                     "[{}] 📤 Enqueued charm for async processing (queue size: {})",
                     "QUEUE",
-                    self.metrics.current_queue_size.load(std::sync::atomic::Ordering::Relaxed)
+                    self.metrics
+                        .current_queue_size
+                        .load(std::sync::atomic::Ordering::Relaxed)
                 ));
-                
+
                 Ok(())
             }
             Err(_) => {
-                self.metrics.processing_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                self.metrics
+                    .processing_errors
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 Err(QueueError::ChannelClosed)
             }
         }
@@ -210,14 +223,22 @@ impl CharmQueue {
 
     /// Mark an item as processed (called by database writer)
     pub fn mark_processed(&self) {
-        self.metrics.total_processed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.metrics.current_queue_size.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .total_processed
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .current_queue_size
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Mark a processing error (called by database writer)
     pub fn mark_error(&self) {
-        self.metrics.processing_errors.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        self.metrics.current_queue_size.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .processing_errors
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.metrics
+            .current_queue_size
+            .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -249,7 +270,7 @@ mod tests {
     #[tokio::test]
     async fn test_charm_queue_basic_operations() {
         let (queue, mut receiver) = CharmQueue::new();
-        
+
         // Test enqueue
         let request = CharmSaveRequest {
             txid: "test_tx".to_string(),

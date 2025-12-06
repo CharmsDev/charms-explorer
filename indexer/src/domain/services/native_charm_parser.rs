@@ -1,6 +1,6 @@
-use charms_client::tx::{Tx, extract_and_verify_spell};
-use charms_client::NormalizedSpell;
 use anyhow::Result;
+use charms_client::tx::{extract_and_verify_spell, Tx};
+use charms_client::NormalizedSpell;
 
 /// Native charm parser using the charms-client crate
 /// Provides direct parsing and verification of charm transactions
@@ -8,28 +8,26 @@ pub struct NativeCharmParser;
 
 impl NativeCharmParser {
     /// Spell verification key for the current protocol version
-    pub const SPELL_VK: &'static str = "0x0041d9843ec25ba04797a0ce29af364389f7eda9f7126ef39390c357432ad9aa";
+    pub const SPELL_VK: &'static str =
+        "0x0041d9843ec25ba04797a0ce29af364389f7eda9f7126ef39390c357432ad9aa";
 
     /// Extract and verify a charm from a transaction hex string
-    /// 
+    ///
     /// This function:
     /// 1. Parses the transaction hex into a Tx object
     /// 2. Extracts the spell data from the transaction
     /// 3. Verifies the cryptographic proof
     /// 4. Returns the normalized spell data
-    /// 
+    ///
     /// Returns Ok(NormalizedSpell) if the transaction contains a valid charm
     /// Returns Err if the transaction is invalid or doesn't contain a charm
-    pub fn extract_and_verify_charm(
-        tx_hex: &str,
-        mock: bool,
-    ) -> Result<NormalizedSpell> {
+    pub fn extract_and_verify_charm(tx_hex: &str, mock: bool) -> Result<NormalizedSpell> {
         // Parse transaction from hex
         let tx = Tx::from_hex(tx_hex)?;
-        
+
         // Extract and verify spell using the charms-client library
         let normalized_spell = extract_and_verify_spell(Self::SPELL_VK, &tx, mock)?;
-        
+
         Ok(normalized_spell)
     }
 
@@ -85,17 +83,19 @@ fn extract_amount_from_charm_data(charm_data: &charms_data::Data) -> u64 {
     // Try to extract amount from charm data as u64
     // This is a simplified implementation - can be enhanced based on actual data structure
     if let Ok(amount) = charm_data.value::<u64>() {
-        amount
+        // Cap at i64::MAX to prevent overflow when storing in database
+        amount.min(i64::MAX as u64)
     } else if let Ok(amount) = charm_data.value::<i64>() {
         amount.max(0) as u64
     } else {
         // Try to extract from bytes representation
         let bytes = charm_data.bytes();
         if bytes.len() >= 8 {
-            u64::from_le_bytes([
-                bytes[0], bytes[1], bytes[2], bytes[3],
-                bytes[4], bytes[5], bytes[6], bytes[7]
-            ])
+            let raw_amount = u64::from_le_bytes([
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            ]);
+            // Cap at i64::MAX to prevent overflow when storing in database
+            raw_amount.min(i64::MAX as u64)
         } else {
             0
         }
