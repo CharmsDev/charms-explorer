@@ -9,6 +9,7 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_CHARMS_API_URL || 'http://lo
 export const ENDPOINTS = {
     CHARMS: `${API_BASE_URL}/charms`,
     CHARM_BY_CHARMID: (charmid) => `${API_BASE_URL}/charms/by-charmid/${charmid}`,
+    CHARM_BY_TXID: (txid) => `${API_BASE_URL}/charms/${txid}`,
     CHARMS_BY_ADDRESS: (address) => `${API_BASE_URL}/charms/by-address/${address}`, // [RJJ-ADDRESS-SEARCH]
     CHARMS_COUNT_BY_TYPE: `${API_BASE_URL}/charms/count-by-type`,
     ASSETS: `${API_BASE_URL}/assets`,
