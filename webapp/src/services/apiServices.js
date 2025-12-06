@@ -394,3 +394,20 @@ export const fetchAssetHolders = async (appId) => {
         throw error;
     }
 };
+
+// Get charm by transaction ID
+export const getCharmByTxId = async (txid) => {
+    try {
+        const response = await fetch(`${ENDPOINTS.CHARM_BY_TXID(txid)}`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('[API] Error fetching charm by txid:', error);
+        throw error;
+    }
+};
