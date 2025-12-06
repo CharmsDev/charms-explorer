@@ -38,7 +38,7 @@ impl TransactionRepository {
         // Create a new active model
         let tx_model = transactions::ActiveModel {
             txid: Set(transaction.txid.clone()),
-            block_height: Set(transaction.block_height as i32),
+            block_height: Set(Some(transaction.block_height as i32)),
             ordinal: Set(transaction.ordinal),
             raw: Set(transaction.raw.clone()),
             charm: Set(transaction.charm.clone()),
@@ -47,6 +47,7 @@ impl TransactionRepository {
             confirmations: Set(transaction.confirmations),
             blockchain: Set(transaction.blockchain.clone()),
             network: Set(transaction.network.clone()),
+            mempool_detected_at: Set(None),
         };
 
         // Try to insert the transaction, handle duplicate key violations gracefully
@@ -185,7 +186,7 @@ impl TransactionRepository {
 
                     transactions::ActiveModel {
                         txid: Set(txid),
-                        block_height: Set(block_height as i32),
+                        block_height: Set(Some(block_height as i32)),
                         ordinal: Set(ordinal),
                         raw: Set(raw),
                         charm: Set(charm),
@@ -194,6 +195,7 @@ impl TransactionRepository {
                         confirmations: Set(confirmations),
                         blockchain: Set(blockchain),
                         network: Set(network),
+                        mempool_detected_at: Set(None),
                     }
                 },
             )
@@ -224,7 +226,7 @@ impl TransactionRepository {
     fn to_domain_model(&self, entity: transactions::Model) -> Transaction {
         Transaction::new(
             entity.txid,
-            entity.block_height as u64,
+            entity.block_height.unwrap_or(0) as u64,
             entity.ordinal,
             entity.raw,
             entity.charm,

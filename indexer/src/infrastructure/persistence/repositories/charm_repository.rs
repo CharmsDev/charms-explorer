@@ -1,6 +1,6 @@
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, Set, ConnectionTrait, Statement, DbBackend,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
+    PaginatorTrait, QueryFilter, QueryOrder, Set, Statement,
 };
 
 use crate::domain::models::Charm;
@@ -46,7 +46,7 @@ impl CharmRepository {
         let charm_model = charms::ActiveModel {
             txid: Set(charm.txid.clone()),
             vout: Set(charm.vout),
-            block_height: Set(charm.block_height as i32),
+            block_height: Set(charm.block_height.map(|h| h as i32)),
             data: Set(charm.data.clone()),
             date_created: Set(charm.date_created),
             asset_type: Set(charm.asset_type.clone()),
@@ -56,6 +56,7 @@ impl CharmRepository {
             spent: Set(charm.spent),
             app_id: Set(charm.app_id.clone()),
             amount: Set(charm.amount),
+            mempool_detected_at: Set(charm.mempool_detected_at),
         };
 
         // Try to insert the charm, handle duplicate key violations gracefully
@@ -87,7 +88,7 @@ impl CharmRepository {
         // Convert to domain model if found
         Ok(result.map(|c| self.to_domain_model(c)))
     }
-    
+
     /// Get a charm by its transaction ID (returns first match)
     /// [RJJ-S01] Note: Since primary key is now (txid, vout), this returns the first charm found
     pub async fn get_by_txid(&self, txid: &str) -> Result<Option<Charm>, DbError> {
@@ -183,15 +184,15 @@ impl CharmRepository {
     pub async fn save_batch(
         &self,
         charms: Vec<(
-            String, // txid
-            i32,    // vout
-            u64,    // block_height
+            String,            // txid
+            i32,               // vout
+            u64,               // block_height
             serde_json::Value, // data
-            String, // asset_type
-            String, // blockchain
-            String, // network
-            String, // app_id
-            i64,    // amount
+            String,            // asset_type
+            String,            // blockchain
+            String,            // network
+            String,            // app_id
+            i64,               // amount
         )>,
     ) -> Result<(), DbError> {
         // Skip individual existence checks - let database handle duplicates
@@ -204,21 +205,32 @@ impl CharmRepository {
         let models: Vec<charms::ActiveModel> = charms
             .into_iter()
             .map(
-                |(txid, vout, block_height, data, asset_type, blockchain, network, app_id, amount)| {
+                |(
+                    txid,
+                    vout,
+                    block_height,
+                    data,
+                    asset_type,
+                    blockchain,
+                    network,
+                    app_id,
+                    amount,
+                )| {
                     // [RJJ-S01] Removed charmid, vout now comes from input, added app_id and amount
                     charms::ActiveModel {
                         txid: Set(txid),
                         vout: Set(vout),
-                        block_height: Set(block_height as i32),
+                        block_height: Set(Some(block_height as i32)),
                         data: Set(data),
                         date_created: Set(now),
                         asset_type: Set(asset_type),
                         blockchain: Set(blockchain),
                         network: Set(network),
                         address: Set(None), // For batch operations, address is not available
-                        spent: Set(false), // New charms are unspent by default
+                        spent: Set(false),  // New charms are unspent by default
                         app_id: Set(app_id),
                         amount: Set(amount),
+                        mempool_detected_at: Set(None),
                     }
                 },
             )
@@ -243,34 +255,43 @@ impl CharmRepository {
     }
 
     /// Get charms by Bitcoin address
-    pub async fn get_charms_by_address(&self, address: &str, network: Option<&str>) -> Result<Vec<Charm>, DbError> {
-        let mut query = charms::Entity::find()
-            .filter(charms::Column::Address.eq(address));
-        
+    pub async fn get_charms_by_address(
+        &self,
+        address: &str,
+        network: Option<&str>,
+    ) -> Result<Vec<Charm>, DbError> {
+        let mut query = charms::Entity::find().filter(charms::Column::Address.eq(address));
+
         // Filter by network if provided
         if let Some(net) = network {
             query = query.filter(charms::Column::Network.eq(net));
         }
-        
+
         let entities = query
             .order_by_desc(charms::Column::BlockHeight)
             .all(&self.conn)
             .await
             .map_err(|e| DbError::QueryError(e.to_string()))?;
 
-        Ok(entities.into_iter().map(|e| self.to_domain_model(e)).collect())
+        Ok(entities
+            .into_iter()
+            .map(|e| self.to_domain_model(e))
+            .collect())
     }
 
     /// Get charm count by Bitcoin address
-    pub async fn get_charm_count_by_address(&self, address: &str, network: Option<&str>) -> Result<u64, DbError> {
-        let mut query = charms::Entity::find()
-            .filter(charms::Column::Address.eq(address));
-        
+    pub async fn get_charm_count_by_address(
+        &self,
+        address: &str,
+        network: Option<&str>,
+    ) -> Result<u64, DbError> {
+        let mut query = charms::Entity::find().filter(charms::Column::Address.eq(address));
+
         // Filter by network if provided
         if let Some(net) = network {
             query = query.filter(charms::Column::Network.eq(net));
         }
-        
+
         let count = query
             .count(&self.conn)
             .await
@@ -282,10 +303,10 @@ impl CharmRepository {
     /// Convert a database entity to a domain model
     /// [RJJ-S01] Removed charmid from conversion, added app_id and amount
     fn to_domain_model(&self, entity: charms::Model) -> Charm {
-        Charm::new(
+        let mut charm = Charm::new(
             entity.txid,
             entity.vout,
-            entity.block_height as u64,
+            entity.block_height.map(|h| h as u64),
             entity.data,
             entity.date_created,
             entity.asset_type,
@@ -295,7 +316,9 @@ impl CharmRepository {
             entity.spent,
             entity.app_id,
             entity.amount,
-        )
+        );
+        charm.mempool_detected_at = entity.mempool_detected_at;
+        charm
     }
 
     /// Mark a charm as spent by its txid and vout
@@ -348,7 +371,10 @@ impl CharmRepository {
 
     /// [RJJ-STATS-HOLDERS] Get charm info for stats_holders updates before marking as spent
     /// Returns (app_id, address, amount) for charms that will be marked as spent
-    pub async fn get_charms_for_spent_update(&self, txids: Vec<String>) -> Result<Vec<(String, String, i64)>, DbError> {
+    pub async fn get_charms_for_spent_update(
+        &self,
+        txids: Vec<String>,
+    ) -> Result<Vec<(String, String, i64)>, DbError> {
         if txids.is_empty() {
             return Ok(vec![]);
         }
@@ -361,9 +387,7 @@ impl CharmRepository {
 
         Ok(results
             .into_iter()
-            .filter_map(|c| {
-                c.address.map(|addr| (c.app_id, addr, c.amount))
-            })
+            .filter_map(|c| c.address.map(|addr| (c.app_id, addr, c.amount)))
             .collect())
     }
 }
