@@ -6,6 +6,27 @@ import { getNestedProperty } from './apiUtils';
 
 // Detects the type of a charm based on its data
 export const detectCharmType = (charm) => {
+    // First, check if asset_type is directly provided (from API)
+    if (charm?.asset_type) {
+        return charm.asset_type;
+    }
+
+    // Check app_id prefix (most reliable method)
+    if (charm?.app_id) {
+        if (charm.app_id.startsWith('n/')) {
+            return 'nft';
+        }
+        if (charm.app_id.startsWith('t/')) {
+            return 'token';
+        }
+        if (charm.app_id.startsWith('B/')) {
+            return 'dapp';
+        }
+        // Any other prefix is considered 'other'
+        return 'other';
+    }
+
+    // Fallback: check apps in data structure
     const apps = getNestedProperty(charm, 'data.data.apps');
     if (apps && typeof apps === 'object') {
         for (const key in apps) {
@@ -17,10 +38,14 @@ export const detectCharmType = (charm) => {
                 if (appValue.startsWith('t/')) {
                     return 'token';
                 }
+                if (appValue.startsWith('B/')) {
+                    return 'dapp';
+                }
             }
         }
     }
-    return charm?.asset_type || 'unknown';
+
+    return 'unknown';
 };
 
 

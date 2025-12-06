@@ -152,7 +152,10 @@ export default function TransactionPage() {
                                 ) : (
                                     <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
                                         <span className="text-3xl">
-                                            {charm.asset_type === 'nft' ? '🎨' : charm.asset_type === 'token' ? '🪙' : '⚡'}
+                                            {charm.asset_type === 'nft' ? '🎨' : 
+                                             charm.asset_type === 'token' ? '🪙' : 
+                                             charm.asset_type === 'dapp' ? '⚙️' :
+                                             charm.asset_type === 'other' ? '📦' : '⚡'}
                                         </span>
                                     </div>
                                 )}

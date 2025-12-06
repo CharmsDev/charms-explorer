@@ -139,6 +139,8 @@ impl<'a> CharmDetector<'a> {
                 "token".to_string()
             } else if first_asset.app_id.starts_with("n/") {
                 "nft".to_string()
+            } else if first_asset.app_id.starts_with("B/") {
+                "dapp".to_string()
             } else {
                 "other".to_string()
             };
