@@ -161,9 +161,17 @@ pub type CharmBatchItem = (
 
 /// Asset batch item for bulk operations
 pub type AssetBatchItem = (
-    String, // app_id
-    String, // asset_type
-    u64,    // supply
-    String, // blockchain
-    String, // network
+    String,         // app_id
+    String,         // txid
+    i32,            // vout
+    u64,            // block_height
+    String,         // asset_type
+    u64,            // supply
+    String,         // blockchain
+    String,         // network
+    Option<String>, // name
+    Option<String>, // symbol
+    Option<String>, // description
+    Option<String>, // image_url
+    Option<u8>,     // decimals
 );

@@ -29,6 +29,12 @@ pub struct AssetSaveRequest {
     pub supply: u64,
     pub blockchain: String,
     pub network: String,
+    // Metadata fields (optional, extracted from NFT)
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub decimals: Option<u8>,
 }
 
 /// Request to save a charm to the database

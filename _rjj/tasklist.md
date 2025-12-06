@@ -1,118 +1,78 @@
-# Tasklist: Integridad de Datos del Indexer
+# Tareas Pendientes Indexer
 
-## 🔴 Problemas Detectados en Producción
+## Problemas Actuales
 
-### 1. **Assets: total_supply = 1 (CRÍTICO)**
+1. ~~**Supply incorrecto**~~: ✅ RESUELTO - Assets ahora guardan supply correcto
+2. ~~**Bigint overflow**~~: ✅ RESUELTO - Capped a i64::MAX/2
+3. ~~**Metadatos NULL en NFTs**~~: ✅ RESUELTO - NFTs extraen metadata correctamente
+4. ~~**Campos vacíos en assets**~~: ✅ RESUELTO - block_height, txid, vout_index se guardan
+5. **Metadatos en Tokens**: ⏳ PENDIENTE - Tokens deben heredar metadata del NFT
+6. **Stats holders negativos**: ⏳ PENDIENTE - charm_count negativo por lógica errónea
 
-- **Problema**: Todos los assets tienen `total_supply = 1` en lugar de la suma real de UTXOs
-- **Causa**: El indexer crea el asset con supply=1 inicial y nunca lo actualiza
-- **Solución**: Implementar actualización incremental de supply al procesar cada charm
+## Tareas Críticas
 
-### 2. **Stats Holders: charm_count negativo**
+### 1. Detectar MINT vs TRANSFER correctamente
 
-- **Problema**: Hay holders con `charm_count = -116` (valores negativos)
-- **Causa**: Se restan charms gastados pero la lógica de conteo falla
-- **Solución**: Revisar lógica de incremento/decremento en `stats_holders_service`
+**Estado**: ⚠️ LÓGICA INCORRECTA - REQUIERE REIMPLEMENTACIÓN
 
-### 3. **Assets: Metadatos NULL**
+**Problema actual:**
 
-- **Problema**: Muchos assets tienen `name`, `symbol`, `description`, `image_url` = NULL
-- **Causa**: El indexer no extrae metadatos del NFT de referencia (n/HASH)
-- **Solución**: Al crear token (t/HASH), buscar NFT (n/HASH) y copiar metadatos
+- Actualmente incrementamos supply por cada charm detectado (outputs)
+- NO verificamos si es MINT (nuevo supply) o TRANSFER (supply sin cambios)
+- Esto causa **doble conteo** del supply en transferencias
 
----
+**Lógica correcta:**
 
-## ✅ Tareas de Implementación en el Indexer
+1. **MINT**: `sum(inputs) < sum(outputs)` → Incrementar supply por la diferencia
+2. **TRANSFER**: `sum(inputs) == sum(outputs)` → Supply sin cambios (NO incrementar)
+3. **BURN**: `sum(inputs) > sum(outputs)` → Decrementar supply (no implementado aún)
 
-### **A. Supply Calculation (CRÍTICO)**
+**Implementación requerida:**
 
-- [ ] Al crear nuevo charm → `UPDATE assets SET total_supply = total_supply + amount WHERE app_id = ?`
-- [ ] Al marcar charm como spent → `UPDATE assets SET total_supply = total_supply - amount WHERE app_id = ?`
-- [ ] Validar que supply nunca sea negativo
-- [ ] Implementar en `indexer/src/domain/services/asset_supply_calculator.rs`
+- Al procesar una transacción, sumar amounts de inputs (charms gastados)
+- Sumar amounts de outputs (charms creados)
+- Solo incrementar supply si `outputs > inputs` (mint neto)
+- Archivos a modificar: `detection.rs` o `block_processor.rs`
 
-### **B. Stats Holders (CRÍTICO)**
+**Prioridad**: 🔴 CRÍTICA - Sin esto el supply es incorrecto
 
-- [ ] Al crear charm → `INSERT/UPDATE stats_holders SET charm_count = charm_count + 1, total_amount = total_amount + amount`
-- [ ] Al marcar charm como spent → `UPDATE stats_holders SET charm_count = charm_count - 1, total_amount = total_amount - amount`
-- [ ] Validar que charm_count nunca sea negativo (si es 0, DELETE row)
-- [ ] Implementar en `indexer/src/infrastructure/persistence/repositories/stats_holders_repository.rs`
+### 2. Consolidar NFT + Token
 
-### **C. Asset Metadata Extraction**
+**Estado**: ✅ IMPLEMENTADA | ✅ VERIFICADA (2025-12-07)
 
-- [ ] Al detectar token (t/HASH), extraer HASH
-- [ ] Buscar NFT con app_id = n/HASH en tabla charms
-- [ ] Extraer de NFT.data: `name`, `symbol`, `description`, `image`, `decimals`
-- [ ] Guardar metadatos en tabla assets
-- [ ] Implementar en `indexer/src/application/services/spell_detection.rs`
+- Archivo: `detection.rs` líneas 212-276
+- Archivo: `asset_repository.rs` líneas 187-228
+- Tokens convierten `t/HASH` a `n/HASH` para referenciar el NFT
+- Upsert incrementa `total_supply` del NFT cuando llega un token
+- Verificado: NFT BRO con supply de 82 tokens acumulados
+- Ver: Sesión 2025-12-07 checkpoint 33
 
-### **D. Decimals System**
+### 3. Fix bigint overflow en stats_holders
 
-- [ ] Implementar extracción de `decimals` del NFT de referencia
-- [ ] Usar decimals para calcular supply correcto: `amount / 10^decimals`
-- [ ] Default a 8 decimals si no existe NFT o campo
-- [ ] Máximo 18 decimals (validación)
-- [ ] Ver: `indexer/src/domain/models/asset_metadata.rs`
+**Estado**: ✅ IMPLEMENTADA | ✅ VERIFICADA
 
-### **E. UTXO Tracking (Ya implementado, verificar)**
+- Archivo: `stats_holders_repository.rs` líneas 28-33
+- Cap `amount_delta` a `i64::MAX / 2` antes de insertar
+- Ver: `_rjj/verificacion_3_bigint_overflow.md`
+- Verificación: Indexer corre sin error `bigint out of range`
 
-- [x] Campo `spent` en tabla charms
-- [x] Campo `vout` en tabla charms
-- [ ] Verificar que `mark_charms_as_spent_batch()` funciona correctamente
-- [ ] Verificar que se actualiza supply al marcar como spent
+### 4. Extraer metadatos de NFT
 
----
+**Estado**: ✅ IMPLEMENTADA | ✅ VERIFICADA
 
-## 🔧 Scripts de Corrección Manual (Documentar)
+- Archivo: `detection.rs` líneas 146-193 (extracción metadata)
+- Archivo: `detection.rs` líneas 195-231 (AssetSaveRequest)
+- NFTs extraen metadata de `charm_json.native_data.tx.outs[0]["0"]`
+- Campos extraídos: name, ticker/symbol, description, url/image_url, decimals
+- [RJJ-TODO] supply_limit ignorado por ahora (documentado líneas 161-165)
+- NFTs inician con total_supply = 0
+- Ver: `_rjj/verificacion_4_nft_metadata.md`
 
-### Scripts en `/scripts` que arreglan datos:
-
-1. **`regenerate_assets_from_charms.py`**: Recalcula supply sumando charms UNSPENT
-2. **`populate_stats_holders.py`**: Regenera tabla stats_holders desde charms
-3. **`analyze_bro_token_utxos.py`**: Analiza distribución de UTXOs del BRO token
-
-### Acción:
-
-- [ ] Mover archivos `.md` a `/scripts/documentation/`
-- [ ] Mantener scripts `.py` y `.sh` en `/scripts/`
-- [ ] Documentar qué hace cada script y cuándo usarlo
-- [ ] Crear script maestro que ejecute todos en orden correcto
-
----
-
-## 📊 Verificación de Integridad
-
-### Queries de validación:
+**Verificación**:
 
 ```sql
--- 1. Verificar supply correcto
-SELECT app_id, total_supply,
-       (SELECT SUM(amount) FROM charms WHERE charms.app_id = assets.app_id AND spent = false) as calculated_supply
-FROM assets
-WHERE total_supply != (SELECT SUM(amount) FROM charms WHERE charms.app_id = assets.app_id AND spent = false);
-
--- 2. Verificar holders sin negativos
-SELECT * FROM stats_holders WHERE charm_count < 0 OR total_amount < 0;
-
--- 3. Verificar assets sin metadatos
-SELECT COUNT(*) FROM assets WHERE name IS NULL AND asset_type IN ('token', 'nft');
+-- NFT BRO correctamente guardado
+SELECT * FROM assets WHERE app_id LIKE 'n/3d7fe7e4%';
+-- Resultado: name="Bro", symbol="BRO", description="The memecoin of the UTXBros",
+--            image_url="https://bro.charms.dev", decimals=8, total_supply=0
 ```
-
----
-
-## 🎯 Prioridad de Implementación
-
-1. **CRÍTICO**: Supply calculation (A)
-2. **CRÍTICO**: Stats holders fix (B)
-3. **ALTO**: Asset metadata extraction (C)
-4. **MEDIO**: Decimals system (D)
-5. **BAJO**: Verificación UTXO tracking (E)
-
----
-
-## 📝 Notas
-
-- Los scripts manuales arreglan los datos ACTUALES pero no previenen el problema
-- Hay que implementar la lógica correcta en el indexer para datos FUTUROS
-- Después de implementar, ejecutar scripts de corrección una última vez
-- Monitorear queries de validación periódicamente

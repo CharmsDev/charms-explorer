@@ -390,4 +390,25 @@ impl CharmRepository {
             .filter_map(|c| c.address.map(|addr| (c.app_id, addr, c.amount)))
             .collect())
     }
+
+    /// Get amounts by txids for calculating net supply change
+    /// Returns: Vec<(txid, app_id, amount)>
+    pub async fn get_amounts_by_txids(
+        &self,
+        txids: &[String],
+    ) -> Result<Vec<(String, String, u64)>, DbError> {
+        if txids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let results = charms::Entity::find()
+            .filter(charms::Column::Txid.is_in(txids.iter().map(|s| s.as_str())))
+            .all(&self.conn)
+            .await?;
+
+        Ok(results
+            .into_iter()
+            .map(|c| (c.txid, c.app_id, c.amount as u64))
+            .collect())
+    }
 }

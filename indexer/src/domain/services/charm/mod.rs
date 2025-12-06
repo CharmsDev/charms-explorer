@@ -1,21 +1,20 @@
 ///! Charm service - Main entry point for charm-related operations
-///! 
+///!
 ///! This module provides a unified interface for charm detection, persistence, and tracking.
 ///! It delegates to specialized sub-modules for better code organization:
-///! 
+///!
 ///! - `detection`: Charm detection from Bitcoin transactions
 ///! - `persistence`: Batch save operations for charms and assets
 ///! - `spent_tracking`: Marking charms as spent when UTXOs are consumed
-///! 
+///!
 ///! [RJJ-S01] Updated to support spell-first architecture:
 ///! 1. Save spell (output 0) first
 ///! 2. Parse spell to extract multiple charms
 ///! 3. Save each charm with correct vout (1, 2, 3...)
-
 mod detection;
 mod persistence;
-mod spent_tracking;
-mod spell_detection; // [RJJ-S01] New spell-first detection
+mod spell_detection;
+mod spent_tracking; // [RJJ-S01] New spell-first detection
 
 use std::fmt;
 
@@ -23,12 +22,14 @@ use crate::domain::errors::CharmError;
 use crate::domain::models::Charm;
 use crate::domain::services::charm_queue_service::CharmQueueService;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
-use crate::infrastructure::persistence::repositories::{AssetRepository, CharmRepository, SpellRepository, StatsHoldersRepository}; // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository
+use crate::infrastructure::persistence::repositories::{
+    AssetRepository, CharmRepository, SpellRepository, StatsHoldersRepository,
+}; // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository
 
 use detection::CharmDetector;
 use persistence::CharmPersistence;
-use spent_tracking::SpentTracker;
-use spell_detection::SpellDetector; // [RJJ-S01]
+use spell_detection::SpellDetector;
+use spent_tracking::SpentTracker; // [RJJ-S01]
 
 /// Main service for charm detection, processing and storage
 /// [RJJ-S01] Now includes SpellRepository for spell-first architecture
@@ -66,7 +67,7 @@ impl CharmService {
             bitcoin_client,
             charm_repository,
             asset_repository,
-            spell_repository, // [RJJ-S01]
+            spell_repository,         // [RJJ-S01]
             stats_holders_repository, // [RJJ-STATS-HOLDERS]
             charm_queue_service: None,
         }
@@ -87,7 +88,7 @@ impl CharmService {
             bitcoin_client,
             charm_repository,
             asset_repository,
-            spell_repository, // [RJJ-S01]
+            spell_repository,         // [RJJ-S01]
             stats_holders_repository, // [RJJ-STATS-HOLDERS]
             charm_queue_service: Some(charm_queue_service),
         }
@@ -109,7 +110,8 @@ impl CharmService {
         block_height: u64,
         block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
     ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_native(txid, block_height, block_hash, 0).await
+        self.detect_and_process_charm_native(txid, block_height, block_hash, 0)
+            .await
     }
 
     /// Detects and processes a potential charm transaction with context for better logging
@@ -120,7 +122,8 @@ impl CharmService {
         block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
         tx_pos: usize,
     ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_native(txid, block_height, block_hash, tx_pos).await
+        self.detect_and_process_charm_native(txid, block_height, block_hash, tx_pos)
+            .await
     }
 
     /// Detects and processes a potential charm transaction with pre-fetched raw hex
@@ -131,7 +134,15 @@ impl CharmService {
         raw_hex: &str,
         tx_pos: usize,
     ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_from_hex_with_latest(txid, block_height, raw_hex, tx_pos, block_height).await
+        self.detect_and_process_charm_from_hex_with_latest(
+            txid,
+            block_height,
+            raw_hex,
+            tx_pos,
+            block_height,
+            vec![],
+        )
+        .await
     }
 
     /// Detects and processes a potential charm transaction with pre-fetched raw hex and latest height
@@ -143,7 +154,15 @@ impl CharmService {
         tx_pos: usize,
         latest_height: u64,
     ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_from_hex_with_latest(txid, block_height, raw_hex, tx_pos, latest_height).await
+        self.detect_and_process_charm_from_hex_with_latest(
+            txid,
+            block_height,
+            raw_hex,
+            tx_pos,
+            latest_height,
+            vec![],
+        )
+        .await
     }
 
     /// Detects and processes a potential charm transaction using native parsing
@@ -159,7 +178,9 @@ impl CharmService {
             &self.charm_repository,
             &self.charm_queue_service,
         );
-        detector.detect_and_process_charm(txid, block_height, block_hash, tx_pos).await
+        detector
+            .detect_and_process_charm(txid, block_height, block_hash, tx_pos)
+            .await
     }
 
     /// Detects and processes a potential charm transaction from pre-fetched raw hex
@@ -170,7 +191,15 @@ impl CharmService {
         raw_tx_hex: &str,
         tx_pos: usize,
     ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_from_hex_with_latest(txid, block_height, raw_tx_hex, tx_pos, block_height).await
+        self.detect_and_process_charm_from_hex_with_latest(
+            txid,
+            block_height,
+            raw_tx_hex,
+            tx_pos,
+            block_height,
+            vec![],
+        )
+        .await
     }
 
     /// Detects and processes a potential charm transaction from pre-fetched raw hex with latest height
@@ -181,13 +210,23 @@ impl CharmService {
         raw_tx_hex: &str,
         tx_pos: usize,
         latest_height: u64,
+        input_txids: Vec<String>,
     ) -> Result<Option<Charm>, CharmError> {
         let detector = CharmDetector::new(
             &self.bitcoin_client,
             &self.charm_repository,
             &self.charm_queue_service,
         );
-        detector.detect_from_hex(txid, block_height, raw_tx_hex, tx_pos, latest_height).await
+        detector
+            .detect_from_hex(
+                txid,
+                block_height,
+                raw_tx_hex,
+                tx_pos,
+                latest_height,
+                input_txids,
+            )
+            .await
     }
 
     // ==================== [RJJ-S01] Spell-First Detection Methods ====================
@@ -205,9 +244,12 @@ impl CharmService {
             &self.bitcoin_client,
             &self.charm_repository,
             &self.spell_repository,
+            &self.asset_repository,
             &self.charm_queue_service,
         );
-        detector.detect_and_process_spell(txid, block_height, block_hash, tx_pos).await
+        detector
+            .detect_and_process_spell(txid, block_height, block_hash, tx_pos)
+            .await
     }
 
     /// [RJJ-S01] Detects and processes a spell from pre-fetched raw hex
@@ -223,9 +265,12 @@ impl CharmService {
             &self.bitcoin_client,
             &self.charm_repository,
             &self.spell_repository,
+            &self.asset_repository,
             &self.charm_queue_service,
         );
-        detector.detect_from_hex(txid, block_height, raw_tx_hex, tx_pos, latest_height).await
+        detector
+            .detect_from_hex(txid, block_height, raw_tx_hex, tx_pos, latest_height)
+            .await
     }
 
     // ==================== Persistence Methods ====================
@@ -241,15 +286,15 @@ impl CharmService {
     pub async fn save_batch(
         &self,
         charms: Vec<(
-            String, // txid
-            i32,    // vout
-            u64,    // block_height
+            String,            // txid
+            i32,               // vout
+            u64,               // block_height
             serde_json::Value, // data
-            String, // asset_type
-            String, // blockchain
-            String, // network
-            String, // app_id
-            i64,    // amount
+            String,            // asset_type
+            String,            // blockchain
+            String,            // network
+            String,            // app_id
+            i64,               // amount
         )>,
     ) -> Result<(), CharmError> {
         let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);
@@ -279,11 +324,19 @@ impl CharmService {
     pub async fn save_asset_batch(
         &self,
         batch: Vec<(
-            String, // app_id
-            String, // asset_type
-            u64,    // supply
-            String, // blockchain
-            String, // network
+            String,         // app_id
+            String,         // txid
+            i32,            // vout
+            u64,            // block_height
+            String,         // asset_type
+            u64,            // supply
+            String,         // blockchain
+            String,         // network
+            Option<String>, // name
+            Option<String>, // symbol
+            Option<String>, // description
+            Option<String>, // image_url
+            Option<u8>,     // decimals
         )>,
     ) -> Result<(), CharmError> {
         let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);
@@ -303,7 +356,8 @@ impl CharmService {
     /// [RJJ-STATS-HOLDERS] Also updates stats_holders with negative amounts
     pub async fn mark_charms_as_spent_batch(&self, txids: Vec<String>) -> Result<(), CharmError> {
         // 1. Get charm info before marking as spent (for stats_holders update)
-        let charm_info = self.charm_repository
+        let charm_info = self
+            .charm_repository
             .get_charms_for_spent_update(txids.clone())
             .await
             .map_err(|e| CharmError::ProcessingError(format!("Failed to get charm info: {}", e)))?;
@@ -312,6 +366,29 @@ impl CharmService {
         let tracker = SpentTracker::new(&self.charm_repository);
         tracker.mark_charms_as_spent_batch(txids).await?;
 
+        // 2.5. Update asset supply for spent charms
+        for (app_id, _address, amount) in &charm_info {
+            // Determine asset_type from app_id prefix
+            let asset_type = if app_id.starts_with("t/") {
+                "token"
+            } else if app_id.starts_with("n/") {
+                "nft"
+            } else {
+                "other"
+            };
+
+            if let Err(e) = self
+                .asset_repository
+                .update_supply_on_spent(app_id, *amount, asset_type)
+                .await
+            {
+                eprintln!(
+                    "[CharmService] Warning: Failed to update supply for {}: {}",
+                    app_id, e
+                );
+            }
+        }
+
         // 3. Update stats_holders with negative amounts (reduce balances)
         if !charm_info.is_empty() {
             let holder_updates: Vec<(String, String, i64, i32)> = charm_info
@@ -319,8 +396,15 @@ impl CharmService {
                 .map(|(app_id, address, amount)| (app_id, address, -amount, 0)) // Negative amount, block_height not important for spent
                 .collect();
 
-            if let Err(e) = self.stats_holders_repository.update_holders_batch(holder_updates).await {
-                eprintln!("[CharmService] Warning: Failed to update stats_holders for spent charms: {}", e);
+            if let Err(e) = self
+                .stats_holders_repository
+                .update_holders_batch(holder_updates)
+                .await
+            {
+                eprintln!(
+                    "[CharmService] Warning: Failed to update stats_holders for spent charms: {}",
+                    e
+                );
                 // Don't fail the entire operation if stats update fails
             }
         }

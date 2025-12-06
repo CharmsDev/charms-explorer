@@ -92,6 +92,8 @@ indexer/pid.txt
 /database/target
 /database/deploy
 /indexer/test
+/indexer/scripts
 database/.env.production
 /database/scripts
 database/tools/
+/scripts/

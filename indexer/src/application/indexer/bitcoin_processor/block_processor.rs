@@ -133,6 +133,49 @@ impl BlockProcessor {
             remaining
         ));
 
+        // [RJJ-DEBUG] PAUSE when BRO NFT is detected (n/3d7fe7e4...) - DISABLED FOR NOW
+        // This allows manual verification of NFT metadata extraction before continuing
+        let _has_bro_nft = charm_batch.iter().any(|(_, _, _, _, asset_type, _, _, app_id, _)| {
+            asset_type == "nft" && app_id.starts_with("n/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b")
+        });
+        
+        if false {
+            logging::log_warning(&format!(
+                "\n\n🛑 ============================================\n\
+                 🛑 PAUSA FORZADA - Bloque 913084 procesado\n\
+                 🛑 ============================================\n\
+                 \n\
+                 Este es el bloque donde aparece el NFT de referencia del token BRO.\n\
+                 \n\
+                 📊 VERIFICAR EN LA BASE DE DATOS:\n\
+                 \n\
+                 1. Supply correcto en assets:\n\
+                    SELECT app_id, asset_type, total_supply, data->>'supply' as data_supply\n\
+                    FROM assets WHERE app_id LIKE 'n/3d7f%' OR app_id LIKE 't/3d7f%';\n\
+                 \n\
+                 2. Metadata del NFT:\n\
+                    SELECT app_id, name, symbol, description, image_url\n\
+                    FROM assets WHERE asset_type = 'nft';\n\
+                 \n\
+                 3. Charms guardados:\n\
+                    SELECT COUNT(*) FROM charms WHERE block_height = 913084;\n\
+                 \n\
+                 ⏸️  El indexer continuará en 60 segundos...\n\
+                 ⏸️  Presiona Ctrl+C para detener si necesitas más tiempo.\n\
+                 \n\
+                 ============================================\n"
+            ));
+
+            // Wait 60 seconds to allow manual verification
+            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+
+            logging::log_info(&format!(
+                "[{}] ▶️  Continuando indexación desde bloque {}...",
+                network_id.name,
+                height + 1
+            ));
+        }
+
         Ok(())
     }
 
@@ -235,24 +278,67 @@ impl BlockProcessor {
 
         // Create iterator of futures for parallel processing
         // We use owned data to ensure futures are 'static and Send
-        let futures = tx_data.into_iter().map(|(txid, tx_hex, tx_pos)| {
+        let futures = tx_data.into_iter().map(|(txid, tx_hex, tx_pos, input_txids)| {
             let network_clone = network.clone();
             let blockchain_clone = blockchain.clone();
 
             let charm_service = charm_service.clone(); // Clone for this task
 
             async move {
+                // [RJJ-DEBUG] Log specific transaction for BRO NFT
+                if txid == "ea40035b7e6fed781f6c9c5c2929617594e66dde0e005be233165c31de9d6089" {
+                    logging::log_warning(&format!(
+                        "\n🔍 [DEBUG] Processing BRO NFT transaction:\n\
+                         - TXID: {}\n\
+                         - Block: {}\n\
+                         - TX Hex length: {} bytes\n\
+                         - Calling detect_and_process_charm_from_hex_with_latest...",
+                        txid, height, tx_hex.len()
+                    ));
+                }
+                
                 // Use local hex to detect charm - NO RPC CALL
-                match charm_service
+                let detection_result = charm_service
                     .detect_and_process_charm_from_hex_with_latest(
                         &txid,
                         height,
                         &tx_hex,
                         tx_pos,
                         latest_height,
+                        input_txids,
                     )
-                    .await
-                {
+                    .await;
+                
+                // [RJJ-DEBUG] Log result for BRO NFT transaction
+                if txid == "ea40035b7e6fed781f6c9c5c2929617594e66dde0e005be233165c31de9d6089" {
+                    match &detection_result {
+                        Ok(Some(charm)) => {
+                            logging::log_warning(&format!(
+                                "✅ [DEBUG] BRO NFT DETECTED!\n\
+                                 - App ID: {}\n\
+                                 - Asset Type: {}\n\
+                                 - Amount: {}\n\
+                                 - Vout: {}\n\
+                                 - Data: {:?}",
+                                charm.app_id, charm.asset_type, charm.amount, charm.vout, charm.data
+                            ));
+                        },
+                        Ok(None) => {
+                            logging::log_warning(&format!(
+                                "❌ [DEBUG] BRO NFT NOT DETECTED - Result was None\n\
+                                 - This means the parser did not find a valid charm in the transaction"
+                            ));
+                        },
+                        Err(e) => {
+                            logging::log_warning(&format!(
+                                "❌ [DEBUG] BRO NFT DETECTION ERROR: {:?}",
+                                e
+                            ));
+                        }
+                    }
+                }
+                
+                match detection_result {
                     Ok(Some(charm)) => {
                         let confirmations = latest_height - height + 1;
                         let is_confirmed = confirmations >= 6;
@@ -379,16 +465,26 @@ impl BlockProcessor {
     }
 
     /// Extracts transaction data into an owned vector to avoid lifetime issues
-    fn extract_transaction_data(block: &bitcoin::Block) -> Vec<(String, String, usize)> {
+    /// Returns: (txid, tx_hex, tx_pos, input_txids)
+    fn extract_transaction_data(block: &bitcoin::Block) -> Vec<(String, String, usize, Vec<String>)> {
         block
             .txdata
             .iter()
             .enumerate()
             .map(|(tx_pos, tx)| {
+                // Extract input txids (previous outputs being spent)
+                let input_txids: Vec<String> = tx
+                    .input
+                    .iter()
+                    .filter(|input| !input.previous_output.is_null()) // Skip coinbase
+                    .map(|input| input.previous_output.txid.to_string())
+                    .collect();
+                
                 (
                     tx.txid().to_string(),
                     bitcoin::consensus::encode::serialize_hex(tx),
                     tx_pos,
+                    input_txids,
                 )
             })
             .collect()
