@@ -262,13 +262,21 @@ impl DatabaseWriter {
             }
 
             // 1b. Update stats_holders for new charms [RJJ-STATS-HOLDERS]
+            // [RJJ-TOKEN-METADATA] Convert token app_ids to NFT app_ids for consolidation
             if all_success && !charm_batch.is_empty() {
                 let holder_updates: Vec<(String, String, i64, i32)> = batch
                     .iter()
                     .filter_map(|req| {
                         req.charm.address.as_ref().map(|addr| {
+                            // Convert token app_id (t/HASH) to NFT app_id (n/HASH) for consolidation
+                            let nft_app_id = if req.charm.app_id.starts_with("t/") {
+                                req.charm.app_id.replacen("t/", "n/", 1)
+                            } else {
+                                req.charm.app_id.clone()
+                            };
+
                             (
-                                req.charm.app_id.clone(),
+                                nft_app_id,
                                 addr.clone(),
                                 req.charm.amount,
                                 req.charm.block_height as i32,
