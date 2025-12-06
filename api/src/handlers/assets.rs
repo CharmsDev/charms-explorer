@@ -10,7 +10,14 @@ use crate::handlers::AppState;
 use crate::services::asset_service::AssetService;
 
 /// Extract asset metadata from charm JSONB data field
-fn extract_asset_metadata_from_charm(charm_data: &serde_json::Value) -> (Option<String>, Option<String>, Option<String>, Option<String>) {
+fn extract_asset_metadata_from_charm(
+    charm_data: &serde_json::Value,
+) -> (
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     let mut name = None;
     let mut symbol = None;
     let mut description = None;
@@ -27,22 +34,26 @@ fn extract_asset_metadata_from_charm(charm_data: &serde_json::Value) -> (Option<
                             for (_, output_data) in out_obj {
                                 if let Some(output_obj) = output_data.as_object() {
                                     if name.is_none() {
-                                        name = output_obj.get("name")
+                                        name = output_obj
+                                            .get("name")
                                             .and_then(|v| v.as_str())
                                             .map(|s| s.to_string());
                                     }
                                     if symbol.is_none() {
-                                        symbol = output_obj.get("symbol")
+                                        symbol = output_obj
+                                            .get("symbol")
                                             .and_then(|v| v.as_str())
                                             .map(|s| s.to_string());
                                     }
                                     if description.is_none() {
-                                        description = output_obj.get("description")
+                                        description = output_obj
+                                            .get("description")
                                             .and_then(|v| v.as_str())
                                             .map(|s| s.to_string());
                                     }
                                     if image_url.is_none() {
-                                        image_url = output_obj.get("image")
+                                        image_url = output_obj
+                                            .get("image")
                                             .or_else(|| output_obj.get("image_url"))
                                             .and_then(|v| v.as_str())
                                             .map(|s| s.to_string());
@@ -55,7 +66,7 @@ fn extract_asset_metadata_from_charm(charm_data: &serde_json::Value) -> (Option<
             }
         }
     }
-        
+
     (name, symbol, description, image_url)
 }
 
@@ -138,9 +149,9 @@ pub async fn get_assets(
 
                 // Try to fetch related charm data for metadata extraction
                 if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&asset.txid).await {
-                    let (charm_name, charm_symbol, charm_description, charm_image_url) = 
+                    let (charm_name, charm_symbol, charm_description, charm_image_url) =
                         extract_asset_metadata_from_charm(&charm.data);
-                    
+
                     // Use charm metadata as fallback if asset doesn't have it
                     name = name.or(charm_name);
                     symbol = symbol.or(charm_symbol);
@@ -156,7 +167,9 @@ pub async fn get_assets(
                     symbol,
                     description,
                     image_url,
-                    total_supply: asset.total_supply.map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
+                    total_supply: asset
+                        .total_supply
+                        .map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
                     decimals: asset.decimals, // [RJJ-DECIMALS]
                     network: asset.network,
                     created_at: asset.created_at,
@@ -224,17 +237,36 @@ pub async fn get_asset_by_id(
             let mut symbol = asset.symbol;
             let mut description = asset.description;
             let mut image_url = asset.image_url;
+            let decimals = asset.decimals;
 
-            // Try to fetch related charm data for metadata extraction
-            if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&asset.txid).await {
-                let (charm_name, charm_symbol, charm_description, charm_image_url) = 
-                    extract_asset_metadata_from_charm(&charm.data);
-                
-                // Use charm metadata as fallback if asset doesn't have it
-                name = name.or(charm_name);
-                symbol = symbol.or(charm_symbol);
-                description = description.or(charm_description);
-                image_url = image_url.or(charm_image_url);
+            // [RJJ-TOKEN-METADATA] If this is a token, try to inherit metadata from reference NFT
+            if asset.app_id.starts_with("t/") {
+                // Convert t/HASH/... to n/HASH/... to find reference NFT
+                let nft_app_id = asset.app_id.replacen("t/", "n/", 1);
+
+                // Try to find the reference NFT
+                if let Ok(Some(nft_asset)) = asset_service.get_asset_by_app_id(&nft_app_id).await {
+                    // Inherit metadata from NFT if token doesn't have it
+                    name = name.or(nft_asset.name);
+                    symbol = symbol.or(nft_asset.symbol);
+                    description = description.or(nft_asset.description);
+                    image_url = image_url.or(nft_asset.image_url);
+                    // decimals is not Option, so we keep the asset's decimals
+                }
+            }
+
+            // Try to fetch related charm data for metadata extraction (as fallback)
+            if name.is_none() || symbol.is_none() || description.is_none() || image_url.is_none() {
+                if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&asset.txid).await {
+                    let (charm_name, charm_symbol, charm_description, charm_image_url) =
+                        extract_asset_metadata_from_charm(&charm.data);
+
+                    // Use charm metadata as fallback if asset doesn't have it
+                    name = name.or(charm_name);
+                    symbol = symbol.or(charm_symbol);
+                    description = description.or(charm_description);
+                    image_url = image_url.or(charm_image_url);
+                }
             }
 
             let asset_item = AssetItem {
@@ -245,7 +277,9 @@ pub async fn get_asset_by_id(
                 symbol,
                 description,
                 image_url,
-                total_supply: asset.total_supply.map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
+                total_supply: asset
+                    .total_supply
+                    .map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
                 decimals: asset.decimals, // [RJJ-DECIMALS]
                 network: asset.network,
                 created_at: asset.created_at,
