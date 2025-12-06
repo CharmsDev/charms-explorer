@@ -25,6 +25,13 @@ impl StatsHoldersRepository {
         amount_delta: i64, // Positive for new charm, negative for spent charm
         block_height: i32,
     ) -> Result<(), DbError> {
+        // Cap amount_delta to prevent bigint overflow
+        let capped_amount = if amount_delta > 0 {
+            amount_delta.min(i64::MAX / 2) // Cap positive amounts
+        } else {
+            amount_delta.max(i64::MIN / 2) // Cap negative amounts
+        };
+
         // Use raw SQL for efficient UPSERT with amount delta
         let stmt = Statement::from_string(
             DbBackend::Postgres,
@@ -46,11 +53,11 @@ impl StatsHoldersRepository {
                 "#,
                 app_id.replace("'", "''"),
                 address.replace("'", "''"),
-                amount_delta,
+                capped_amount,
                 block_height,
                 block_height,
-                amount_delta,
-                amount_delta,
+                capped_amount,
+                capped_amount,
                 block_height
             ),
         );

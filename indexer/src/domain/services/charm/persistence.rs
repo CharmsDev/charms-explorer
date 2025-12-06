@@ -1,5 +1,4 @@
 ///! Charm persistence operations (batch saves)
-
 use serde_json::Value;
 
 use crate::domain::errors::CharmError;
@@ -27,10 +26,9 @@ impl<'a> CharmPersistence<'a> {
         self.charm_repository
             .set_synchronous_commit(false)
             .await
-            .map_err(|e| CharmError::ProcessingError(format!(
-                "Failed to set synchronous_commit off: {}",
-                e
-            )))
+            .map_err(|e| {
+                CharmError::ProcessingError(format!("Failed to set synchronous_commit off: {}", e))
+            })
     }
 
     /// Saves multiple charms in a single database operation
@@ -56,7 +54,7 @@ impl<'a> CharmPersistence<'a> {
     }
 
     /// Save a batch of transactions to the repository
-    /// 
+    ///
     /// Note: This currently returns Ok() as transactions are handled separately
     /// TODO: Add TransactionRepository to CharmService dependencies if needed
     pub async fn save_transaction_batch(
@@ -78,16 +76,24 @@ impl<'a> CharmPersistence<'a> {
     }
 
     /// Save a batch of assets to the repository
-    /// 
+    ///
     /// Converts simplified asset batch items into the full tuple format expected by the repository
     pub async fn save_asset_batch(
         &self,
         batch: Vec<(
-            String, // app_id
-            String, // asset_type
-            u64,    // supply
-            String, // blockchain
-            String, // network
+            String,         // app_id
+            String,         // txid
+            i32,            // vout
+            u64,            // block_height
+            String,         // asset_type
+            u64,            // supply
+            String,         // blockchain
+            String,         // network
+            Option<String>, // name
+            Option<String>, // symbol
+            Option<String>, // description
+            Option<String>, // image_url
+            Option<u8>,     // decimals
         )>,
     ) -> Result<(), CharmError> {
         if batch.is_empty() {
@@ -95,21 +101,65 @@ impl<'a> CharmPersistence<'a> {
         }
 
         // Transform simplified batch items into full repository format
-        let asset_tuples: Vec<(String, String, i32, String, u64, Value, String, String, String)> = batch
+        let asset_tuples: Vec<(
+            String,
+            String,
+            i32,
+            String,
+            u64,
+            Value,
+            String,
+            String,
+            String,
+        )> = batch
             .into_iter()
-            .map(|(app_id, asset_type, supply, blockchain, network)| {
-                (
-                    app_id.clone(),                          // app_id
-                    String::new(),                           // txid - empty for asset records
-                    0,                                       // vout_index - not applicable for assets
-                    format!("charm-{}", app_id),             // charm_id derived from app_id
-                    0,                                       // block_height - will be updated during processing
-                    serde_json::json!({"supply": supply}),   // data with supply information
-                    asset_type,                              // asset_type
-                    blockchain,                              // blockchain
-                    network,                                 // network
-                )
-            })
+            .map(
+                |(
+                    app_id,
+                    txid,
+                    vout,
+                    block_height,
+                    asset_type,
+                    supply,
+                    blockchain,
+                    network,
+                    name,
+                    symbol,
+                    description,
+                    image_url,
+                    decimals,
+                )| {
+                    // Build data JSON with supply and metadata
+                    let mut data = serde_json::json!({"supply": supply});
+                    if let Some(n) = name {
+                        data["name"] = serde_json::json!(n);
+                    }
+                    if let Some(s) = symbol {
+                        data["symbol"] = serde_json::json!(s);
+                    }
+                    if let Some(d) = description {
+                        data["description"] = serde_json::json!(d);
+                    }
+                    if let Some(i) = image_url {
+                        data["image_url"] = serde_json::json!(i);
+                    }
+                    if let Some(dec) = decimals {
+                        data["decimals"] = serde_json::json!(dec);
+                    }
+
+                    (
+                        app_id.clone(),              // app_id
+                        txid,                        // txid from charm
+                        vout,                        // vout from charm
+                        format!("charm-{}", app_id), // charm_id derived from app_id
+                        block_height,                // block_height from charm
+                        data,                        // data with supply and metadata
+                        asset_type,                  // asset_type
+                        blockchain,                  // blockchain
+                        network,                     // network
+                    )
+                },
+            )
             .collect();
 
         self.asset_repository
