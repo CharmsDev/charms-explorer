@@ -74,8 +74,11 @@ impl<'a> CharmDetector<'a> {
 
         // Try to extract and verify spell using native parser in a blocking task
         // to avoid blocking the async runtime with CPU-intensive work
-        let (normalized_spell_opt, charm_json) = tokio::task::spawn_blocking(move || {
-            match NativeCharmParser::extract_and_verify_charm(&raw_tx_hex_owned, false) {
+        let (normalized_spell_opt, charm_json) =
+            tokio::task::spawn_blocking(move || match NativeCharmParser::extract_and_verify_charm(
+                &raw_tx_hex_owned,
+                false,
+            ) {
                 Ok(spell) => {
                     let charm_json = serde_json::to_value(&spell).map_err(|e| {
                         CharmError::ProcessingError(format!(
@@ -95,11 +98,10 @@ impl<'a> CharmDetector<'a> {
                         }),
                     ))
                 }
-                Err(e) => Ok::<_, CharmError>((None, json!(null))), // Return None on parse error, log outside if needed
-            }
-        })
-        .await
-        .map_err(|e| CharmError::ProcessingError(format!("Join error: {}", e)))??;
+                Err(_e) => Ok::<_, CharmError>((None, json!(null))), // Return None on parse error
+            })
+            .await
+            .map_err(|e| CharmError::ProcessingError(format!("Join error: {}", e)))??;
 
         // If detection failed (returned None/null), log debug and return
         if normalized_spell_opt.is_none() {
