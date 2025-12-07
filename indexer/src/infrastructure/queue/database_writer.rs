@@ -155,6 +155,7 @@ impl DatabaseWriter {
             String,
             String,
             String,
+            Option<String>,
             String,
             i64,
         )> = batch
@@ -168,6 +169,7 @@ impl DatabaseWriter {
                     req.charm.asset_type.clone(),
                     req.charm.blockchain.clone(),
                     req.charm.network.clone(),
+                    req.charm.address.clone(),
                     req.charm.app_id.clone(),
                     req.charm.amount,
                 )
