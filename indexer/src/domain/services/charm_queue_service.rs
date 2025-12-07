@@ -108,6 +108,7 @@ impl CharmQueueService {
 
     /// Save multiple charms in batch (always uses direct database access)
     /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
+    /// [RJJ-ADDRESS] Added address field
     pub async fn save_batch(
         &self,
         charms: Vec<(
@@ -118,6 +119,7 @@ impl CharmQueueService {
             String,
             String,
             String,
+            Option<String>,
             String,
             i64,
         )>,

@@ -181,6 +181,7 @@ impl CharmRepository {
 
     /// Save multiple charms in a batch
     /// [RJJ-S01] Updated signature: removed charmid, added vout, app_id, and amount
+    /// [RJJ-ADDRESS] Added address field
     pub async fn save_batch(
         &self,
         charms: Vec<(
@@ -191,6 +192,7 @@ impl CharmRepository {
             String,            // asset_type
             String,            // blockchain
             String,            // network
+            Option<String>,    // address
             String,            // app_id
             i64,               // amount
         )>,
@@ -213,6 +215,7 @@ impl CharmRepository {
                     asset_type,
                     blockchain,
                     network,
+                    address,
                     app_id,
                     amount,
                 )| {
@@ -226,8 +229,8 @@ impl CharmRepository {
                         asset_type: Set(asset_type),
                         blockchain: Set(blockchain),
                         network: Set(network),
-                        address: Set(None), // For batch operations, address is not available
-                        spent: Set(false),  // New charms are unspent by default
+                        address: Set(address), // [RJJ-ADDRESS] Now includes address from extraction
+                        spent: Set(false),     // New charms are unspent by default
                         app_id: Set(app_id),
                         amount: Set(amount),
                         mempool_detected_at: Set(None),

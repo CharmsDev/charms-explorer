@@ -135,7 +135,7 @@ impl BlockProcessor {
 
         // [RJJ-DEBUG] PAUSE when BRO NFT is detected (n/3d7fe7e4...) - DISABLED FOR NOW
         // This allows manual verification of NFT metadata extraction before continuing
-        let _has_bro_nft = charm_batch.iter().any(|(_, _, _, _, asset_type, _, _, app_id, _)| {
+        let _has_bro_nft = charm_batch.iter().any(|(_, _, _, _, asset_type, _, _, _, app_id, _)| {
             asset_type == "nft" && app_id.starts_with("n/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b")
         });
         
@@ -368,6 +368,7 @@ impl BlockProcessor {
                             charm.asset_type.clone(),
                             blockchain_clone,
                             network_clone,
+                            charm.address.clone(),
                             charm.app_id.clone(),
                             charm.amount,
                         );
