@@ -1,6 +1,8 @@
 // Charm database operations implementation
 
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, PaginatorTrait};
+use sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+};
 
 use crate::db::error::DbError;
 use crate::entity::charms;
@@ -33,14 +35,17 @@ impl CharmRepository {
 
     /// Finds all charms with matching asset type
     #[allow(dead_code)]
-    pub async fn find_by_asset_type(&self, asset_type: &str) -> Result<Vec<charms::Model>, DbError> {
+    pub async fn find_by_asset_type(
+        &self,
+        asset_type: &str,
+    ) -> Result<Vec<charms::Model>, DbError> {
         charms::Entity::find()
             .filter(charms::Column::AssetType.eq(asset_type))
             .all(&self.conn)
             .await
             .map_err(Into::into)
     }
-    
+
     /// Retrieves all charms ordered by descending block height (legacy method)
     #[allow(dead_code)]
     pub async fn get_all(&self) -> Result<Vec<charms::Model>, DbError> {
@@ -61,10 +66,10 @@ impl CharmRepository {
             .filter(charms::Column::Network.eq(network))
             .order_by_desc(charms::Column::BlockHeight)
             .paginate(&self.conn, pagination.limit);
-        
+
         let total = paginator.num_items().await?;
         let charms = paginator.fetch_page(pagination.page - 1).await?;
-        
+
         Ok((charms, total))
     }
 
@@ -76,10 +81,10 @@ impl CharmRepository {
         let paginator = charms::Entity::find()
             .order_by_desc(charms::Column::BlockHeight)
             .paginate(&self.conn, pagination.limit);
-        
+
         let total = paginator.num_items().await?;
         let charms = paginator.fetch_page(pagination.page - 1).await?;
-        
+
         Ok((charms, total))
     }
 
@@ -93,10 +98,10 @@ impl CharmRepository {
             .filter(charms::Column::AssetType.eq(asset_type))
             .order_by_desc(charms::Column::BlockHeight)
             .paginate(&self.conn, pagination.limit);
-        
+
         let total = paginator.num_items().await?;
         let charms = paginator.fetch_page(pagination.page - 1).await?;
-        
+
         Ok((charms, total))
     }
 
@@ -140,5 +145,12 @@ impl CharmRepository {
         let charm_numbers = charms.into_iter().map(|c| c.app_id).collect();
 
         Ok(charm_numbers)
+    }
+
+    /// Counts all charms in the database
+    pub async fn count_all(&self) -> Result<i64, DbError> {
+        let count = charms::Entity::find().count(&self.conn).await?;
+
+        Ok(count as i64)
     }
 }
