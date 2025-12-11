@@ -1,0 +1,35 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Database files
+db/
+*.db
+*.sqlite
+
+# Scripts and test files
+scripts/
+test/
+
+# Development files
+.env
+.env.*
+*.log
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Deployment files
+deploy/
+fly.toml
+
+# Documentation
+*.md
+README*
+
+# Git
+.git/
+.gitignore

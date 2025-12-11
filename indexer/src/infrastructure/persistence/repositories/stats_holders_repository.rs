@@ -108,9 +108,16 @@ impl StatsHoldersRepository {
         let mut grouped: HashMap<(String, String), (i64, i32)> = HashMap::new();
 
         for (app_id, address, amount, block_height) in updates {
-            let key = (app_id, address);
+            let key = (app_id.clone(), address.clone());
             let entry = grouped.entry(key).or_insert((0, block_height));
-            entry.0 += amount;
+            let old_value = entry.0;
+            entry.0 = entry.0.checked_add(amount).unwrap_or_else(|| {
+                eprintln!(
+                    "[STATS_HOLDERS] Warning: Overflow adding {} to {} for {}/{}",
+                    amount, old_value, app_id, address
+                );
+                old_value // Keep old value on overflow
+            });
             entry.1 = entry.1.max(block_height);
         }
 

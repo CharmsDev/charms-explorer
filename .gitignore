@@ -84,6 +84,7 @@ yarn-error.log*
 /_bkp
 indexer/pid.txt
 /api/_bkp
+/tmp/
 
 # Project-specific directories to ignore
 **/_rjj/
