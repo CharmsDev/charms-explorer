@@ -6,6 +6,7 @@ import Link from 'next/link';
 export default function AssetCard({ asset }) {
     const [imageError, setImageError] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
+    const [imageLoaded, setImageLoaded] = useState(false);
     const placeholderImage = "/images/logo.png";
 
     // Format date
@@ -88,12 +89,16 @@ export default function AssetCard({ asset }) {
 
     const isPlaceholder = getDisplayImage() === placeholderImage;
 
+    // Generate detail page URL using app_id or id
+    const detailUrl = `/asset/${encodeURIComponent(asset.app_id || asset.id)}`;
+
     return (
-        <div
-            className={`relative bg-dark-900 border ${typeDetails.borderColor} rounded-xl p-4 hover:shadow-xl transition-all duration-300 cursor-pointer group ${typeDetails.bgColor}`}
-            onMouseEnter={() => setIsHovered(true)}
-            onMouseLeave={() => setIsHovered(false)}
-        >
+        <Link href={detailUrl} className="block">
+            <div
+                className={`relative bg-dark-900 border ${typeDetails.borderColor} rounded-xl p-4 hover:shadow-xl transition-all duration-300 cursor-pointer group ${typeDetails.bgColor}`}
+                onMouseEnter={() => setIsHovered(true)}
+                onMouseLeave={() => setIsHovered(false)}
+            >
             {/* Type Badge */}
             <div className={`absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r ${typeDetails.color} text-white shadow-lg`}>
                 <span className="mr-1">{typeDetails.icon}</span>
@@ -107,8 +112,16 @@ export default function AssetCard({ asset }) {
                         src={getDisplayImage()}
                         alt={getDisplayName()}
                         className={`w-full h-full object-cover transition-all duration-300 ${!isPlaceholder ? 'group-hover:scale-105' : `opacity-60 group-hover:opacity-100`}`}
-                        onError={() => setImageError(true)}
-                        onLoad={() => setImageError(false)}
+                        onError={() => {
+                            if (!imageError) {
+                                setImageError(true);
+                            }
+                        }}
+                        onLoad={() => {
+                            if (!imageLoaded) {
+                                setImageLoaded(true);
+                            }
+                        }}
                     />
                 </div>
 
@@ -171,5 +184,6 @@ export default function AssetCard({ asset }) {
                 <div className="absolute inset-0 bg-gradient-to-br from-primary-500/10 to-transparent rounded-xl pointer-events-none" />
             )}
         </div>
+        </Link>
     );
 }

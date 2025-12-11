@@ -411,3 +411,29 @@ export const getCharmByTxId = async (txid) => {
         throw error;
     }
 };
+
+/**
+ * Fetches asset counts by type
+ * Returns: { total, nft, token, dapp }
+ */
+export const fetchAssetCounts = async () => {
+    try {
+        const response = await fetch(ENDPOINTS.ASSET_COUNTS);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('[API] Error fetching asset counts:', error);
+        // Return default values on error
+        return {
+            total: 0,
+            nft: 0,
+            token: 0,
+            dapp: 0
+        };
+    }
+};
