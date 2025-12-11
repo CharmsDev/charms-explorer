@@ -38,13 +38,36 @@ export default function Header() {
         }, 1000);
     };
 
-    // Handle search submission [RJJ-ADDRESS-SEARCH]
-    const handleSearch = (e) => {
+    // Handle search submission - Smart search [RJJ-SMART-SEARCH]
+    const handleSearch = async (e) => {
         e.preventDefault();
-        if (searchQuery.trim()) {
-            // Navigate to address page
-            window.location.href = `/address/${searchQuery.trim()}`;
+        const query = searchQuery.trim();
+        if (!query) return;
+
+        // Detect search type and redirect accordingly
+        // 1. Check if it's a TXID (64 hex characters)
+        if (/^[a-fA-F0-9]{64}$/.test(query)) {
+            // It's a transaction ID - redirect to tx page
+            window.location.href = `/tx/${query}`;
+            return;
         }
+
+        // 2. Check if it's an APP_ID (starts with t/, n/, or other prefix)
+        if (/^[tn]\/[a-fA-F0-9]{64}/.test(query)) {
+            // It's an app_id - redirect to asset page
+            window.location.href = `/asset/${encodeURIComponent(query)}`;
+            return;
+        }
+
+        // 3. Check if it's a Bitcoin address (bc1, 1, 3, etc.)
+        if (/^(bc1|[13])[a-zA-HJ-NP-Z0-9]{25,62}$/.test(query)) {
+            // It's a Bitcoin address - redirect to address page
+            window.location.href = `/address/${query}`;
+            return;
+        }
+
+        // 4. Default: try as address (could be any format)
+        window.location.href = `/address/${query}`;
     };
 
     return (
@@ -82,7 +105,7 @@ export default function Header() {
                                 type="text"
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search by Bitcoin address..."
+                                placeholder="Search by address, txid, or app_id..."
                                 className="w-full bg-dark-800/70 text-white rounded-full py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-dark-800 transition-all"
                             />
                             <button type="submit" className="absolute left-3 top-2.5 text-dark-400 group-focus-within:text-primary-400 transition-colors">

@@ -229,15 +229,7 @@ export default function HomePage() {
                             </Button>
 
                             <div className="flex items-center space-x-1 mx-2 bg-dark-800/50 px-2 py-1 rounded-lg">
-                                {[1, 2, 3, 4, 5, 6].map(pageNum => (
-                                    <Button
-                                        key={pageNum}
-                                        onClick={() => handlePageChange(pageNum)}
-                                        className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === pageNum ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
-                                    >
-                                        {pageNum}
-                                    </Button>
-                                ))}
+                                {renderPageNumbers()}
                             </div>
 
                             <Button

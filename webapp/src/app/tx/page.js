@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getCharmByTxId } from '@/services/apiServices';
+import { getTransaction, isQuickNodeAvailable } from '@/services/quicknodeService';
 
 export default function TransactionPage() {
     const searchParams = useSearchParams();
@@ -31,12 +32,21 @@ export default function TransactionPage() {
                     console.log('Charm not found, fetching Bitcoin transaction data...');
                     
                     try {
-                        const response = await fetch(`https://mempool.space/api/tx/${txid}`);
-                        if (!response.ok) {
-                            throw new Error('Transaction not found');
-                        }
+                        let btcTx;
                         
-                        const btcTx = await response.json();
+                        // Try QuickNode first if available
+                        if (isQuickNodeAvailable()) {
+                            console.log('Using QuickNode for transaction data...');
+                            btcTx = await getTransaction(txid);
+                        } else {
+                            // Fallback to Mempool.space
+                            console.log('Using Mempool.space for transaction data...');
+                            const response = await fetch(`https://mempool.space/api/tx/${txid}`);
+                            if (!response.ok) {
+                                throw new Error('Transaction not found');
+                            }
+                            btcTx = await response.json();
+                        }
                         
                         // Transform Bitcoin transaction to charm-like format for display
                         setCharm({

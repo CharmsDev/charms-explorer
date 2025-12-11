@@ -105,88 +105,76 @@ pub async fn save_or_update_asset(
                 .await
                 .map_err(|e| DbError::SeaOrmError(e))?;
 
-            // Get decimals from parent NFT or use default
-            let decimals = if let Some(ref nft) = parent_nft {
-                nft.decimals
+            // Get decimals and metadata from parent NFT or use defaults
+            let (decimals, name, symbol, description, image_url) = if let Some(ref nft) = parent_nft
+            {
+                (
+                    nft.decimals,
+                    nft.name.clone(),
+                    nft.symbol.clone(),
+                    nft.description.clone(),
+                    nft.image_url.clone(),
+                )
             } else {
-                DEFAULT_DECIMALS as i16
+                (DEFAULT_DECIMALS as i16, None, None, None, None)
             };
 
-            if let Some(nft) = parent_nft {
-                // Parent NFT exists: increment its supply
-                let old_supply = nft.total_supply.unwrap_or(Decimal::ZERO);
-                let amount_decimal = Decimal::from(amount);
-                let new_supply = old_supply + amount_decimal;
+            // ALWAYS create/update token asset record (for Tokens tab display)
+            let existing_token = Assets::find()
+                .filter(assets::Column::AppId.eq(&asset.app_id))
+                .one(db)
+                .await
+                .map_err(|e| DbError::SeaOrmError(e))?;
 
-                let update_model = assets::ActiveModel {
-                    id: Set(nft.id),
-                    total_supply: Set(Some(new_supply)),
-                    updated_at: Set(Utc::now().into()),
-                    ..Default::default()
-                };
+            match existing_token {
+                Some(existing) => {
+                    // Token asset exists, increment supply
+                    let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
+                    let amount_decimal = Decimal::from(amount);
+                    let new_supply = old_supply + amount_decimal;
 
-                Assets::update(update_model)
-                    .exec(db)
-                    .await
-                    .map_err(|e| DbError::SeaOrmError(e))?;
-            } else {
-                // No parent NFT: create token asset with its own supply
-                let existing_token = Assets::find()
-                    .filter(assets::Column::AppId.eq(&asset.app_id))
-                    .one(db)
-                    .await
-                    .map_err(|e| DbError::SeaOrmError(e))?;
+                    let update_model = assets::ActiveModel {
+                        id: Set(existing.id),
+                        total_supply: Set(Some(new_supply)),
+                        updated_at: Set(Utc::now().into()),
+                        ..Default::default()
+                    };
 
-                match existing_token {
-                    Some(existing) => {
-                        // Token asset exists, increment supply
-                        let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
-                        let amount_decimal = Decimal::from(amount);
-                        let new_supply = old_supply + amount_decimal;
+                    Assets::update(update_model)
+                        .exec(db)
+                        .await
+                        .map_err(|e| DbError::SeaOrmError(e))?;
+                }
+                None => {
+                    // Create new token asset with metadata inherited from parent NFT
+                    let active_model = assets::ActiveModel {
+                        id: NotSet,
+                        app_id: Set(asset.app_id.clone()),
+                        txid: Set(asset.txid.clone()),
+                        vout_index: Set(asset.vout_index),
+                        charm_id: Set(asset.charm_id.clone()),
+                        block_height: Set(asset.block_height as i32),
+                        date_created: Set(DateTime::<FixedOffset>::from(
+                            DateTime::<Utc>::from_naive_utc_and_offset(asset.date_created, Utc),
+                        )),
+                        data: Set(asset.data.clone()),
+                        asset_type: Set(asset.asset_type.clone()),
+                        blockchain: Set(asset.blockchain.clone()),
+                        network: Set(asset.network.clone()),
+                        name: Set(name),               // Inherit from parent NFT
+                        symbol: Set(symbol),           // Inherit from parent NFT
+                        description: Set(description), // Inherit from parent NFT
+                        image_url: Set(image_url),     // Inherit from parent NFT
+                        total_supply: Set(Some(Decimal::from(amount))),
+                        decimals: Set(decimals), // [RJJ-DECIMALS] Use parent NFT's decimals or default
+                        created_at: Set(Utc::now().into()),
+                        updated_at: Set(Utc::now().into()),
+                    };
 
-                        let update_model = assets::ActiveModel {
-                            id: Set(existing.id),
-                            total_supply: Set(Some(new_supply)),
-                            updated_at: Set(Utc::now().into()),
-                            ..Default::default()
-                        };
-
-                        Assets::update(update_model)
-                            .exec(db)
-                            .await
-                            .map_err(|e| DbError::SeaOrmError(e))?;
-                    }
-                    None => {
-                        // Create new token asset with decimals
-                        let active_model = assets::ActiveModel {
-                            id: NotSet,
-                            app_id: Set(asset.app_id.clone()),
-                            txid: Set(asset.txid.clone()),
-                            vout_index: Set(asset.vout_index),
-                            charm_id: Set(asset.charm_id.clone()),
-                            block_height: Set(asset.block_height as i32),
-                            date_created: Set(DateTime::<FixedOffset>::from(
-                                DateTime::<Utc>::from_naive_utc_and_offset(asset.date_created, Utc),
-                            )),
-                            data: Set(asset.data.clone()),
-                            asset_type: Set(asset.asset_type.clone()),
-                            blockchain: Set(asset.blockchain.clone()),
-                            network: Set(asset.network.clone()),
-                            name: Set(None),
-                            symbol: Set(None),
-                            description: Set(None),
-                            image_url: Set(None),
-                            total_supply: Set(Some(Decimal::from(amount))),
-                            decimals: Set(decimals), // [RJJ-DECIMALS] Use parent NFT's decimals or default
-                            created_at: Set(Utc::now().into()),
-                            updated_at: Set(Utc::now().into()),
-                        };
-
-                        Assets::insert(active_model)
-                            .exec(db)
-                            .await
-                            .map_err(|e| DbError::SeaOrmError(e))?;
-                    }
+                    Assets::insert(active_model)
+                        .exec(db)
+                        .await
+                        .map_err(|e| DbError::SeaOrmError(e))?;
                 }
             }
         }
