@@ -133,4 +133,16 @@ impl AssetRepository {
             .await?;
         Ok(assets)
     }
+
+    /// Count assets by asset type
+    pub async fn count_by_type(
+        &self,
+        asset_type: &str,
+    ) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
+        let count = Asset::find()
+            .filter(Column::AssetType.eq(asset_type))
+            .count(self.db.as_ref())
+            .await?;
+        Ok(count as i64)
+    }
 }
