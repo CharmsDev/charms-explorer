@@ -39,6 +39,7 @@ pub struct AssetSaveRequest {
 
 /// Request to save a charm to the database
 /// [RJJ-S01] Removed charmid field, added app_id and amount
+/// [RJJ-DEX] Added tags field for product tagging
 #[derive(Debug, Clone)]
 pub struct CharmSaveRequest {
     pub txid: String,
@@ -52,6 +53,7 @@ pub struct CharmSaveRequest {
     pub tx_position: i64,
     pub app_id: String,
     pub amount: i64,
+    pub tags: Option<String>,
 }
 
 /// Unified request to save charm-related data (charm + transaction + assets)
@@ -65,6 +67,7 @@ pub struct CharmDataSaveRequest {
 impl CharmSaveRequest {
     /// Create a new charm save request from a detected charm
     /// [RJJ-S01] Updated to use vout instead of charmid, added app_id and amount
+    /// [RJJ-DEX] Added tags field
     pub fn from_charm(charm: &Charm, tx_position: i64) -> Self {
         Self {
             txid: charm.txid.clone(),
@@ -78,11 +81,13 @@ impl CharmSaveRequest {
             tx_position,
             app_id: charm.app_id.clone(),
             amount: charm.amount,
+            tags: charm.tags.clone(),
         }
     }
 
     /// Convert to domain Charm model
     /// [RJJ-S01] Removed charmid parameter, added app_id and amount
+    /// [RJJ-DEX] Added tags field
     pub fn to_charm(&self) -> Charm {
         Charm::new(
             self.txid.clone(),
@@ -98,6 +103,7 @@ impl CharmSaveRequest {
             self.app_id.clone(),
             self.amount,
         )
+        .with_tags(self.tags.clone())
     }
 }
 

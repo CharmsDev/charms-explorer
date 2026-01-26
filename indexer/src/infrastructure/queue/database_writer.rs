@@ -6,7 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio::time::{interval, Instant};
+use tokio::time::{Instant, interval};
 
 use crate::domain::services::CharmService;
 use crate::infrastructure::queue::charm_queue::{CharmDataSaveRequest, CharmQueue, QueueError};
@@ -147,6 +147,7 @@ impl DatabaseWriter {
 
         // Convert requests to the format expected by save_batch
         // [RJJ-S01] Updated to use vout instead of charmid, added app_id and amount
+        // [RJJ-DEX] Added tags field
         let charm_batch: Vec<(
             String,
             i32,
@@ -158,6 +159,7 @@ impl DatabaseWriter {
             Option<String>,
             String,
             i64,
+            Option<String>,
         )> = batch
             .iter()
             .map(|req| {
@@ -172,6 +174,7 @@ impl DatabaseWriter {
                     req.charm.address.clone(),
                     req.charm.app_id.clone(),
                     req.charm.amount,
+                    req.charm.tags.clone(),
                 )
             })
             .collect();
