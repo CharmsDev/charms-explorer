@@ -34,6 +34,7 @@ impl<'a> CharmPersistence<'a> {
     /// Saves multiple charms in a single database operation
     /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
     /// [RJJ-ADDRESS] Added address field
+    /// [RJJ-DEX] Added tags field
     pub async fn save_charm_batch(
         &self,
         charms: Vec<(
@@ -47,6 +48,7 @@ impl<'a> CharmPersistence<'a> {
             Option<String>,    // address
             String,            // app_id
             i64,               // amount
+            Option<String>,    // tags
         )>,
     ) -> Result<(), CharmError> {
         self.charm_repository

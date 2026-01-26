@@ -6,6 +6,7 @@ use crate::domain::errors::CharmError;
 use crate::domain::models::Charm;
 use crate::domain::services::address_extractor::AddressExtractor;
 use crate::domain::services::charm_queue_service::CharmQueueService;
+use crate::domain::services::dex;
 use crate::domain::services::native_charm_parser::NativeCharmParser;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::CharmRepository;
@@ -204,8 +205,50 @@ impl<'a> CharmDetector<'a> {
             (None, None, None, None, None)
         };
 
+        // Build tags based on detected products
+        let mut tag_list: Vec<String> = Vec::new();
+
+        // Detect DEX operations (Charms Cast)
+        let dex_result = dex::detect_dex_operation(&charm_json);
+        if let Some(ref result) = dex_result {
+            tag_list.push("charms-cast".to_string());
+            crate::utils::logging::log_info(&format!(
+                "[{}] 🏷️ Block {}: Charms Cast DEX detected for tx {}: {:?}",
+                network, block_height, txid, result.operation
+            ));
+        }
+
+        // Detect $BRO token
+        if dex::is_bro_token(&app_id) {
+            tag_list.push("bro".to_string());
+            crate::utils::logging::log_info(&format!(
+                "[{}] 🏷️ Block {}: $BRO token detected for tx {}",
+                network, block_height, txid
+            ));
+        }
+
+        // Also check all assets for $BRO (in case it's not the first asset)
+        for asset in &asset_infos {
+            if dex::is_bro_token(&asset.app_id) && !tag_list.contains(&"bro".to_string()) {
+                tag_list.push("bro".to_string());
+                crate::utils::logging::log_info(&format!(
+                    "[{}] 🏷️ Block {}: $BRO token detected in assets for tx {}",
+                    network, block_height, txid
+                ));
+                break;
+            }
+        }
+
+        // Convert tags to Option<String>
+        let tags = if tag_list.is_empty() {
+            None
+        } else {
+            Some(tag_list.join(","))
+        };
+
         // Create charm with appropriate data
         // [RJJ-S01] Removed charmid parameter, added app_id and amount
+        // [RJJ-DEX] Added tags for DEX operation detection
         let charm = Charm::new(
             txid.to_string(),
             0, // vout - Charms are always in output 0 per protocol
@@ -219,7 +262,8 @@ impl<'a> CharmDetector<'a> {
             false, // New charms are unspent by default
             app_id.clone(),
             amount,
-        );
+        )
+        .with_tags(tags);
 
         // [RJJ-MINT-TRANSFER] Calculate net supply change per app_id
         // MINT: sum(inputs) < sum(outputs) → Increment supply by difference
