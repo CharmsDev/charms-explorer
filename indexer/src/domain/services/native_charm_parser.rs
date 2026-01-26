@@ -1,6 +1,6 @@
 use anyhow::Result;
-use charms_client::tx::{extract_and_verify_spell, Tx};
 use charms_client::NormalizedSpell;
+use charms_client::tx::{EnchantedTx, Tx};
 
 /// Native charm parser using the charms-client crate
 /// Provides direct parsing and verification of charm transactions
@@ -22,11 +22,11 @@ impl NativeCharmParser {
     /// Returns Ok(NormalizedSpell) if the transaction contains a valid charm
     /// Returns Err if the transaction is invalid or doesn't contain a charm
     pub fn extract_and_verify_charm(tx_hex: &str, mock: bool) -> Result<NormalizedSpell> {
-        // Parse transaction from hex
-        let tx = Tx::from_hex(tx_hex)?;
+        // Parse transaction from hex using TryFrom
+        let tx: Tx = tx_hex.try_into()?;
 
-        // Extract and verify spell using the charms-client library
-        let normalized_spell = extract_and_verify_spell(Self::SPELL_VK, &tx, mock)?;
+        // Extract and verify spell using the EnchantedTx trait method
+        let normalized_spell = tx.extract_and_verify_spell(Self::SPELL_VK, mock)?;
 
         Ok(normalized_spell)
     }
@@ -34,8 +34,8 @@ impl NativeCharmParser {
     /// Check if a transaction hex could potentially be a charm
     /// This is a lightweight check before doing full parsing
     pub fn could_be_charm(tx_hex: &str) -> bool {
-        // Try to parse as transaction first
-        if let Ok(_tx) = Tx::from_hex(tx_hex) {
+        // Try to parse as transaction first using TryFrom
+        if let Ok(_tx) = Tx::try_from(tx_hex) {
             // Try to extract spell - if it succeeds, it's a charm
             Self::extract_and_verify_charm(tx_hex, false).is_ok()
         } else {
