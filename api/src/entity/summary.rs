@@ -27,6 +27,10 @@ pub struct Model {
     pub last_updated: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    // Tag statistics [RJJ-DEX]
+    pub charms_cast_count: i64,
+    pub bro_count: i64,
+    pub dex_orders_count: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

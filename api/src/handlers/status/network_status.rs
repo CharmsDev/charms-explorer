@@ -1,16 +1,13 @@
 // Simplified network status module that uses the Summary table
 
-use sea_orm::{DatabaseConnection, EntityTrait, ColumnTrait, QueryFilter};
-use serde_json::{json, Value};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use serde_json::{Value, json};
 
 use crate::entity::prelude::*;
 use crate::entity::summary;
 
 /// Gets the current status for a specific network using Summary table
-pub async fn get_network_status(
-    conn: &DatabaseConnection,
-    network_type: &str,
-) -> Value {
+pub async fn get_network_status(conn: &DatabaseConnection, network_type: &str) -> Value {
     // Map network_type to database network value
     let db_network = match network_type {
         "mainnet" => "mainnet",
@@ -32,7 +29,7 @@ pub async fn get_network_status(
                     "count": summary.nft_count
                 },
                 {
-                    "asset_type": "token", 
+                    "asset_type": "token",
                     "count": summary.token_count
                 },
                 {
@@ -44,7 +41,7 @@ pub async fn get_network_status(
                     "count": summary.other_count
                 }
             ]);
-            
+
             // Construct the final response
             json!({
                 "indexer_status": {
@@ -66,6 +63,11 @@ pub async fn get_network_status(
                     "confirmed_transactions": summary.confirmed_transactions,
                     "confirmation_rate": summary.confirmation_rate,
                     "charms_by_asset_type": asset_types
+                },
+                "tag_stats": {
+                    "charms_cast_count": summary.charms_cast_count,
+                    "bro_count": summary.bro_count,
+                    "dex_orders_count": summary.dex_orders_count
                 }
             })
         }
@@ -91,6 +93,11 @@ pub async fn get_network_status(
                     "confirmed_transactions": 0,
                     "confirmation_rate": 0,
                     "charms_by_asset_type": []
+                },
+                "tag_stats": {
+                    "charms_cast_count": 0,
+                    "bro_count": 0,
+                    "dex_orders_count": 0
                 }
             })
         }
@@ -102,7 +109,7 @@ fn determine_status(last_updated: &chrono::DateTime<chrono::Utc>) -> &'static st
     let now = chrono::Utc::now();
     let duration = now.signed_duration_since(*last_updated);
     let seconds = duration.num_seconds();
-    
+
     if seconds < 60 {
         "active"
     } else if seconds < 300 {
