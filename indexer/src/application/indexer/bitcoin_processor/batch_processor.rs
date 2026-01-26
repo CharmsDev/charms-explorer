@@ -148,6 +148,7 @@ pub type TransactionBatchItem = (
 /// Charm batch item for bulk operations
 /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
 /// [RJJ-ADDRESS] Added address field
+/// [RJJ-DEX] Added tags field
 pub type CharmBatchItem = (
     String,         // txid
     i32,            // vout
@@ -159,6 +160,7 @@ pub type CharmBatchItem = (
     Option<String>, // address
     String,         // app_id
     i64,            // amount
+    Option<String>, // tags
 );
 
 /// Asset batch item for bulk operations
