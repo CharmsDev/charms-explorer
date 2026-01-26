@@ -57,6 +57,7 @@ impl CharmRepository {
             app_id: Set(charm.app_id.clone()),
             amount: Set(charm.amount),
             mempool_detected_at: Set(charm.mempool_detected_at),
+            tags: Set(charm.tags.clone()),
         };
 
         // Try to insert the charm, handle duplicate key violations gracefully
@@ -182,6 +183,7 @@ impl CharmRepository {
     /// Save multiple charms in a batch
     /// [RJJ-S01] Updated signature: removed charmid, added vout, app_id, and amount
     /// [RJJ-ADDRESS] Added address field
+    /// [RJJ-DEX] Added tags field
     pub async fn save_batch(
         &self,
         charms: Vec<(
@@ -195,6 +197,7 @@ impl CharmRepository {
             Option<String>,    // address
             String,            // app_id
             i64,               // amount
+            Option<String>,    // tags
         )>,
     ) -> Result<(), DbError> {
         // Skip individual existence checks - let database handle duplicates
@@ -218,8 +221,10 @@ impl CharmRepository {
                     address,
                     app_id,
                     amount,
+                    tags,
                 )| {
                     // [RJJ-S01] Removed charmid, vout now comes from input, added app_id and amount
+                    // [RJJ-DEX] Added tags field
                     charms::ActiveModel {
                         txid: Set(txid),
                         vout: Set(vout),
@@ -234,6 +239,7 @@ impl CharmRepository {
                         app_id: Set(app_id),
                         amount: Set(amount),
                         mempool_detected_at: Set(None),
+                        tags: Set(tags), // [RJJ-DEX] Tags from detection
                     }
                 },
             )
@@ -321,7 +327,30 @@ impl CharmRepository {
             entity.amount,
         );
         charm.mempool_detected_at = entity.mempool_detected_at;
+        charm.tags = entity.tags;
         charm
+    }
+
+    /// Find charms by tag (searches for tag in comma-separated tags field)
+    pub async fn find_by_tag(&self, tag: &str) -> Result<Vec<Charm>, DbError> {
+        // Use LIKE to find charms containing the tag
+        let stmt = Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "SELECT * FROM charms WHERE tags LIKE '%{}%' ORDER BY block_height DESC",
+                tag.replace('\'', "''") // Escape single quotes
+            ),
+        );
+
+        let results = charms::Entity::find()
+            .from_raw_sql(stmt)
+            .all(&self.conn)
+            .await?;
+
+        Ok(results
+            .into_iter()
+            .map(|c| self.to_domain_model(c))
+            .collect())
     }
 
     /// Mark a charm as spent by its txid and vout
