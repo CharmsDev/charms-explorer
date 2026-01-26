@@ -2,7 +2,7 @@
 
 import { Table, TableHeader, TableBody, TableRow, TableCell } from '@/components/ui/Table';
 
-export default function CharmStatistics({ charmStats, networkType = 'testnet4' }) {
+export default function CharmStatistics({ charmStats, tagStats = {}, networkType = 'testnet4' }) {
     // Define color schemes based on network type
     const colorScheme = networkType === 'mainnet'
         ? {
@@ -13,6 +13,11 @@ export default function CharmStatistics({ charmStats, networkType = 'testnet4' }
             gradient: 'from-primary-400 to-primary-600',
             hover: 'hover:bg-dark-800/70'
         };
+
+    // Format large numbers with commas
+    const formatNumber = (num) => {
+        return (num || 0).toLocaleString();
+    };
 
     return (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
@@ -94,6 +99,41 @@ export default function CharmStatistics({ charmStats, networkType = 'testnet4' }
                                 )}
                             </TableBody>
                         </Table>
+                    </div>
+                </div>
+            </div>
+
+            {/* Tag Statistics Card - DEX & Token Stats */}
+            <div className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-lg overflow-hidden shadow-lg md:col-span-2">
+                <div className="p-6">
+                    <h2 className="text-xl font-semibold text-white mb-4">
+                        DEX & Token Statistics
+                        <span className="ml-2 text-sm font-normal text-dark-400">
+                            {networkType === 'mainnet' ? '(Mainnet)' : '(Testnet 4)'}
+                        </span>
+                    </h2>
+                    <div className="grid grid-cols-3 gap-4">
+                        <div className={`bg-dark-800/50 p-4 rounded-lg ${colorScheme.hover} transition-colors`}>
+                            <div className="text-sm text-gray-400 mb-1">Charms Cast Orders</div>
+                            <div className={`text-2xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent`}>
+                                {formatNumber(tagStats.charms_cast_count)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">DEX swap orders</div>
+                        </div>
+                        <div className={`bg-dark-800/50 p-4 rounded-lg ${colorScheme.hover} transition-colors`}>
+                            <div className="text-sm text-gray-400 mb-1">$BRO Token Txs</div>
+                            <div className={`text-2xl font-bold bg-gradient-to-r from-yellow-400 to-yellow-600 bg-clip-text text-transparent`}>
+                                {formatNumber(tagStats.bro_count)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">BRO token transactions</div>
+                        </div>
+                        <div className={`bg-dark-800/50 p-4 rounded-lg ${colorScheme.hover} transition-colors`}>
+                            <div className="text-sm text-gray-400 mb-1">DEX Orders</div>
+                            <div className={`text-2xl font-bold bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent`}>
+                                {formatNumber(tagStats.dex_orders_count)}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-1">Total DEX orders</div>
+                        </div>
                     </div>
                 </div>
             </div>
