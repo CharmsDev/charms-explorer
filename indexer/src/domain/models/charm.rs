@@ -45,6 +45,9 @@ pub struct Charm {
 
     /// Timestamp when charm was first detected in mempool (None if indexed directly from block)
     pub mempool_detected_at: Option<NaiveDateTime>,
+
+    /// Tags for categorization (comma-separated, e.g., "charms-cast,create-ask")
+    pub tags: Option<String>,
 }
 
 impl Charm {
@@ -79,6 +82,13 @@ impl Charm {
             app_id,
             amount,
             mempool_detected_at: None, // Will be set by repository if charm is from mempool
+            tags: None,
         }
+    }
+
+    /// Creates a new Charm with tags
+    pub fn with_tags(mut self, tags: Option<String>) -> Self {
+        self.tags = tags;
+        self
     }
 }
