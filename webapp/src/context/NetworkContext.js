@@ -1,13 +1,25 @@
 'use client';
 
-import { createContext, useState, useContext } from 'react';
+import { createContext, useState, useContext, useCallback, useRef, useEffect } from 'react';
 
-// Create the context
 const NetworkContext = createContext();
 
-// Create a provider component
-export function NetworkProvider({ children }) {
-    // Network selection states
+// Helper to compute network param from state
+const computeNetworkParam = (networks) => {
+    const bitcoinMainnetActive = networks.bitcoinMainnet;
+    const bitcoinTestnet4Active = networks.bitcoinTestnet4;
+    
+    if (bitcoinMainnetActive && bitcoinTestnet4Active) {
+        return 'all';
+    } else if (bitcoinMainnetActive) {
+        return 'mainnet';
+    } else if (bitcoinTestnet4Active) {
+        return 'testnet4';
+    }
+    return 'all';
+};
+
+export function NetworkProvider({ children, onNetworkChange }) {
     const [selectedBlockchains, setSelectedBlockchains] = useState({
         bitcoin: true,
         cardano: true
@@ -20,41 +32,28 @@ export function NetworkProvider({ children }) {
         cardanoPreprod: false
     });
 
-    // Toggle network selection
-    const toggleNetwork = (network) => {
-        setSelectedNetworks(prev => ({
-            ...prev,
-            [network]: !prev[network]
-        }));
-        
-        // Trigger API call when Bitcoin networks change
-        if (network === 'bitcoinMainnet' || network === 'bitcoinTestnet4') {
+    // Store callback in ref to avoid dependency issues
+    const onNetworkChangeRef = useRef(onNetworkChange);
+    useEffect(() => {
+        onNetworkChangeRef.current = onNetworkChange;
+    }, [onNetworkChange]);
+
+    const toggleNetwork = useCallback((network) => {
+        setSelectedNetworks(prev => {
             const newNetworks = {
-                ...selectedNetworks,
-                [network]: !selectedNetworks[network]
+                ...prev,
+                [network]: !prev[network]
             };
             
-            // Determine which networks are active for Bitcoin
-            const bitcoinMainnetActive = newNetworks.bitcoinMainnet;
-            const bitcoinTestnet4Active = newNetworks.bitcoinTestnet4;
-            
-            // Call the network change handler if it exists
-            if (typeof window !== 'undefined' && window.handleNetworkChange) {
-                let networkParam = null;
-                if (bitcoinMainnetActive && bitcoinTestnet4Active) {
-                    networkParam = 'all';
-                } else if (bitcoinMainnetActive) {
-                    networkParam = 'mainnet';
-                } else if (bitcoinTestnet4Active) {
-                    networkParam = 'testnet4';
-                } else {
-                    // If no networks selected, default to all
-                    networkParam = 'all';
-                }
-                window.handleNetworkChange(networkParam);
+            // Notify callback if Bitcoin networks changed
+            if ((network === 'bitcoinMainnet' || network === 'bitcoinTestnet4') && onNetworkChangeRef.current) {
+                const networkParam = computeNetworkParam(newNetworks);
+                onNetworkChangeRef.current(networkParam);
             }
-        }
-    };
+            
+            return newNetworks;
+        });
+    }, []);
 
     // Get active networks
     const getActiveNetworks = () => {
