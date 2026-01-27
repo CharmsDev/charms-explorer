@@ -76,6 +76,7 @@ pub struct CharmData {
     pub data: serde_json::Value,
     pub date_created: String,
     pub asset_type: String,
+    pub network: String,
     #[serde(default = "default_likes_count")]
     pub likes_count: i64,
     #[serde(default = "default_user_liked")]
