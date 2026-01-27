@@ -48,6 +48,9 @@ pub struct Charm {
 
     /// Tags for categorization (comma-separated, e.g., "charms-cast,create-ask")
     pub tags: Option<String>,
+
+    /// Whether the spell proof has been verified
+    pub verified: bool,
 }
 
 impl Charm {
@@ -83,6 +86,7 @@ impl Charm {
             amount,
             mempool_detected_at: None, // Will be set by repository if charm is from mempool
             tags: None,
+            verified: true, // Charms are verified during extraction
         }
     }
 

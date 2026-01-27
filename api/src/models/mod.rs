@@ -90,6 +90,8 @@ pub struct CharmData {
     pub ticker: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Whether the spell proof has been verified
+    pub verified: bool,
 }
 
 fn default_likes_count() -> i64 {

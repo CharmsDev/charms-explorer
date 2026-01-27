@@ -35,6 +35,7 @@ pub struct Model {
     pub mempool_detected_at: Option<NaiveDateTime>,
     #[sea_orm(column_type = "Text", nullable)]
     pub tags: Option<String>,
+    pub verified: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -27,6 +27,7 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub app_id: String,
     pub amount: i64,
+    pub verified: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

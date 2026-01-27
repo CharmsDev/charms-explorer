@@ -58,6 +58,7 @@ impl CharmRepository {
             amount: Set(charm.amount),
             mempool_detected_at: Set(charm.mempool_detected_at),
             tags: Set(charm.tags.clone()),
+            verified: Set(charm.verified),
         };
 
         // Try to insert the charm, handle duplicate key violations gracefully
@@ -239,7 +240,8 @@ impl CharmRepository {
                         app_id: Set(app_id),
                         amount: Set(amount),
                         mempool_detected_at: Set(None),
-                        tags: Set(tags), // [RJJ-DEX] Tags from detection
+                        tags: Set(tags),     // [RJJ-DEX] Tags from detection
+                        verified: Set(true), // Charms are verified during extraction
                     }
                 },
             )

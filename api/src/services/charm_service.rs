@@ -150,6 +150,7 @@ pub async fn get_all_charms_paginated_by_network(
             image,
             ticker,
             description,
+            verified: charm.verified,
         };
 
         charm_data.push(charm_data_item);
@@ -244,6 +245,7 @@ pub async fn get_all_charms_paginated(
             image,
             ticker,
             description,
+            verified: charm.verified,
         });
     }
 
@@ -325,6 +327,7 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
             image,
             ticker,
             description,
+            verified: charm.verified,
         });
     }
 
@@ -409,6 +412,7 @@ pub async fn get_charms_by_type_paginated(
             image,
             ticker,
             description,
+            verified: charm.verified,
         });
     }
 
@@ -499,6 +503,7 @@ pub async fn get_charms_by_type(
             image,
             ticker,
             description,
+            verified: charm.verified,
         });
     }
 
@@ -588,6 +593,7 @@ pub async fn get_charm_by_txid(
         image,
         ticker,
         description,
+        verified: charm.verified,
     })
 }
 
@@ -655,6 +661,7 @@ pub async fn get_charm_by_charmid(
                 image: image.clone(),
                 ticker: ticker.clone(),
                 description: description.clone(),
+                verified: charm.verified,
             });
         }
     }
@@ -675,6 +682,7 @@ pub async fn get_charm_by_charmid(
         image,
         ticker,
         description,
+        verified: first_charm.verified,
     })
 }
 
@@ -788,6 +796,7 @@ pub async fn get_charms_by_address(
             image,
             ticker,
             description,
+            verified: charm.verified,
         });
     }
 
