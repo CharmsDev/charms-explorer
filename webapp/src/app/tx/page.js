@@ -5,16 +5,46 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getCharmByTxId } from '@/services/apiServices';
 import { getTransaction, isQuickNodeAvailable } from '@/services/quicknodeService';
-import { classifyCharm, getCharmLabel, getCharmIcon, getCharmColors, CHARM_TYPES } from '@/services/charmClassifier';
+import { 
+    analyzeTransaction, 
+    TRANSACTION_TYPES,
+    isDexTransaction 
+} from '@/services/transactions/transactionClassifier';
+import { 
+    TransactionBadge, 
+    TransactionHeader, 
+    DexOrderDetails, 
+    TokenDetails,
+    SpellDataViewer 
+} from '@/components/transactions';
 
-export default function TransactionPage() {
+function TransactionPageContent() {
     const searchParams = useSearchParams();
     const txid = searchParams.get('txid');
+    const from = searchParams.get('from'); // Source page: transactions, asset, charm, home
     const [charm, setCharm] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
     const [copied, setCopied] = useState(false);
+
+    // Get back navigation based on source
+    const getBackNavigation = () => {
+        switch (from) {
+            case 'transactions':
+                return { href: '/transactions', label: 'Transactions', title: 'Transactions' };
+            case 'cast-dex':
+                return { href: '/cast-dex', label: 'Cast Dex', title: 'Cast Dex Orders' };
+            case 'asset':
+                return { href: '/', label: 'Asset', title: 'Asset Details' };
+            case 'charm':
+                return { href: '/', label: 'Charm', title: 'Charm Details' };
+            default:
+                return { href: '/', label: 'Explorer', title: 'Explorer' };
+        }
+    };
+
+    const backNav = getBackNavigation();
 
     useEffect(() => {
         const loadData = async () => {
@@ -102,56 +132,90 @@ export default function TransactionPage() {
     }
 
     return (
-        <div className="min-h-screen pb-20 pt-24">
-            <div className="container mx-auto px-4">
-                {/* Header */}
-                <div className="mb-8">
-                    <Link href="/" className="text-dark-400 hover:text-white mb-4 inline-block transition-colors">
-                        &larr; Back to Explorer
-                    </Link>
-                    <div className="flex items-center gap-3 mb-2">
-                        <h1 className="text-3xl font-bold gradient-text">Transaction Details</h1>
-                        {!charm.isBitcoinTx && (() => {
-                            const charmType = classifyCharm(charm);
-                            const colors = getCharmColors(charmType);
-                            const label = getCharmLabel(charmType);
-                            const icon = getCharmIcon(charmType);
-                            return (
-                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border}`}>
-                                    {icon} {label}
-                                </span>
-                            );
-                        })()}
-                    </div>
-                    <div className="flex items-center text-dark-400 text-sm break-all">
-                        <span className="font-mono">{txid}</span>
-                        <button 
-                            className="ml-2 text-dark-500 hover:text-primary-400 transition-colors relative"
-                            onClick={() => {
-                                navigator.clipboard.writeText(txid);
-                                setCopied(true);
-                                setTimeout(() => setCopied(false), 2000);
-                            }}
-                            title="Copy TXID"
-                        >
-                            {copied ? (
-                                <span className="text-green-400 text-xs">✓ Copied!</span>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+        <div className="min-h-screen">
+            {/* Section Header - matches transactions list style */}
+            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800">
+                <div className="container mx-auto px-4 py-4">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <Link 
+                                href={backNav.href}
+                                className="flex items-center gap-2 text-dark-400 hover:text-white transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                                 </svg>
-                            )}
-                        </button>
-                        <a 
-                            href={`https://mempool.space/tx/${txid}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="ml-2 text-primary-400 hover:text-primary-300 text-xs"
-                        >
-                            View on Mempool →
-                        </a>
+                                <span>{backNav.label}</span>
+                            </Link>
+                            <span className="text-dark-600">|</span>
+                            <h1 className="text-xl font-bold text-white">Transaction Details</h1>
+                        </div>
                     </div>
                 </div>
+            </div>
+
+            <div className="container mx-auto px-4 py-6">
+                {/* Transaction Info Header */}
+                {(() => {
+                    const analysis = analyzeTransaction(charm);
+                    return (
+                        <div className="mb-6">
+                            {/* Transaction Header with Type */}
+                            <div className="card p-6 mb-6">
+                                <TransactionHeader 
+                                    type={analysis.type}
+                                    status="confirmed"
+                                    amount={analysis.orderDetails?.quantity}
+                                    ticker={analysis.orderDetails?.asset ? 'tokens' : null}
+                                />
+                            </div>
+                            
+                            {/* TXID Section */}
+                            <div className="flex items-center gap-3 mb-2">
+                                <h2 className="text-lg font-semibold text-dark-300">TXID</h2>
+                                <TransactionBadge type={analysis.type} size="sm" />
+                            </div>
+                            <div className="flex items-center text-dark-400 text-sm break-all">
+                                <span className="font-mono">{txid}</span>
+                                <button 
+                                    className="ml-2 text-dark-500 hover:text-primary-400 transition-colors relative"
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(txid);
+                                        setCopied(true);
+                                        setTimeout(() => setCopied(false), 2000);
+                                    }}
+                                    title="Copy TXID"
+                                >
+                                    {copied ? (
+                                        <span className="text-green-400 text-xs">✓ Copied!</span>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <a 
+                                    href={`https://mempool.space/${charm.network === 'testnet4' ? 'testnet4/' : ''}tx/${txid}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="ml-2 text-primary-400 hover:text-primary-300 text-xs"
+                                >
+                                    View on Mempool →
+                                </a>
+                            </div>
+                            
+                            {/* DEX Order Details (if applicable) */}
+                            {analysis.isDex && analysis.orderDetails && (
+                                <div className="mt-6">
+                                    <DexOrderDetails 
+                                        orderDetails={analysis.orderDetails}
+                                        copyToClipboard={(text) => navigator.clipboard.writeText(text)}
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    );
+                })()}
 
                 {/* Main Content */}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -247,9 +311,10 @@ export default function TransactionPage() {
                         ) : (
                             <div className="card p-6">
                                 <h2 className="text-xl font-semibold text-white mb-6">Spell Data (Raw JSON)</h2>
-                                <div className="bg-dark-900/50 rounded-lg p-4 overflow-x-auto">
-                                    <pre className="text-xs sm:text-sm text-green-400 font-mono whitespace-pre-wrap break-all">
-                                        {JSON.stringify(charm.data, null, 2)}
+                                <p className="text-dark-400 text-xs mb-3">Byte arrays are displayed as hex strings for readability</p>
+                                <div className="bg-dark-900/50 rounded-lg p-4 overflow-x-auto max-h-[600px] overflow-y-auto">
+                                    <pre className="text-xs sm:text-sm text-green-400 font-mono whitespace-pre-wrap break-words">
+                                        {formatSpellData(charm.data)}
                                     </pre>
                                 </div>
                             </div>
@@ -338,5 +403,18 @@ export default function TransactionPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+// Wrapper with Suspense boundary for useSearchParams
+export default function TransactionPage() {
+    return (
+        <Suspense fallback={
+            <div className="container mx-auto px-4 py-12 flex justify-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500"></div>
+            </div>
+        }>
+            <TransactionPageContent />
+        </Suspense>
     );
 }
