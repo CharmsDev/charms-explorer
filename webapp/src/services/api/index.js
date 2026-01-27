@@ -1,8 +1,6 @@
 'use client';
 
-// API Services - Re-exports from domain-specific modules for backward compatibility
-// New code should import directly from './api/charms', './api/assets', or './api/status'
-
+// Re-export all API functions from domain-specific modules
 export {
     fetchRawCharmsData,
     fetchAssets,
@@ -11,16 +9,16 @@ export {
     getCharmByTxId,
     likeCharm,
     unlikeCharm
-} from './api/charms';
+} from './charms';
 
 export {
     fetchAssetsByType,
     getAssetById,
     getAssetCounts,
     fetchAssetHolders
-} from './api/assets';
+} from './assets';
 
 export {
     fetchIndexerStatus,
     resetIndexer
-} from './api/status';
+} from './status';
