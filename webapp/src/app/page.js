@@ -2,9 +2,10 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import AssetGrid from '../components/AssetGrid';
+import Pagination from '../components/Pagination';
 import { fetchAssets, fetchAssetsByType, getCharmsCountByType } from '../services/api';
-import { Button } from '../components/ui/Button';
 
 export default function HomePage() {
     const router = useRouter();
@@ -121,73 +122,6 @@ export default function HomePage() {
         loadData(selectedType, selectedNetwork, newPage, sortOrder);
     };
 
-    // Render page numbers for pagination
-    const renderPageNumbers = () => {
-        const pageNumbers = [];
-        const maxVisiblePages = 7;
-
-        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-
-        // Adjust start page if we're near the end
-        if (endPage - startPage + 1 < maxVisiblePages) {
-            startPage = Math.max(1, endPage - maxVisiblePages + 1);
-        }
-
-        // Add first page with ellipsis if needed
-        if (startPage > 1) {
-            pageNumbers.push(
-                <Button
-                    key={1}
-                    onClick={() => handlePageChange(1)}
-                    className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === 1 ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
-                >
-                    1
-                </Button>
-            );
-
-            if (startPage > 2) {
-                pageNumbers.push(
-                    <span key="ellipsis1" className="px-1">...</span>
-                );
-            }
-        }
-
-        // Add page numbers
-        for (let i = startPage; i <= endPage; i++) {
-            pageNumbers.push(
-                <Button
-                    key={i}
-                    onClick={() => handlePageChange(i)}
-                    className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === i ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
-                >
-                    {i}
-                </Button>
-            );
-        }
-
-        // Add last page with ellipsis if needed
-        if (endPage < totalPages) {
-            if (endPage < totalPages - 1) {
-                pageNumbers.push(
-                    <span key="ellipsis2" className="px-1">...</span>
-                );
-            }
-
-            pageNumbers.push(
-                <Button
-                    key={totalPages}
-                    onClick={() => handlePageChange(totalPages)}
-                    className={`w-8 h-8 p-0 text-sm font-bold ${currentPage === totalPages ? 'bg-primary-700 text-white' : 'bg-dark-700 text-dark-200'}`}
-                >
-                    {totalPages}
-                </Button>
-            );
-        }
-
-        return pageNumbers;
-    };
-
     useEffect(() => {
         loadData();
     }, []);
@@ -202,125 +136,114 @@ export default function HomePage() {
 
     return (
         <div>
-            {/* Compact toolbar: Search + Filter tabs in one line */}
+            {/* Toolbar: Transactions, Cast Decks, Search */}
             <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
                 <div className="container mx-auto px-4 py-3">
-                    <div className="flex items-center gap-4">
-                        {/* Search bar */}
-                        <form onSubmit={handleSearch} className="flex-1 max-w-md">
+                    <div className="flex items-center justify-between gap-4">
+                        {/* Navigation tabs - left */}
+                        <div className="flex items-center gap-2">
+                            <Link 
+                                href="/"
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white transition-all"
+                            >
+                                Charms
+                            </Link>
+                            <Link 
+                                href="/transactions"
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
+                            >
+                                Transactions
+                            </Link>
+                            <Link 
+                                href="/cast-dex"
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
+                            >
+                                Cast Dex
+                            </Link>
+                        </div>
+
+                        {/* Search bar - right */}
+                        <form onSubmit={handleSearch} className="w-96">
                             <div className="relative">
                                 <input
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     placeholder="Search TXID, address, charm..."
-                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-2 px-4 pl-10 pr-20 focus:outline-none focus:border-primary-500 transition-all"
+                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-2.5 px-4 pl-11 pr-20 focus:outline-none focus:border-primary-500 transition-all"
                                 />
-                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400">
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                     </svg>
                                 </div>
                                 <button
                                     type="submit"
-                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-md transition-colors"
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-md transition-colors"
                                 >
                                     Search
                                 </button>
                             </div>
                         </form>
-
-                        {/* Filter tabs */}
-                        <div className="flex items-center gap-2">
-                            {filterTabs.map((tab) => (
-                                <button
-                                    key={tab.type}
-                                    onClick={() => handleTypeChange(tab.type)}
-                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                                        selectedType === tab.type
-                                            ? 'bg-primary-600 text-white'
-                                            : 'bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white'
-                                    }`}
-                                >
-                                    <span>{tab.icon}</span>
-                                    <span className="hidden sm:inline">{tab.label}</span>
-                                    <span className={`px-1.5 py-0.5 text-xs rounded ${
-                                        selectedType === tab.type
-                                            ? 'bg-primary-500/30 text-primary-200'
-                                            : 'bg-dark-700 text-dark-400'
-                                    }`}>
-                                        {tab.count.toLocaleString()}
-                                    </span>
-                                </button>
-                            ))}
-                        </div>
                     </div>
                 </div>
             </div>
 
-            {/* Results header with count and sort */}
-            <div className="container mx-auto px-4 py-4">
-                <div className="flex justify-between items-center">
-                    <p className="text-dark-400">
-                        Found <span className="text-primary-400 font-semibold">{counts.total.toLocaleString()}</span> charms
-                    </p>
-                    <select
-                        className="bg-dark-800 border border-dark-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-primary-500"
-                        value={sortOrder}
-                        onChange={handleSortChange}
-                    >
-                        <option value="newest">Newest First</option>
-                        <option value="oldest">Oldest First</option>
-                    </select>
+            {/* Filter tabs row: tabs left, count center-right, sort far right */}
+            <div className="container mx-auto px-4 py-3">
+                <div className="flex items-center justify-between">
+                    {/* Filter tabs - left */}
+                    <div className="flex items-center gap-2">
+                        {filterTabs.map((tab) => (
+                            <button
+                                key={tab.type}
+                                onClick={() => handleTypeChange(tab.type)}
+                                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
+                                    selectedType === tab.type
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white'
+                                }`}
+                            >
+                                <span>{tab.icon}</span>
+                                <span className="hidden sm:inline">{tab.label}</span>
+                                <span className={`px-1.5 py-0.5 text-xs rounded ${
+                                    selectedType === tab.type
+                                        ? 'bg-primary-500/30 text-primary-200'
+                                        : 'bg-dark-700 text-dark-400'
+                                }`}>
+                                    {tab.count.toLocaleString()}
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Count and sort - right */}
+                    <div className="flex items-center gap-4">
+                        <p className="text-dark-400 text-sm">
+                            Found <span className="text-primary-400 font-semibold">{counts.total.toLocaleString()}</span> charms
+                        </p>
+                        <select
+                            className="bg-dark-800 border border-dark-700 rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-primary-500"
+                            value={sortOrder}
+                            onChange={handleSortChange}
+                        >
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
+                    </div>
                 </div>
             </div>
 
             <AssetGrid assets={assets} isLoading={isLoading} />
 
             {!isLoading && (
-                <div className="container mx-auto px-4 py-6">
-                    <div className="flex flex-col items-center">
-                        <div className="text-sm text-dark-400 mb-2">
-                            Page {currentPage} of {Math.max(Math.ceil(counts.total / ITEMS_PER_PAGE), 1)}
-                        </div>
-
-                        <div className="flex items-center space-x-2 flex-wrap">
-                            <Button
-                                onClick={() => handlePageChange(1)}
-                                disabled={currentPage === 1}
-                                className="px-3 py-1"
-                            >
-                                First
-                            </Button>
-                            <Button
-                                onClick={() => handlePageChange(currentPage - 1)}
-                                disabled={currentPage === 1}
-                                className="px-3 py-1"
-                            >
-                                Previous
-                            </Button>
-
-                            <div className="flex items-center space-x-1 mx-2 bg-dark-800/50 px-2 py-1 rounded-lg">
-                                {renderPageNumbers()}
-                            </div>
-
-                            <Button
-                                onClick={() => handlePageChange(currentPage + 1)}
-                                disabled={currentPage >= Math.ceil(counts.total / ITEMS_PER_PAGE)}
-                                className="px-3 py-1"
-                            >
-                                Next
-                            </Button>
-                            <Button
-                                onClick={() => handlePageChange(Math.ceil(counts.total / ITEMS_PER_PAGE))}
-                                disabled={currentPage >= Math.ceil(counts.total / ITEMS_PER_PAGE)}
-                                className="px-3 py-1"
-                            >
-                                Last
-                            </Button>
-                        </div>
-                    </div>
-                </div>
+                <Pagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    totalItems={counts.total}
+                    itemsPerPage={ITEMS_PER_PAGE}
+                    onPageChange={handlePageChange}
+                />
             )}
         </div>
     );
