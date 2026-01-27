@@ -202,66 +202,48 @@ export default function HomePage() {
 
     return (
         <div>
-            {/* Search Subheader */}
-            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800">
-                <div className="container mx-auto px-4 py-6">
-                    {/* Centered Search bar */}
-                    <div className="max-w-2xl mx-auto">
-                        <h1 className="text-3xl font-bold text-center mb-4">
-                            <span className="text-white">Explore</span> <span className="gradient-text">Charms</span>
-                        </h1>
-                        <p className="text-dark-400 text-center mb-4">
-                            Discover NFTs, Tokens, and dApps built with Charms technology
-                        </p>
-                        <form onSubmit={handleSearch}>
+            {/* Compact toolbar: Search + Filter tabs in one line */}
+            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
+                <div className="container mx-auto px-4 py-3">
+                    <div className="flex items-center gap-4">
+                        {/* Search bar */}
+                        <form onSubmit={handleSearch} className="flex-1 max-w-md">
                             <div className="relative">
                                 <input
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search by TXID, address, or Charm ID..."
-                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-4 px-5 pl-14 pr-28 text-lg focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/50 transition-all"
+                                    placeholder="Search TXID, address, charm..."
+                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-2 px-4 pl-10 pr-20 focus:outline-none focus:border-primary-500 transition-all"
                                 />
-                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-dark-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-dark-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                     </svg>
                                 </div>
                                 <button
                                     type="submit"
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-medium rounded-lg transition-colors"
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-md transition-colors"
                                 >
                                     Search
                                 </button>
                             </div>
                         </form>
-                        <div className="flex justify-center text-xs text-dark-500 mt-3 gap-4">
-                            <span>TXID</span>
-                            <span>Address</span>
-                            <span>Charm ID</span>
-                            <span>App ID</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            {/* Filter tabs */}
-            <div className="bg-dark-900/80 border-b border-dark-800 sticky top-16 z-40">
-                <div className="container mx-auto px-4 py-3">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 flex-wrap">
+                        {/* Filter tabs */}
+                        <div className="flex items-center gap-2">
                             {filterTabs.map((tab) => (
                                 <button
                                     key={tab.type}
                                     onClick={() => handleTypeChange(tab.type)}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
                                         selectedType === tab.type
-                                            ? 'bg-primary-600 text-white shadow-lg shadow-primary-600/25'
+                                            ? 'bg-primary-600 text-white'
                                             : 'bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white'
                                     }`}
                                 >
                                     <span>{tab.icon}</span>
-                                    <span>{tab.label}</span>
+                                    <span className="hidden sm:inline">{tab.label}</span>
                                     <span className={`px-1.5 py-0.5 text-xs rounded ${
                                         selectedType === tab.type
                                             ? 'bg-primary-500/30 text-primary-200'
