@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getCharmByTxId } from '@/services/apiServices';
 import { getTransaction, isQuickNodeAvailable } from '@/services/quicknodeService';
+import { classifyCharm, getCharmLabel, getCharmIcon, getCharmColors, CHARM_TYPES } from '@/services/charmClassifier';
 
 export default function TransactionPage() {
     const searchParams = useSearchParams();
@@ -108,7 +109,20 @@ export default function TransactionPage() {
                     <Link href="/" className="text-dark-400 hover:text-white mb-4 inline-block transition-colors">
                         &larr; Back to Explorer
                     </Link>
-                    <h1 className="text-3xl font-bold gradient-text mb-2">Transaction Details</h1>
+                    <div className="flex items-center gap-3 mb-2">
+                        <h1 className="text-3xl font-bold gradient-text">Transaction Details</h1>
+                        {!charm.isBitcoinTx && (() => {
+                            const charmType = classifyCharm(charm);
+                            const colors = getCharmColors(charmType);
+                            const label = getCharmLabel(charmType);
+                            const icon = getCharmIcon(charmType);
+                            return (
+                                <span className={`px-3 py-1 rounded-full text-sm font-medium ${colors.bg} ${colors.text} border ${colors.border}`}>
+                                    {icon} {label}
+                                </span>
+                            );
+                        })()}
+                    </div>
                     <div className="flex items-center text-dark-400 text-sm break-all">
                         <span className="font-mono">{txid}</span>
                         <button 
