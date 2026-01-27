@@ -91,29 +91,15 @@ export default function Header() {
                                     <div className="absolute inset-0 rounded-full bg-primary-500/20 blur-md -z-10 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                                 </div>
                                 <div className="ml-2">
-                                    <span className="text-xl font-bold gradient-text">Explorer</span>
+                                    <span className="text-xl font-bold"><span className="text-white">Charms</span> <span className="gradient-text">Explorer</span></span>
                                     <div className="h-0.5 w-0 bg-gradient-to-r from-primary-400 to-primary-600 group-hover:w-full transition-all duration-300"></div>
                                 </div>
                             </div>
                         </Link>
                     </div>
 
-                    {/* Center section - Search bar [RJJ-ADDRESS-SEARCH] */}
+                    {/* Center section - Empty (search moved to subheader) */}
                     <div className="hidden md:flex justify-center">
-                        <form onSubmit={handleSearch} className="relative group w-full max-w-md">
-                            <input
-                                type="text"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                placeholder="Search by address, txid, or app_id..."
-                                className="w-full bg-dark-800/70 text-white rounded-full py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:bg-dark-800 transition-all"
-                            />
-                            <button type="submit" className="absolute left-3 top-2.5 text-dark-400 group-focus-within:text-primary-400 transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                </svg>
-                            </button>
-                        </form>
                     </div>
 
                     {/* Right section - Status button, Connect button and menu */}
@@ -121,7 +107,7 @@ export default function Header() {
                         {/* Status page button */}
                         <Link
                             href="/status"
-                            className="btn btn-secondary"
+                            className="px-4 py-2 text-sm font-medium bg-dark-800 text-white rounded-lg hover:bg-dark-700 transition-colors flex items-center"
                         >
                             <span className="flex items-center">
                                 <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -136,7 +122,7 @@ export default function Header() {
                             <button
                                 onClick={handleConnect}
                                 disabled={isConnecting}
-                                className="btn btn-primary shadow-glow"
+                                className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition-colors flex items-center shadow-lg shadow-primary-600/25"
                             >
                                 <span className="flex items-center">
                                     {isConnecting ? (
@@ -191,7 +177,7 @@ export default function Header() {
                             <div className="flex items-center space-x-2 ml-2">
                                 <button
                                     onClick={() => toggleNetwork('bitcoinMainnet')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinMainnet
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinMainnet
                                         ? 'bg-bitcoin-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -200,7 +186,7 @@ export default function Header() {
                                 </button>
                                 <button
                                     onClick={() => toggleNetwork('bitcoinTestnet4')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinTestnet4
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinTestnet4
                                         ? 'bg-bitcoin-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -224,7 +210,7 @@ export default function Header() {
                             <div className="flex items-center space-x-2 ml-2">
                                 <button
                                     onClick={() => toggleNetwork('cardanoMainnet')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoMainnet
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoMainnet
                                         ? 'bg-primary-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -233,7 +219,7 @@ export default function Header() {
                                 </button>
                                 <button
                                     onClick={() => toggleNetwork('cardanoPreprod')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoPreprod
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoPreprod
                                         ? 'bg-primary-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -279,7 +265,7 @@ export default function Header() {
                             <div className="flex flex-wrap gap-2 mb-4">
                                 <button
                                     onClick={() => toggleNetwork('bitcoinMainnet')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinMainnet
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinMainnet
                                         ? 'bg-bitcoin-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -288,7 +274,7 @@ export default function Header() {
                                 </button>
                                 <button
                                     onClick={() => toggleNetwork('bitcoinTestnet4')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.bitcoinTestnet4
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinTestnet4
                                         ? 'bg-bitcoin-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -301,7 +287,7 @@ export default function Header() {
                             <div className="flex flex-wrap gap-2 mb-4">
                                 <button
                                     onClick={() => toggleNetwork('cardanoMainnet')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoMainnet
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoMainnet
                                         ? 'bg-primary-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -310,7 +296,7 @@ export default function Header() {
                                 </button>
                                 <button
                                     onClick={() => toggleNetwork('cardanoPreprod')}
-                                    className={`px-3 py-1 text-xs rounded-full transition-colors ${selectedNetworks.cardanoPreprod
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoPreprod
                                         ? 'bg-primary-600 text-white'
                                         : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
                                         }`}
@@ -325,7 +311,7 @@ export default function Header() {
                                 <input
                                     type="text"
                                     placeholder="Search Charms"
-                                    className="w-full bg-dark-800/70 text-white rounded-full py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                                    className="w-full bg-dark-800/70 text-white rounded-lg py-2 px-4 pl-10 focus:outline-none focus:ring-2 focus:ring-primary-500"
                                 />
                                 <div className="absolute left-3 top-2.5 text-dark-400">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">

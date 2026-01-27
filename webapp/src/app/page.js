@@ -1,16 +1,19 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import AssetGrid from '../components/AssetGrid';
 import { fetchAssets, fetchAssetsByType, getCharmsCountByType } from '../services/api';
 import { Button } from '../components/ui/Button';
 
 export default function HomePage() {
+    const router = useRouter();
     const [assets, setAssets] = useState([]);
     const [counts, setCounts] = useState({ total: 0, nft: 0, token: 0, dapp: 0 });
     const [isLoading, setIsLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
+    const [searchQuery, setSearchQuery] = useState('');
     const [sortOrder, setSortOrder] = useState('newest');
     const [selectedNetwork, setSelectedNetwork] = useState('all');
     const [selectedType, setSelectedType] = useState('all');
@@ -80,6 +83,36 @@ export default function HomePage() {
         setSortOrder(newSort);
         setCurrentPage(1); // Reset to first page when sorting changes
         loadData(selectedType, selectedNetwork, 1, newSort);
+    };
+
+    // Handle search
+    const handleSearch = (e) => {
+        e.preventDefault();
+        const query = searchQuery.trim();
+        if (!query) return;
+
+        // TXID: 64 hex characters
+        if (/^[a-fA-F0-9]{64}$/.test(query)) {
+            router.push(`/tx?txid=${query}`);
+            return;
+        }
+        // Bitcoin address
+        if (/^(bc1|tb1|1|3|m|n)[a-zA-Z0-9]{25,62}$/.test(query)) {
+            router.push(`/address/${query}`);
+            return;
+        }
+        // Charm ID (txid:vout)
+        if (/^[a-fA-F0-9]{64}:\d+$/.test(query)) {
+            router.push(`/tx?txid=${query.split(':')[0]}`);
+            return;
+        }
+        // App ID (t/..., n/..., b/...)
+        if (/^[tnb]\//.test(query)) {
+            router.push(`/asset?appid=${encodeURIComponent(query)}`);
+            return;
+        }
+        // Default: try as address
+        router.push(`/address/${query}`);
     };
 
     // Handle pagination
@@ -172,18 +205,45 @@ export default function HomePage() {
             {/* Hybrid Subheader */}
             <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
                 <div className="container mx-auto px-4 py-4">
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        {/* Left side - Description */}
-                        <div className="flex-1">
-                            <h1 className="text-2xl font-bold text-white mb-1">
-                                Explore <span className="gradient-text">Charms</span>
+                    {/* Top row - Title and Search */}
+                    <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
+                        {/* Left side - Title */}
+                        <div className="flex-shrink-0">
+                            <h1 className="text-2xl font-bold">
+                                <span className="text-white">Explore</span> <span className="gradient-text">Charms</span>
                             </h1>
-                            <p className="text-dark-400 text-sm">
-                                Discover NFTs, Tokens, and dApps built with Charms technology
-                            </p>
                         </div>
 
-                        {/* Right side - Filter buttons */}
+                        {/* Center/Right - Search bar */}
+                        <form onSubmit={handleSearch} className="flex-1 max-w-xl">
+                            <div className="relative">
+                                <input
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder="Search by TXID, address, or Charm ID..."
+                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-3 px-4 pl-12 pr-24 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                                />
+                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                    </svg>
+                                </div>
+                                <button
+                                    type="submit"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-lg transition-colors"
+                                >
+                                    Search
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    {/* Bottom row - Filter buttons and description */}
+                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                        <p className="text-dark-400 text-sm">
+                            Discover NFTs, Tokens, and dApps built with Charms technology
+                        </p>
                         <div className="flex items-center gap-2 flex-wrap">
                             {filterTabs.map((tab) => (
                                 <button
