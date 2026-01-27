@@ -18,6 +18,20 @@ import {
     SpellDataViewer 
 } from '@/components/transactions';
 
+const formatSpellData = (data) => {
+    if (!data) return '';
+    
+    const replacer = (key, value) => {
+        if (Array.isArray(value) && value.length > 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+            const hex = value.map(b => b.toString(16).padStart(2, '0')).join('');
+            return `[hex:${hex}]`;
+        }
+        return value;
+    };
+    
+    return JSON.stringify(data, replacer, 2);
+};
+
 function TransactionPageContent() {
     const searchParams = useSearchParams();
     const txid = searchParams.get('txid');
@@ -25,7 +39,6 @@ function TransactionPageContent() {
     const [charm, setCharm] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [activeTab, setActiveTab] = useState('overview');
     const [copied, setCopied] = useState(false);
 
     // Get back navigation based on source
@@ -60,18 +73,14 @@ function TransactionPageContent() {
                     setError(null);
                 } catch (charmErr) {
                     // If charm not found, try to get Bitcoin transaction data
-                    console.log('Charm not found, fetching Bitcoin transaction data...');
-                    
                     try {
                         let btcTx;
                         
                         // Try QuickNode first if available
                         if (isQuickNodeAvailable()) {
-                            console.log('Using QuickNode for transaction data...');
                             btcTx = await getTransaction(txid);
                         } else {
                             // Fallback to Mempool.space
-                            console.log('Using Mempool.space for transaction data...');
                             const response = await fetch(`https://mempool.space/api/tx/${txid}`);
                             if (!response.ok) {
                                 throw new Error('Transaction not found');

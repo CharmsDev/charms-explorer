@@ -89,24 +89,11 @@ export default function CastDexPage() {
             const result = await fetchRawCharmsData();
             const allCharms = result?.data?.charms || result?.charms || [];
             
-            console.log('[Cast Dex] Total raw charms loaded:', allCharms.length);
-            
             // Filter only Cast DEX transactions using raw data
             const castCharms = allCharms.filter(charm => {
                 const type = classifyCharm(charm);
-                if (type === CHARM_TYPES.CHARMS_CAST_DEX) {
-                    console.log('[Cast Dex] Found Cast DEX charm:', charm);
-                    return true;
-                }
-                return false;
+                return type === CHARM_TYPES.CHARMS_CAST_DEX;
             });
-            
-            console.log('[Cast Dex] Cast DEX charms found:', castCharms.length);
-            
-            // If no Cast DEX found, log sample raw data for debugging
-            if (castCharms.length === 0 && allCharms.length > 0) {
-                console.log('[Cast Dex] Sample RAW charm data:', JSON.stringify(allCharms[0], null, 2));
-            }
             
             setTransactions(castCharms);
             setError(null);
