@@ -202,48 +202,53 @@ export default function HomePage() {
 
     return (
         <div>
-            {/* Hybrid Subheader */}
-            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
-                <div className="container mx-auto px-4 py-4">
-                    {/* Top row - Title and Search */}
-                    <div className="flex flex-col md:flex-row md:items-center gap-4 mb-4">
-                        {/* Left side - Title */}
-                        <div className="flex-shrink-0">
-                            <h1 className="text-2xl font-bold">
-                                <span className="text-white">Explore</span> <span className="gradient-text">Charms</span>
-                            </h1>
-                        </div>
-
-                        {/* Center/Right - Search bar */}
-                        <form onSubmit={handleSearch} className="flex-1 max-w-xl">
+            {/* Search Subheader */}
+            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800">
+                <div className="container mx-auto px-4 py-6">
+                    {/* Centered Search bar */}
+                    <div className="max-w-2xl mx-auto">
+                        <h1 className="text-3xl font-bold text-center mb-4">
+                            <span className="text-white">Explore</span> <span className="gradient-text">Charms</span>
+                        </h1>
+                        <p className="text-dark-400 text-center mb-4">
+                            Discover NFTs, Tokens, and dApps built with Charms technology
+                        </p>
+                        <form onSubmit={handleSearch}>
                             <div className="relative">
                                 <input
                                     type="text"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     placeholder="Search by TXID, address, or Charm ID..."
-                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-3 px-4 pl-12 pr-24 focus:outline-none focus:border-primary-500 focus:ring-1 focus:ring-primary-500 transition-all"
+                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-4 px-5 pl-14 pr-28 text-lg focus:outline-none focus:border-primary-500 focus:ring-2 focus:ring-primary-500/50 transition-all"
                                 />
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div className="absolute left-5 top-1/2 -translate-y-1/2 text-dark-400">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                     </svg>
                                 </div>
                                 <button
                                     type="submit"
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-lg transition-colors"
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 px-6 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-medium rounded-lg transition-colors"
                                 >
                                     Search
                                 </button>
                             </div>
                         </form>
+                        <div className="flex justify-center text-xs text-dark-500 mt-3 gap-4">
+                            <span>TXID</span>
+                            <span>Address</span>
+                            <span>Charm ID</span>
+                            <span>App ID</span>
+                        </div>
                     </div>
+                </div>
+            </div>
 
-                    {/* Bottom row - Filter buttons and description */}
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                        <p className="text-dark-400 text-sm">
-                            Discover NFTs, Tokens, and dApps built with Charms technology
-                        </p>
+            {/* Filter tabs */}
+            <div className="bg-dark-900/80 border-b border-dark-800 sticky top-16 z-40">
+                <div className="container mx-auto px-4 py-3">
+                    <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 flex-wrap">
                             {filterTabs.map((tab) => (
                                 <button

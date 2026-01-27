@@ -98,8 +98,59 @@ export default function Header() {
                         </Link>
                     </div>
 
-                    {/* Center section - Empty (search moved to subheader) */}
-                    <div className="hidden md:flex justify-center">
+                    {/* Center section - Network selector */}
+                    <div className="hidden md:flex justify-center items-center">
+                        {/* Bitcoin section */}
+                        <div className="flex items-center">
+                            <span className="text-sm font-medium text-white mr-2">Bitcoin</span>
+                            <div className="flex items-center space-x-1">
+                                <button
+                                    onClick={() => toggleNetwork('bitcoinMainnet')}
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinMainnet
+                                        ? 'bg-bitcoin-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                    }`}
+                                >
+                                    Mainnet
+                                </button>
+                                <button
+                                    onClick={() => toggleNetwork('bitcoinTestnet4')}
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinTestnet4
+                                        ? 'bg-bitcoin-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                    }`}
+                                >
+                                    Testnet4
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="mx-4"></div>
+
+                        {/* Cardano section */}
+                        <div className="flex items-center">
+                            <span className="text-sm font-medium text-white mr-2">Cardano</span>
+                            <div className="flex items-center space-x-1">
+                                <button
+                                    onClick={() => toggleNetwork('cardanoMainnet')}
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoMainnet
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                    }`}
+                                >
+                                    Mainnet
+                                </button>
+                                <button
+                                    onClick={() => toggleNetwork('cardanoPreprod')}
+                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoPreprod
+                                        ? 'bg-primary-600 text-white'
+                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
+                                    }`}
+                                >
+                                    Preprod
+                                </button>
+                            </div>
+                        </div>
                     </div>
 
                     {/* Right section - Status button, Connect button and menu */}
@@ -158,76 +209,6 @@ export default function Header() {
                                 )}
                             </svg>
                         </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Network selection row */}
-            <div className="hidden md:block border-t border-dark-800/50 bg-dark-900/30">
-                <div className="container mx-auto px-4 py-2">
-                    <div className="flex items-center justify-center">
-                        {/* Bitcoin section with network options */}
-                        <div className="flex items-center">
-                            {/* Bitcoin label (not clickable) */}
-                            <div className="px-4 py-1 text-sm font-medium text-white">
-                                Bitcoin
-                            </div>
-
-                            {/* Bitcoin network options */}
-                            <div className="flex items-center space-x-2 ml-2">
-                                <button
-                                    onClick={() => toggleNetwork('bitcoinMainnet')}
-                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinMainnet
-                                        ? 'bg-bitcoin-600 text-white'
-                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                                        }`}
-                                >
-                                    Mainnet
-                                </button>
-                                <button
-                                    onClick={() => toggleNetwork('bitcoinTestnet4')}
-                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.bitcoinTestnet4
-                                        ? 'bg-bitcoin-600 text-white'
-                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                                        }`}
-                                >
-                                    Testnet4
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Space between blockchain buttons - 50px */}
-                        <div className="mx-6"></div> {/* mx-6 is 1.5rem on each side, so 3rem or ~48px total */}
-
-                        {/* Cardano section with network options */}
-                        <div className="flex items-center">
-                            {/* Cardano label (not clickable) */}
-                            <div className="px-4 py-1 text-sm font-medium text-white">
-                                Cardano
-                            </div>
-
-                            {/* Cardano network options */}
-                            <div className="flex items-center space-x-2 ml-2">
-                                <button
-                                    onClick={() => toggleNetwork('cardanoMainnet')}
-                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoMainnet
-                                        ? 'bg-primary-600 text-white'
-                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                                        }`}
-                                >
-                                    Mainnet
-                                </button>
-                                <button
-                                    onClick={() => toggleNetwork('cardanoPreprod')}
-                                    className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoPreprod
-                                        ? 'bg-primary-600 text-white'
-                                        : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                                        }`}
-                                >
-                                    Preprod
-                                </button>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
