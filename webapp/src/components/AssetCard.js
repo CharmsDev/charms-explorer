@@ -2,12 +2,17 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { classifyCharm, getCharmBadgeProps, CHARM_TYPES } from '@/services/charmClassifier';
 
 export default function AssetCard({ asset }) {
     const [imageError, setImageError] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
     const placeholderImage = "/images/logo.png";
+
+    // Classify the charm to get special badges
+    const charmType = classifyCharm(asset);
+    const isSpecialType = [CHARM_TYPES.BRO_TOKEN, CHARM_TYPES.CHARMS_CAST_DEX, CHARM_TYPES.DEX_ORDER].includes(charmType);
 
     // Format date
     const formattedDate = new Date(asset.created_at).toLocaleDateString('en-US', {
@@ -18,6 +23,28 @@ export default function AssetCard({ asset }) {
 
     // Get type-specific styling and icon
     const getTypeDetails = () => {
+        // Special handling for BRO token
+        if (charmType === CHARM_TYPES.BRO_TOKEN) {
+            return {
+                color: 'from-yellow-500 to-orange-600',
+                bgColor: 'bg-yellow-900/20',
+                borderColor: 'border-yellow-500/30',
+                icon: '🪙',
+                label: '$BRO'
+            };
+        }
+        
+        // Special handling for Charms Cast DEX
+        if (charmType === CHARM_TYPES.CHARMS_CAST_DEX) {
+            return {
+                color: 'from-purple-500 to-pink-600',
+                bgColor: 'bg-purple-900/20',
+                borderColor: 'border-purple-500/30',
+                icon: '🔄',
+                label: 'DEX'
+            };
+        }
+
         switch (asset.asset_type) {
             case 'nft':
                 return {

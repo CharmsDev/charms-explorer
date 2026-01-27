@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import FilterTabs from '../components/FilterTabs';
 import AssetGrid from '../components/AssetGrid';
+import SearchBar from '../components/SearchBar';
 import { fetchAssets, fetchAssetsByType, getCharmsCountByType } from '../services/api';
 import { Button } from '../components/ui/Button';
 
@@ -177,9 +178,10 @@ export default function HomePage() {
             <div className="bg-dark-900 pt-8 pb-6">
                 <div className="container mx-auto px-4 text-center">
                     <h1 className="text-4xl font-bold mt-4 mb-3 gradient-text">Explore Charms</h1>
-                    <p className="text-xl max-w-2xl mx-auto mb-2 text-dark-200">
+                    <p className="text-xl max-w-2xl mx-auto mb-4 text-dark-200">
                         Discover NFTs, Tokens, and dApps built with Charms technology
                     </p>
+                    <SearchBar className="mb-4" />
                 </div>
             </div>
 
