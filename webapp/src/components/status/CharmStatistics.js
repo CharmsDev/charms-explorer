@@ -74,27 +74,21 @@ export default function CharmStatistics({ charmStats, tagStats = {}, networkType
                         <Table>
                             <TableHeader>
                                 <TableRow>
-                                    <TableCell>Asset Type</TableCell>
+                                    <TableCell>Type</TableCell>
                                     <TableCell>Count</TableCell>
-                                    <TableCell>Percentage</TableCell>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {charmStats.charms_by_asset_type && charmStats.charms_by_asset_type.length > 0 ? (
                                     charmStats.charms_by_asset_type.map((assetType, index) => (
                                         <TableRow key={index}>
-                                            <TableCell>{assetType.asset_type}</TableCell>
-                                            <TableCell>{assetType.count}</TableCell>
-                                            <TableCell>
-                                                {charmStats.total_charms > 0
-                                                    ? `${((assetType.count / charmStats.total_charms) * 100).toFixed(1)}%`
-                                                    : '0%'}
-                                            </TableCell>
+                                            <TableCell className="capitalize">{assetType.asset_type}</TableCell>
+                                            <TableCell>{formatNumber(assetType.count)}</TableCell>
                                         </TableRow>
                                     ))
                                 ) : (
                                     <TableRow>
-                                        <TableCell colSpan={3} className="text-center">No data available</TableCell>
+                                        <TableCell colSpan={2} className="text-center">No data available</TableCell>
                                     </TableRow>
                                 )}
                             </TableBody>
@@ -112,7 +106,7 @@ export default function CharmStatistics({ charmStats, tagStats = {}, networkType
                             {networkType === 'mainnet' ? '(Mainnet)' : '(Testnet 4)'}
                         </span>
                     </h2>
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className="grid grid-cols-2 gap-4">
                         <div className={`bg-dark-800/50 p-4 rounded-lg ${colorScheme.hover} transition-colors`}>
                             <div className="text-sm text-gray-400 mb-1">Charms Cast Orders</div>
                             <div className={`text-2xl font-bold bg-gradient-to-r from-purple-400 to-purple-600 bg-clip-text text-transparent`}>
@@ -126,13 +120,6 @@ export default function CharmStatistics({ charmStats, tagStats = {}, networkType
                                 {formatNumber(tagStats.bro_count)}
                             </div>
                             <div className="text-xs text-gray-500 mt-1">BRO token transactions</div>
-                        </div>
-                        <div className={`bg-dark-800/50 p-4 rounded-lg ${colorScheme.hover} transition-colors`}>
-                            <div className="text-sm text-gray-400 mb-1">DEX Orders</div>
-                            <div className={`text-2xl font-bold bg-gradient-to-r from-green-400 to-green-600 bg-clip-text text-transparent`}>
-                                {formatNumber(tagStats.dex_orders_count)}
-                            </div>
-                            <div className="text-xs text-gray-500 mt-1">Total DEX orders</div>
                         </div>
                     </div>
                 </div>

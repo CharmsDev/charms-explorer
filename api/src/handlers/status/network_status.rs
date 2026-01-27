@@ -1,10 +1,10 @@
 // Simplified network status module that uses the Summary table
 
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
 use serde_json::{Value, json};
 
 use crate::entity::prelude::*;
-use crate::entity::summary;
+use crate::entity::{charms, summary};
 
 /// Gets the current status for a specific network using Summary table
 pub async fn get_network_status(conn: &DatabaseConnection, network_type: &str) -> Value {
@@ -19,6 +19,32 @@ pub async fn get_network_status(conn: &DatabaseConnection, network_type: &str) -
         .filter(summary::Column::Network.eq(db_network))
         .one(conn)
         .await;
+
+    // Get recent charms (last 10)
+    let recent_charms_result = Charms::find()
+        .filter(charms::Column::Network.eq(db_network))
+        .order_by_desc(charms::Column::BlockHeight)
+        .order_by_desc(charms::Column::DateCreated)
+        .limit(10)
+        .all(conn)
+        .await;
+
+    let recent_charms_json: Vec<Value> = match recent_charms_result {
+        Ok(charms_list) => charms_list
+            .into_iter()
+            .map(|c| {
+                let charmid = format!("{}:{}", c.txid, c.vout);
+                json!({
+                    "txid": c.txid,
+                    "charmid": charmid,
+                    "block_height": c.block_height,
+                    "asset_type": c.asset_type,
+                    "app_id": c.app_id
+                })
+            })
+            .collect(),
+        Err(_) => vec![],
+    };
 
     match summary_result {
         Ok(Some(summary)) => {
@@ -62,7 +88,8 @@ pub async fn get_network_status(conn: &DatabaseConnection, network_type: &str) -
                     "total_transactions": summary.total_transactions,
                     "confirmed_transactions": summary.confirmed_transactions,
                     "confirmation_rate": summary.confirmation_rate,
-                    "charms_by_asset_type": asset_types
+                    "charms_by_asset_type": asset_types,
+                    "recent_charms": recent_charms_json
                 },
                 "tag_stats": {
                     "charms_cast_count": summary.charms_cast_count,
