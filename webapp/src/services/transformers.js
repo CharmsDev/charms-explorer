@@ -120,7 +120,13 @@ export const transformCharmData = (charm) => {
         remaining,
         url,
         attributes,
-        rawCharmData: charmData
+        rawCharmData: charmData,
+        // Network and blockchain info
+        network: charm.network,
+        blockchain: charm.blockchain,
+        block_height: charm.block_height,
+        date_created: charm.date_created,
+        app_id: charm.charmid
     };
 
     return result;
