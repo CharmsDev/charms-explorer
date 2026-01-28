@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AssetGrid from '../components/AssetGrid';
 import Pagination from '../components/Pagination';
-import { fetchAssets, fetchAssetsByType, getCharmsCountByType } from '../services/api';
+import { fetchUniqueAssets, getUniqueAssetCounts } from '../services/api';
 
 export default function HomePage() {
     const router = useRouter();
@@ -26,44 +26,17 @@ export default function HomePage() {
         try {
             setIsLoading(true);
 
-            // Fetch charm counts if needed
-            if (counts.total === 0) {
-                const countsData = await getCharmsCountByType(network === 'all' ? null : network);
-                setCounts(countsData);
-            }
-
             // Determine network parameter for API call
             const networkParam = network === 'all' ? null : network;
 
-            // Choose the appropriate API call based on type
-            let response;
-            if (type === 'all') {
-                // Use charms endpoint for "All" tab
-                response = await fetchAssets(page, ITEMS_PER_PAGE, sort, networkParam);
-            } else {
-                // Use assets endpoint for specific types (nft, token, dapp)
-                response = await fetchAssetsByType(type, page, ITEMS_PER_PAGE, sort, networkParam);
-            }
+            // Fetch unique asset counts
+            const countsData = await getUniqueAssetCounts(networkParam);
+            setCounts(countsData);
+
+            // Fetch unique assets (deduplicated by reference)
+            const response = await fetchUniqueAssets(type, page, ITEMS_PER_PAGE, sort, networkParam);
             setAssets(response.assets || []);
-
-            // Force calculation of total pages based on total count
-            const totalItems = response.total || counts.total || response.assets?.length || 0;
-
-            // Update counts with the real total from API
-            if (response.total) {
-                setCounts(prevCounts => ({
-                    ...prevCounts,
-                    total: response.total
-                }));
-            }
-
-            // Make sure we have at least 2 pages if we have more than ITEMS_PER_PAGE items
-            const calculatedTotalPages = Math.max(
-                Math.ceil(totalItems / ITEMS_PER_PAGE),
-                totalItems > ITEMS_PER_PAGE ? 2 : 1
-            );
-
-            setTotalPages(calculatedTotalPages);
+            setTotalPages(response.totalPages || 1);
         } catch (error) {
             console.error('Error loading data:', error);
         } finally {

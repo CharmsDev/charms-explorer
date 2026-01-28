@@ -282,8 +282,13 @@ export default function AssetDetailPage() {
                                                 <div className="font-mono text-sm break-all">{asset.id}</div>
                                             </div>
                                             <div>
-                                                <div className="text-sm text-gray-500 dark:text-gray-400">UTXO</div>
-                                                <div className="font-mono text-sm break-all">{asset.txid}:{asset.outputIndex}</div>
+                                                <div className="text-sm text-gray-500 dark:text-gray-400">Transaction</div>
+                                                <Link 
+                                                    href={`/tx?txid=${asset.txid}`}
+                                                    className="font-mono text-sm break-all text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 hover:underline"
+                                                >
+                                                    {asset.txid}:{asset.outputIndex} →
+                                                </Link>
                                             </div>
                                             {asset.utxoId && (
                                                 <div>

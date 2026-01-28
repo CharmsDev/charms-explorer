@@ -41,12 +41,19 @@ export default function AssetCard({ asset, nftReferenceMap }) {
     const charmType = classifyCharm(asset);
     const isSpecialType = [CHARM_TYPES.BRO_TOKEN, CHARM_TYPES.CHARMS_CAST_DEX, CHARM_TYPES.DEX_ORDER].includes(charmType);
 
-    // Format date
-    const formattedDate = new Date(asset.created_at).toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric'
-    });
+    // Format date - handle missing/invalid dates
+    const formatDate = () => {
+        const dateStr = asset.created_at || asset.timestamp;
+        if (!dateStr) return null;
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return null;
+        return date.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    };
+    const formattedDate = formatDate();
 
     // Get type-specific styling and icon
     const getTypeDetails = () => {
@@ -212,19 +219,19 @@ export default function AssetCard({ asset, nftReferenceMap }) {
 
             {/* Asset Info */}
             <div className="space-y-2">
-                {/* Name - Links to asset detail */}
-                <Link href={assetDetailUrl}>
-                    <h3 className="font-semibold text-white text-lg truncate hover:text-primary-400 transition-colors cursor-pointer">
-                        {getDisplayName()}
-                    </h3>
-                </Link>
-
-                {/* Symbol */}
-                {getDisplaySymbol() && getDisplaySymbol() !== getDisplayName() && (
-                    <p className="text-sm text-dark-400 font-mono">
-                        ${getDisplaySymbol()}
-                    </p>
-                )}
+                {/* Name and Symbol in same line */}
+                <div className="flex items-center justify-between">
+                    <Link href={assetDetailUrl} className="flex-1 min-w-0">
+                        <h3 className="font-semibold text-white text-lg truncate hover:text-primary-400 transition-colors cursor-pointer">
+                            {getDisplayName()}
+                        </h3>
+                    </Link>
+                    {getDisplaySymbol() && (
+                        <span className="ml-2 text-sm text-dark-400 font-mono flex-shrink-0">
+                            ${getDisplaySymbol()}
+                        </span>
+                    )}
+                </div>
 
                 {/* Description */}
                 {getDisplayDescription() && (
@@ -245,7 +252,7 @@ export default function AssetCard({ asset, nftReferenceMap }) {
 
                 {/* Date and Block Info */}
                 <div className="flex items-center justify-between text-xs text-dark-500 pt-2 border-t border-dark-800">
-                    <span>{formattedDate}</span>
+                    {formattedDate && <span>{formattedDate}</span>}
                     {asset.block_height && (
                         <span>Block #{asset.block_height.toLocaleString()}</span>
                     )}
