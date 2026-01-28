@@ -1,14 +1,41 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { classifyCharm, getCharmBadgeProps, CHARM_TYPES } from '@/services/charmClassifier';
+import { getRefNftAppId, getCachedNftReference, fetchNftReferenceMetadata } from '@/services/api/tokenMetadata';
 
-export default function AssetCard({ asset }) {
+export default function AssetCard({ asset, nftReferenceMap }) {
     const [imageError, setImageError] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
+    const [nftMetadata, setNftMetadata] = useState(null);
     const placeholderImage = "/images/logo.png";
+
+    // For tokens (t/...), fetch NFT reference metadata
+    useEffect(() => {
+        const appId = asset.app_id || asset.id;
+        if (appId?.startsWith('t/')) {
+            // First check if passed via prop (preloaded)
+            if (nftReferenceMap) {
+                const nftAppId = getRefNftAppId(appId);
+                if (nftAppId && nftReferenceMap[nftAppId]) {
+                    setNftMetadata(nftReferenceMap[nftAppId]);
+                    return;
+                }
+            }
+            // Then check cache
+            const cached = getCachedNftReference(appId);
+            if (cached) {
+                setNftMetadata(cached);
+            } else {
+                // Fetch if not cached
+                fetchNftReferenceMetadata(appId).then(meta => {
+                    if (meta) setNftMetadata(meta);
+                });
+            }
+        }
+    }, [asset.app_id, asset.id, nftReferenceMap]);
 
     // Classify the charm to get special badges
     const charmType = classifyCharm(asset);
@@ -101,17 +128,42 @@ export default function AssetCard({ asset }) {
         return supply.toFixed(decimals);
     };
 
-    // Get display name with fallback
+    // Get display name with fallback - use NFT reference for tokens
     const getDisplayName = () => {
+        // For tokens, prefer NFT reference metadata
+        if (nftMetadata?.name) return nftMetadata.name;
+        if (nftMetadata?.symbol) return nftMetadata.symbol;
         if (asset.name) return asset.name;
         if (asset.symbol) return asset.symbol;
+        // Fallback: show shortened app_id
+        const appId = asset.app_id || asset.id;
+        if (appId) {
+            const prefix = appId.substring(0, 2);
+            const hash = appId.substring(2, 10);
+            return `Charm ${prefix}${hash}`;
+        }
         return `Asset ${asset.id}`;
     };
 
-    // Get display image with fallback
+    // Get display image with fallback - use NFT reference for tokens
     const getDisplayImage = () => {
-        if (imageError || !asset.image_url) return placeholderImage;
-        return asset.image_url;
+        if (imageError) return placeholderImage;
+        // For tokens, prefer NFT reference image
+        if (nftMetadata?.image_url) return nftMetadata.image_url;
+        if (asset.image_url) return asset.image_url;
+        return placeholderImage;
+    };
+    
+    // Get display description - use NFT reference for tokens
+    const getDisplayDescription = () => {
+        if (nftMetadata?.description) return nftMetadata.description;
+        return asset.description;
+    };
+    
+    // Get display symbol - use NFT reference for tokens
+    const getDisplaySymbol = () => {
+        if (nftMetadata?.symbol) return nftMetadata.symbol;
+        return asset.symbol;
     };
 
     const isPlaceholder = getDisplayImage() === placeholderImage;
@@ -166,16 +218,16 @@ export default function AssetCard({ asset }) {
                 </h3>
 
                 {/* Symbol */}
-                {asset.symbol && asset.symbol !== asset.name && (
+                {getDisplaySymbol() && getDisplaySymbol() !== getDisplayName() && (
                     <p className="text-sm text-dark-400 font-mono">
-                        ${asset.symbol}
+                        ${getDisplaySymbol()}
                     </p>
                 )}
 
                 {/* Description */}
-                {asset.description && (
+                {getDisplayDescription() && (
                     <p className="text-sm text-dark-500 line-clamp-2">
-                        {asset.description}
+                        {getDisplayDescription()}
                     </p>
                 )}
 
