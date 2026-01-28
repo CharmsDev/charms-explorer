@@ -168,24 +168,24 @@ export default function AssetCard({ asset, nftReferenceMap }) {
 
     const isPlaceholder = getDisplayImage() === placeholderImage;
 
-    // Generate detail page URL using app_id or id
-    const detailUrl = `/asset/${encodeURIComponent(asset.app_id || asset.id)}`;
+    // Generate URLs - asset detail and transaction detail
+    const assetDetailUrl = `/asset/${encodeURIComponent(asset.app_id || asset.id)}`;
+    const txDetailUrl = asset.transaction_hash ? `/tx?txid=${asset.transaction_hash}` : null;
 
     return (
-        <Link href={detailUrl} className="block">
-            <div
-                className={`relative bg-dark-900 border ${typeDetails.borderColor} rounded-xl p-4 hover:shadow-xl transition-all duration-300 cursor-pointer group ${typeDetails.bgColor}`}
-                onMouseEnter={() => setIsHovered(true)}
-                onMouseLeave={() => setIsHovered(false)}
-            >
+        <div
+            className={`relative bg-dark-900 border ${typeDetails.borderColor} rounded-xl p-4 hover:shadow-xl transition-all duration-300 group ${typeDetails.bgColor}`}
+            onMouseEnter={() => setIsHovered(true)}
+            onMouseLeave={() => setIsHovered(false)}
+        >
             {/* Type Badge */}
-            <div className={`absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r ${typeDetails.color} text-white shadow-lg`}>
+            <div className={`absolute top-3 right-3 px-2 py-1 rounded-full text-xs font-medium bg-gradient-to-r ${typeDetails.color} text-white shadow-lg z-10`}>
                 <span className="mr-1">{typeDetails.icon}</span>
                 {typeDetails.label}
             </div>
 
-            {/* Asset Image */}
-            <div className="relative mb-4">
+            {/* Asset Image - Links to asset detail */}
+            <Link href={assetDetailUrl} className="block relative mb-4 cursor-pointer">
                 <div className="aspect-square rounded-lg overflow-hidden bg-dark-800">
                     <img
                         src={getDisplayImage()}
@@ -208,14 +208,16 @@ export default function AssetCard({ asset, nftReferenceMap }) {
                 <div className="absolute bottom-2 left-2 px-2 py-1 bg-dark-800/90 backdrop-blur-sm rounded-md text-xs text-dark-300">
                     {asset.network}
                 </div>
-            </div>
+            </Link>
 
             {/* Asset Info */}
             <div className="space-y-2">
-                {/* Name */}
-                <h3 className="font-semibold text-white text-lg truncate group-hover:text-primary-400 transition-colors">
-                    {getDisplayName()}
-                </h3>
+                {/* Name - Links to asset detail */}
+                <Link href={assetDetailUrl}>
+                    <h3 className="font-semibold text-white text-lg truncate hover:text-primary-400 transition-colors cursor-pointer">
+                        {getDisplayName()}
+                    </h3>
+                </Link>
 
                 {/* Symbol */}
                 {getDisplaySymbol() && getDisplaySymbol() !== getDisplayName() && (
@@ -258,11 +260,21 @@ export default function AssetCard({ asset, nftReferenceMap }) {
                 )}
             </div>
 
+            {/* Transaction Link */}
+            {txDetailUrl && (
+                <Link 
+                    href={txDetailUrl}
+                    className="mt-2 flex items-center text-xs text-dark-500 hover:text-primary-400 transition-colors"
+                >
+                    <span className="mr-1">📜</span>
+                    <span className="font-mono truncate">TX: {asset.transaction_hash?.substring(0, 12)}...</span>
+                </Link>
+            )}
+
             {/* Hover Effect Overlay */}
             {isHovered && (
                 <div className="absolute inset-0 bg-gradient-to-br from-primary-500/10 to-transparent rounded-xl pointer-events-none" />
             )}
         </div>
-        </Link>
     );
 }
