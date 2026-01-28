@@ -23,8 +23,8 @@ use crate::domain::models::Charm;
 use crate::domain::services::charm_queue_service::CharmQueueService;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, CharmRepository, SpellRepository, StatsHoldersRepository,
-}; // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository
+    AssetRepository, CharmRepository, DexOrdersRepository, SpellRepository, StatsHoldersRepository,
+}; // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository, [RJJ-DEX] Added DexOrdersRepository
 
 use detection::CharmDetector;
 use persistence::CharmPersistence;
@@ -34,6 +34,7 @@ use spent_tracking::SpentTracker; // [RJJ-S01]
 /// Main service for charm detection, processing and storage
 /// [RJJ-S01] Now includes SpellRepository for spell-first architecture
 /// [RJJ-STATS-HOLDERS] Now includes StatsHoldersRepository for holder statistics
+/// [RJJ-DEX] Now includes DexOrdersRepository for Cast DEX order tracking
 #[derive(Clone)]
 pub struct CharmService {
     bitcoin_client: BitcoinClient,
@@ -41,6 +42,7 @@ pub struct CharmService {
     asset_repository: AssetRepository,
     spell_repository: SpellRepository, // [RJJ-S01] New: stores spells before charms
     stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS] New: holder statistics
+    dex_orders_repository: DexOrdersRepository, // [RJJ-DEX] New: Cast DEX order tracking
     charm_queue_service: Option<CharmQueueService>,
 }
 
@@ -56,12 +58,14 @@ impl CharmService {
     /// Creates a new CharmService with required dependencies
     /// [RJJ-S01] Now requires SpellRepository
     /// [RJJ-STATS-HOLDERS] Now requires StatsHoldersRepository
+    /// [RJJ-DEX] Now requires DexOrdersRepository
     pub fn new(
         bitcoin_client: BitcoinClient,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
         spell_repository: SpellRepository, // [RJJ-S01]
         stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
+        dex_orders_repository: DexOrdersRepository, // [RJJ-DEX]
     ) -> Self {
         Self {
             bitcoin_client,
@@ -69,6 +73,7 @@ impl CharmService {
             asset_repository,
             spell_repository,         // [RJJ-S01]
             stats_holders_repository, // [RJJ-STATS-HOLDERS]
+            dex_orders_repository,    // [RJJ-DEX]
             charm_queue_service: None,
         }
     }
@@ -76,12 +81,14 @@ impl CharmService {
     /// Creates a new CharmService with async queue support
     /// [RJJ-S01] Now requires SpellRepository
     /// [RJJ-STATS-HOLDERS] Now requires StatsHoldersRepository
+    /// [RJJ-DEX] Now requires DexOrdersRepository
     pub fn new_with_queue(
         bitcoin_client: BitcoinClient,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
         spell_repository: SpellRepository, // [RJJ-S01]
         stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
+        dex_orders_repository: DexOrdersRepository, // [RJJ-DEX]
         charm_queue_service: CharmQueueService,
     ) -> Self {
         Self {
@@ -90,6 +97,7 @@ impl CharmService {
             asset_repository,
             spell_repository,         // [RJJ-S01]
             stats_holders_repository, // [RJJ-STATS-HOLDERS]
+            dex_orders_repository,    // [RJJ-DEX]
             charm_queue_service: Some(charm_queue_service),
         }
     }
@@ -177,7 +185,8 @@ impl CharmService {
             &self.bitcoin_client,
             &self.charm_repository,
             &self.charm_queue_service,
-        );
+        )
+        .with_dex_orders_repository(&self.dex_orders_repository); // [RJJ-DEX]
         detector
             .detect_and_process_charm(txid, block_height, block_hash, tx_pos)
             .await
@@ -216,7 +225,8 @@ impl CharmService {
             &self.bitcoin_client,
             &self.charm_repository,
             &self.charm_queue_service,
-        );
+        )
+        .with_dex_orders_repository(&self.dex_orders_repository); // [RJJ-DEX]
         detector
             .detect_from_hex(
                 txid,

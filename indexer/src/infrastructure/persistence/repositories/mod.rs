@@ -19,6 +19,7 @@ pub use transaction_repository::TransactionRepository; // [RJJ-DEX]
 /// Collection of all repositories
 /// [RJJ-S01] Added spell repository
 /// [RJJ-STATS-HOLDERS] Added stats_holders repository
+/// [RJJ-DEX] Added dex_orders repository
 pub struct Repositories {
     /// Repository for asset operations
     pub asset: AssetRepository,
@@ -26,6 +27,8 @@ pub struct Repositories {
     pub bookmark: BookmarkRepository,
     /// Repository for charm operations
     pub charm: CharmRepository,
+    /// Repository for DEX orders [RJJ-DEX]
+    pub dex_orders: DexOrdersRepository,
     /// Repository for spell operations [RJJ-S01]
     pub spell: SpellRepository,
     /// Repository for holder statistics [RJJ-STATS-HOLDERS]
@@ -40,10 +43,12 @@ impl Repositories {
     /// Create a new Repositories instance
     /// [RJJ-S01] Now includes spell repository
     /// [RJJ-STATS-HOLDERS] Now includes stats_holders repository
+    /// [RJJ-DEX] Now includes dex_orders repository
     pub fn new(
         asset: AssetRepository,
         bookmark: BookmarkRepository,
         charm: CharmRepository,
+        dex_orders: DexOrdersRepository,       // [RJJ-DEX]
         spell: SpellRepository,                // [RJJ-S01]
         stats_holders: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
         summary: SummaryRepository,
@@ -53,6 +58,7 @@ impl Repositories {
             asset,
             bookmark,
             charm,
+            dex_orders,    // [RJJ-DEX]
             spell,         // [RJJ-S01]
             stats_holders, // [RJJ-STATS-HOLDERS]
             summary,

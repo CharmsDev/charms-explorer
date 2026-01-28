@@ -5,16 +5,16 @@
 # Development server
 makeDev:
 	@echo "Starting database..."
-	docker-compose up -d
+	/usr/local/bin/docker compose up -d
 
 # Alias for makeDev
 dev: makeDev
 
 start:
-	docker-compose up -d
+	/usr/local/bin/docker compose up -d
 
 stop:
-	docker-compose down
+	/usr/local/bin/docker compose down
 
 migrate:
 	cargo run -- migrate

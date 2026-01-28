@@ -19,10 +19,10 @@ export default function RootLayout({ children }) {
                     <Header />
 
                     {/* Background blur for header */}
-                    <div className="h-24 fixed top-0 left-0 right-0 bg-dark-900/80 backdrop-blur-md z-40"></div>
+                    <div className="h-16 fixed top-0 left-0 right-0 bg-dark-900/80 backdrop-blur-md z-40"></div>
 
                     {/* Actual spacer to create space in document flow */}
-                    <div className="h-24"></div>
+                    <div className="h-16"></div>
 
                     <main className="relative z-10">
                         {children}

@@ -8,6 +8,22 @@ import { useSearchParams } from 'next/navigation';
 import { getAssetById } from '../../services/api';
 import HoldersTab from '../../components/HoldersTab'; // [RJJ-STATS-HOLDERS]
 
+// Helper to format JSON with byte arrays converted to hex strings
+const formatSpellData = (data) => {
+    if (!data) return '';
+    
+    const replacer = (key, value) => {
+        // Handle byte arrays - convert to compact hex
+        if (Array.isArray(value) && value.length > 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
+            const hex = value.map(b => b.toString(16).padStart(2, '0')).join('');
+            return `[hex:${hex}]`;
+        }
+        return value;
+    };
+    
+    return JSON.stringify(data, replacer, 2);
+};
+
 // Simple function to attempt hash verification
 // This is a simplified approach that just checks if verification is possible
 // and returns an appropriate status message
@@ -313,9 +329,10 @@ export default function AssetDetailPage() {
                                         <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
                                             <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                                                 Raw spell data that generated this {asset.type}
+                                                <span className="ml-2 text-xs">(byte arrays shown as hex)</span>
                                             </div>
-                                            <pre className="bg-gray-900 text-green-400 p-4 rounded overflow-x-auto text-xs">
-                                                {JSON.stringify(asset.data, null, 2)}
+                                            <pre className="bg-gray-900 text-green-400 p-4 rounded overflow-x-auto max-h-[500px] overflow-y-auto text-xs break-words whitespace-pre-wrap">
+                                                {formatSpellData(asset.data)}
                                             </pre>
                                         </div>
                                     </div>

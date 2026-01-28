@@ -9,13 +9,14 @@ use crate::domain::services::charm_queue_service::CharmQueueService;
 use crate::domain::services::dex;
 use crate::domain::services::native_charm_parser::NativeCharmParser;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
-use crate::infrastructure::persistence::repositories::CharmRepository;
+use crate::infrastructure::persistence::repositories::{CharmRepository, DexOrdersRepository};
 
 /// Handles charm detection from Bitcoin transactions
 pub struct CharmDetector<'a> {
     bitcoin_client: &'a BitcoinClient,
     charm_repository: &'a CharmRepository,
     charm_queue_service: &'a Option<CharmQueueService>,
+    dex_orders_repository: Option<&'a DexOrdersRepository>,
 }
 
 impl<'a> CharmDetector<'a> {
@@ -28,7 +29,14 @@ impl<'a> CharmDetector<'a> {
             bitcoin_client,
             charm_repository,
             charm_queue_service,
+            dex_orders_repository: None,
         }
+    }
+
+    /// Set the DEX orders repository for saving detected orders
+    pub fn with_dex_orders_repository(mut self, repo: &'a DexOrdersRepository) -> Self {
+        self.dex_orders_repository = Some(repo);
+        self
     }
 
     /// Detects and processes a potential charm transaction using native parsing
@@ -211,11 +219,46 @@ impl<'a> CharmDetector<'a> {
         // Detect DEX operations (Charms Cast)
         let dex_result = dex::detect_dex_operation(&charm_json);
         if let Some(ref result) = dex_result {
+            // Add operation-specific tag
             tag_list.push("charms-cast".to_string());
+            tag_list.push(result.operation.to_tag().to_string());
+
             crate::utils::logging::log_info(&format!(
                 "[{}] 🏷️ Block {}: Charms Cast DEX detected for tx {}: {:?}",
                 network, block_height, txid, result.operation
             ));
+
+            // Save DEX order to database if repository is available
+            if let Some(dex_repo) = &self.dex_orders_repository {
+                if let Some(ref order) = result.order {
+                    match dex_repo
+                        .save_order(
+                            txid,
+                            0, // vout - DEX orders are in output 0
+                            Some(block_height),
+                            order,
+                            &result.operation,
+                            "charms-cast",
+                            &blockchain,
+                            &network,
+                        )
+                        .await
+                    {
+                        Ok(_) => {
+                            crate::utils::logging::log_info(&format!(
+                                "[{}] 💾 Block {}: Saved DEX order for tx {}: {:?} {:?}",
+                                network, block_height, txid, order.side, result.operation
+                            ));
+                        }
+                        Err(e) => {
+                            crate::utils::logging::log_error(&format!(
+                                "[{}] ❌ Block {}: Failed to save DEX order for tx {}: {}",
+                                network, block_height, txid, e
+                            ));
+                        }
+                    }
+                }
+            }
         }
 
         // Detect $BRO token

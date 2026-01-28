@@ -6,7 +6,7 @@ use charms_indexer::utils::logging;
 #[tokio::main]
 async fn main() {
     logging::init_logger();
-    
+
     // Log version information for deployment tracking
     let _version = env!("CARGO_PKG_VERSION");
 
@@ -16,34 +16,32 @@ async fn main() {
 
     // Network configuration logging
     if config.indexer.enable_bitcoin_testnet4 {
-        if let Some(_btc_config) = config.get_bitcoin_config("testnet4") {
-        }
+        if let Some(_btc_config) = config.get_bitcoin_config("testnet4") {}
     }
 
     if config.indexer.enable_bitcoin_mainnet {
-        if let Some(_btc_config) = config.get_bitcoin_config("mainnet") {
-        }
+        if let Some(_btc_config) = config.get_bitcoin_config("mainnet") {}
     }
 
-    if config.indexer.enable_cardano {
-    }
+    if config.indexer.enable_cardano {}
 
     // Database connection and processor initialization
     match DbPool::new(&config).await {
         Ok(db_pool) => {
-
             let repositories = RepositoryFactory::create_repositories(&db_pool);
 
             let mut network_manager = NetworkManager::new(config.clone());
 
             // [RJJ-S01] Now includes spell repository for spell-first architecture
             // [RJJ-STATS-HOLDERS] Now includes stats_holders repository
+            // [RJJ-DEX] Now includes dex_orders repository
             match network_manager
                 .initialize(
                     repositories.charm,
                     repositories.asset,
-                    repositories.spell, // [RJJ-S01]
+                    repositories.spell,         // [RJJ-S01]
                     repositories.stats_holders, // [RJJ-STATS-HOLDERS]
+                    repositories.dex_orders,    // [RJJ-DEX]
                     repositories.transaction,
                     repositories.bookmark,
                     repositories.summary,

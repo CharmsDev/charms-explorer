@@ -2,7 +2,15 @@ use sea_orm::DatabaseConnection;
 
 use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, BookmarkRepository, CharmRepository, Repositories, SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository, // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository
+    AssetRepository,
+    BookmarkRepository,
+    CharmRepository,
+    DexOrdersRepository,
+    Repositories,
+    SpellRepository,
+    StatsHoldersRepository,
+    SummaryRepository,
+    TransactionRepository, // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository, [RJJ-DEX] Added DexOrdersRepository
 };
 
 /// Factory for creating repositories
@@ -12,6 +20,7 @@ impl RepositoryFactory {
     /// Create all repositories
     /// [RJJ-S01] Now includes spell repository
     /// [RJJ-STATS-HOLDERS] Now includes stats_holders repository
+    /// [RJJ-DEX] Now includes dex_orders repository
     pub fn create_repositories(db_pool: &DbPool) -> Repositories {
         let conn = db_pool.get_connection().clone();
 
@@ -19,7 +28,8 @@ impl RepositoryFactory {
             Self::create_asset_repository(conn.clone()),
             Self::create_bookmark_repository(conn.clone()),
             Self::create_charm_repository(conn.clone()),
-            Self::create_spell_repository(conn.clone()), // [RJJ-S01]
+            Self::create_dex_orders_repository(conn.clone()), // [RJJ-DEX]
+            Self::create_spell_repository(conn.clone()),      // [RJJ-S01]
             Self::create_stats_holders_repository(conn.clone()), // [RJJ-STATS-HOLDERS]
             Self::create_summary_repository(conn.clone()),
             Self::create_transaction_repository(conn),
@@ -61,5 +71,11 @@ impl RepositoryFactory {
     /// [RJJ-STATS-HOLDERS] New repository for holder statistics
     pub fn create_stats_holders_repository(conn: DatabaseConnection) -> StatsHoldersRepository {
         StatsHoldersRepository::new(conn)
+    }
+
+    /// Create a dex_orders repository
+    /// [RJJ-DEX] New repository for Cast DEX order tracking
+    pub fn create_dex_orders_repository(conn: DatabaseConnection) -> DexOrdersRepository {
+        DexOrdersRepository::new(conn)
     }
 }

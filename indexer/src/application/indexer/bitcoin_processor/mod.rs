@@ -142,12 +142,25 @@ impl BitcoinProcessor {
         ));
 
         if self.current_height > latest_height {
-            logging::log_info(&format!(
-                "[{}] ⏸️ Current height {} is ahead of latest {}, waiting for new blocks...",
-                self.network_id().name,
-                self.current_height,
-                latest_height
-            ));
+            // Only log once every 30 seconds to avoid spam
+            static LAST_WAIT_LOG: std::sync::atomic::AtomicU64 =
+                std::sync::atomic::AtomicU64::new(0);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs();
+            let last = LAST_WAIT_LOG.load(std::sync::atomic::Ordering::Relaxed);
+            if now - last >= 30 {
+                LAST_WAIT_LOG.store(now, std::sync::atomic::Ordering::Relaxed);
+                logging::log_info(&format!(
+                    "[{}] ⏸️ Waiting for new blocks (current: {}, latest: {})...",
+                    self.network_id().name,
+                    self.current_height,
+                    latest_height
+                ));
+            }
+            // Sleep longer when waiting for new blocks (10 seconds instead of 100ms)
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
             return Ok(());
         }
 

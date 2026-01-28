@@ -102,16 +102,41 @@ const CHARMS_CAST_VK_PATTERNS = [
 export function classifyCharm(charm) {
     if (!charm) return CHARM_TYPES.OTHER;
 
-    const { tags, app_id, asset_type, name } = charm;
+    const { tags, app_id, asset_type, name, data } = charm;
 
     // Check tags first (most reliable)
     if (tags) {
-        const tagLower = tags.toLowerCase();
+        const tagLower = typeof tags === 'string' ? tags.toLowerCase() : '';
         if (tagLower.includes('charms-cast') || tagLower.includes('dex')) {
             return CHARM_TYPES.CHARMS_CAST_DEX;
         }
         if (tagLower.includes('bro')) {
             return CHARM_TYPES.BRO_TOKEN;
+        }
+    }
+
+    // Check for DEX data in the charm's data field (from indexer)
+    if (data) {
+        // Check for charms-cast tag in native_data
+        const nativeData = data?.native_data || data?.data?.native_data;
+        if (nativeData) {
+            // Check app_public_inputs for DEX app (b/ prefix)
+            const appInputs = nativeData?.app_public_inputs;
+            if (appInputs) {
+                const appInputsStr = JSON.stringify(appInputs);
+                if (appInputsStr.includes('"b/')) {
+                    return CHARM_TYPES.CHARMS_CAST_DEX;
+                }
+            }
+        }
+        
+        // Check for tags in data
+        const dataTags = data?.tags;
+        if (dataTags) {
+            const tagsStr = typeof dataTags === 'string' ? dataTags : JSON.stringify(dataTags);
+            if (tagsStr.toLowerCase().includes('charms-cast')) {
+                return CHARM_TYPES.CHARMS_CAST_DEX;
+            }
         }
     }
 
