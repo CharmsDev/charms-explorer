@@ -262,6 +262,37 @@ const classificationRules = [
         type: TRANSACTION_TYPES.DEX_PARTIAL_FILL
     },
     
+    // Charms Cast DEX detection by app_id prefix (b/)
+    {
+        name: 'Charms Cast DEX Order',
+        priority: 15,
+        test: (tx, spellData) => {
+            const appId = tx.app_id || tx.charmid || '';
+            // Charms Cast DEX orders have b/ prefix
+            if (appId.startsWith('b/')) {
+                return true;
+            }
+            // Check for b/ in data
+            const data = tx.data?.native_data || tx.native_data || tx.data;
+            if (data) {
+                const appInputs = data?.app_public_inputs;
+                if (appInputs) {
+                    const appInputsStr = JSON.stringify(appInputs);
+                    if (appInputsStr.includes('"b/')) {
+                        return true;
+                    }
+                }
+            }
+            // Check tags for charms-cast
+            const tags = tx.tags || '';
+            if (tags.toLowerCase().includes('charms-cast') || tags.toLowerCase().includes('dex')) {
+                return true;
+            }
+            return false;
+        },
+        type: TRANSACTION_TYPES.DEX_CREATE_ASK
+    },
+    
     // BRO specific rules
     {
         name: 'BRO Mining',
