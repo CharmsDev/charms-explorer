@@ -47,13 +47,15 @@ export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network
         let url = `${ENDPOINTS.CHARMS}`;
         const params = new URLSearchParams();
 
+        params.append('page', page.toString());
+        params.append('limit', limit.toString());
+        params.append('sort', sort);
+
         if (network) {
             params.append('network', network);
         }
 
-        if (params.toString()) {
-            url += `?${params.toString()}`;
-        }
+        url += `?${params.toString()}`;
 
         const response = await fetch(url);
 
