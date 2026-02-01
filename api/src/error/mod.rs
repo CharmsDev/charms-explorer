@@ -1,7 +1,7 @@
 use axum::{
+    Json,
     http::StatusCode,
     response::{IntoResponse, Response},
-    Json,
 };
 use serde_json::json;
 use thiserror::Error;
@@ -15,8 +15,10 @@ pub enum ExplorerError {
     #[error("Not found: {0}")]
     NotFound(String),
     #[error("Invalid request: {0}")]
+    #[allow(dead_code)] // Reserved for validation errors
     InvalidRequest(String),
     #[error("Internal error: {0}")]
+    #[allow(dead_code)] // Reserved for general errors
     InternalError(String),
 }
 

@@ -14,8 +14,11 @@ pub struct ApiConfig {
     pub database_url: String,
 
     // Network configuration
+    #[allow(dead_code)] // Reserved for network switching
     pub enable_bitcoin_testnet4: bool,
+    #[allow(dead_code)] // Reserved for network switching
     pub enable_bitcoin_mainnet: bool,
+    #[allow(dead_code)] // Reserved for network switching
     pub enable_cardano: bool,
 
     // Bitcoin Testnet4 RPC configuration
@@ -25,9 +28,13 @@ pub struct ApiConfig {
     pub bitcoin_testnet4_rpc_password: String,
 
     // Bitcoin Mainnet RPC configuration
+    #[allow(dead_code)] // Reserved for mainnet integration
     pub bitcoin_mainnet_rpc_host: String,
+    #[allow(dead_code)] // Reserved for mainnet integration
     pub bitcoin_mainnet_rpc_port: String,
+    #[allow(dead_code)] // Reserved for mainnet integration
     pub bitcoin_mainnet_rpc_username: String,
+    #[allow(dead_code)] // Reserved for mainnet integration
     pub bitcoin_mainnet_rpc_password: String,
 }
 

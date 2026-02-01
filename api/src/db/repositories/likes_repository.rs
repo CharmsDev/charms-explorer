@@ -1,6 +1,4 @@
-use sea_orm::{
-    ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter, PaginatorTrait,
-};
+use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter};
 
 use crate::entity::{likes, prelude::Likes};
 
@@ -62,7 +60,7 @@ impl LikesRepository {
             .filter(likes::Column::CharmId.eq(charm_id))
             .count(&self.db)
             .await?;
-        
+
         Ok(count as i64)
     }
 
@@ -78,6 +76,7 @@ impl LikesRepository {
     }
 
     /// Gets all likes for a list of charms
+    #[allow(dead_code)] // Reserved for batch operations
     pub async fn get_likes_for_charms(
         &self,
         charm_ids: &[String],

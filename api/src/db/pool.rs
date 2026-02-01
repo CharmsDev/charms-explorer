@@ -37,6 +37,7 @@ impl DbPool {
     }
 
     /// Returns a reference to the underlying database connection
+    #[allow(dead_code)] // Reserved for direct DB access
     pub fn get_connection(&self) -> &DatabaseConnection {
         &self.pool
     }

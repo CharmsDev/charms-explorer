@@ -9,6 +9,29 @@ use std::collections::HashMap;
 use crate::handlers::AppState;
 use crate::services::asset_service::AssetService;
 
+/// Normalize image value - handles both URLs and base64 data
+/// People sometimes put URLs in the 'image' field instead of 'image_url'
+fn normalize_image_value(value: &str) -> String {
+    let trimmed = value.trim();
+
+    // Already a data URI (base64), HTTP/HTTPS URL, or IPFS - return as-is
+    if trimmed.starts_with("data:")
+        || trimmed.starts_with("http://")
+        || trimmed.starts_with("https://")
+        || trimmed.starts_with("ipfs://")
+    {
+        return trimmed.to_string();
+    }
+
+    // If it looks like raw base64 without prefix (long string, no spaces/slashes)
+    if trimmed.len() > 100 && !trimmed.contains(' ') && !trimmed.contains('/') {
+        return format!("data:image/png;base64,{}", trimmed);
+    }
+
+    // Unknown format - return as-is
+    trimmed.to_string()
+}
+
 /// Extract asset metadata from charm JSONB data field
 fn extract_asset_metadata_from_charm(
     charm_data: &serde_json::Value,
@@ -56,7 +79,7 @@ fn extract_asset_metadata_from_charm(
                                             .get("image")
                                             .or_else(|| output_obj.get("image_url"))
                                             .and_then(|v| v.as_str())
-                                            .map(|s| s.to_string());
+                                            .map(|s| normalize_image_value(s));
                                     }
                                 }
                             }
@@ -196,7 +219,7 @@ pub async fn get_assets(
             Ok(Json(response))
         }
         Err(e) => {
-            eprintln!("Error fetching assets: {:?}", e);
+            tracing::error!("Error fetching assets: {:?}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -211,7 +234,56 @@ pub async fn get_asset_counts(
     match asset_service.get_asset_counts().await {
         Ok(counts) => Ok(Json(counts)),
         Err(e) => {
-            eprintln!("Error fetching asset counts: {:?}", e);
+            tracing::error!("Error fetching asset counts: {:?}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// Response for reference NFT metadata endpoint
+#[derive(Debug, Serialize)]
+pub struct ReferenceNftResponse {
+    pub app_id: String,
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub decimals: i16,
+}
+
+/// Get reference NFT metadata by hash (for token image lookup)
+/// This endpoint is used by the frontend to fetch the image from the reference NFT
+/// when displaying a token, avoiding storing duplicate images in the database
+pub async fn get_reference_nft_by_hash(
+    axum::extract::Path(hash): axum::extract::Path<String>,
+    State(state): State<AppState>,
+) -> Result<Json<ReferenceNftResponse>, StatusCode> {
+    let asset_service = AssetService::new(state.repositories.asset_repository.clone());
+
+    match asset_service.get_reference_nft_by_hash(&hash).await {
+        Ok(Some(nft)) => {
+            let mut image_url = nft.image_url;
+
+            // If no image_url in asset, try to extract from charm data
+            if image_url.is_none() {
+                if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&nft.txid).await {
+                    let (_, _, _, charm_image_url) = extract_asset_metadata_from_charm(&charm.data);
+                    image_url = charm_image_url;
+                }
+            }
+
+            Ok(Json(ReferenceNftResponse {
+                app_id: nft.app_id,
+                name: nft.name,
+                symbol: nft.symbol,
+                description: nft.description,
+                image_url,
+                decimals: nft.decimals,
+            }))
+        }
+        Ok(None) => Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Error fetching reference NFT by hash: {:?}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
@@ -237,9 +309,11 @@ pub async fn get_asset_by_id(
             let mut symbol = asset.symbol;
             let mut description = asset.description;
             let mut image_url = asset.image_url;
-            let decimals = asset.decimals;
+            let _decimals = asset.decimals; // Keep for potential future use
 
             // [RJJ-TOKEN-METADATA] If this is a token, try to inherit metadata from reference NFT
+            // Also get total_supply from the primary token record (:0)
+            let mut total_supply = asset.total_supply;
             if asset.app_id.starts_with("t/") {
                 // Convert t/HASH/... to n/HASH/... to find reference NFT
                 let nft_app_id = asset.app_id.replacen("t/", "n/", 1);
@@ -252,6 +326,21 @@ pub async fn get_asset_by_id(
                     description = description.or(nft_asset.description);
                     image_url = image_url.or(nft_asset.image_url);
                     // decimals is not Option, so we keep the asset's decimals
+                }
+
+                // [RJJ-TOTAL-SUPPLY] Get max total_supply from all records of this token
+                // Different outputs (:0, :1, etc.) may have different supply values
+                if let Some(pos) = asset.app_id.rfind(':') {
+                    let base_app_id = &asset.app_id[..pos];
+                    // Query all assets with this base app_id and get max total_supply
+                    if let Ok(max_supply) = asset_service
+                        .get_max_total_supply_by_app_id_prefix(base_app_id)
+                        .await
+                    {
+                        if max_supply.is_some() {
+                            total_supply = max_supply;
+                        }
+                    }
                 }
             }
 
@@ -277,9 +366,7 @@ pub async fn get_asset_by_id(
                 symbol,
                 description,
                 image_url,
-                total_supply: asset
-                    .total_supply
-                    .map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
+                total_supply: total_supply.map(|d| d.to_string().parse::<i64>().unwrap_or(0)),
                 decimals: asset.decimals, // [RJJ-DECIMALS]
                 network: asset.network,
                 created_at: asset.created_at,
@@ -292,7 +379,7 @@ pub async fn get_asset_by_id(
         }
         Ok(None) => Err(StatusCode::NOT_FOUND),
         Err(e) => {
-            eprintln!("Error fetching asset by ID: {:?}", e);
+            tracing::error!("Error fetching asset by ID: {:?}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }

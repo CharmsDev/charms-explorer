@@ -1,6 +1,5 @@
 // [RJJ-STATS-HOLDERS] Stats holders service - Business logic for holder statistics
 
-use crate::db::DbError;
 use crate::error::ExplorerResult;
 use crate::handlers::AppState;
 use serde::Serialize;
@@ -28,11 +27,31 @@ pub async fn get_holders_by_app_id(
     state: &AppState,
     app_id: &str,
 ) -> ExplorerResult<HoldersResponse> {
+    // [RJJ-TOKEN-METADATA] Convert token app_id (t/) to NFT app_id (n/) for lookup
+    // Stats are consolidated under NFT app_ids in the database
+    let lookup_app_id = if app_id.starts_with("t/") {
+        app_id.replacen("t/", "n/", 1)
+    } else {
+        app_id.to_string()
+    };
+
+    // Remove the :N suffix for broader matching (stats are per-asset, not per-output)
+    let base_app_id = if let Some(pos) = lookup_app_id.rfind(':') {
+        &lookup_app_id[..pos]
+    } else {
+        &lookup_app_id
+    };
+
     // Get holders from database
-    let holders = match state.repositories.stats_holders.get_holders_by_app_id(app_id).await {
+    let holders = match state
+        .repositories
+        .stats_holders
+        .get_holders_by_app_id(base_app_id)
+        .await
+    {
         Ok(result) => result,
         Err(err) => {
-            eprintln!("Database error in get_holders_by_app_id: {:?}", err);
+            tracing::warn!("Database error in get_holders_by_app_id: {:?}", err);
             return Ok(HoldersResponse {
                 app_id: app_id.to_string(),
                 total_holders: 0,

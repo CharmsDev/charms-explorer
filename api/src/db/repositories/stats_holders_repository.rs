@@ -13,12 +13,15 @@ impl StatsHoldersRepository {
     }
 
     /// Get holders for a specific app_id, ordered by total_amount DESC
+    /// [RJJ-STATS-HOLDERS] Uses starts_with to match app_ids with suffixes like :0, :1
     pub async fn get_holders_by_app_id(
         &self,
         app_id: &str,
     ) -> Result<Vec<stats_holders::Model>, DbError> {
+        // Match app_ids that start with the given prefix (handles :0, :1 suffixes)
+        let pattern = format!("{}%", app_id);
         stats_holders::Entity::find()
-            .filter(stats_holders::Column::AppId.eq(app_id))
+            .filter(stats_holders::Column::AppId.starts_with(&pattern[..pattern.len() - 1]))
             .order_by_desc(stats_holders::Column::TotalAmount)
             .all(&self.conn)
             .await
@@ -26,6 +29,7 @@ impl StatsHoldersRepository {
     }
 
     /// Get holder info for a specific (app_id, address) combination
+    #[allow(dead_code)] // Used by upsert_holder
     pub async fn get_holder(
         &self,
         app_id: &str,
@@ -40,6 +44,7 @@ impl StatsHoldersRepository {
     }
 
     /// Upsert holder statistics (insert or update)
+    #[allow(dead_code)] // Reserved for indexer integration
     pub async fn upsert_holder(
         &self,
         app_id: &str,
@@ -79,11 +84,8 @@ impl StatsHoldersRepository {
     }
 
     /// Delete holder record (when total_amount reaches 0)
-    pub async fn delete_holder(
-        &self,
-        app_id: &str,
-        address: &str,
-    ) -> Result<(), DbError> {
+    #[allow(dead_code)] // Reserved for indexer integration
+    pub async fn delete_holder(&self, app_id: &str, address: &str) -> Result<(), DbError> {
         stats_holders::Entity::delete_many()
             .filter(stats_holders::Column::AppId.eq(app_id))
             .filter(stats_holders::Column::Address.eq(address))
@@ -93,6 +95,7 @@ impl StatsHoldersRepository {
     }
 
     /// Get total holder count for an app_id
+    #[allow(dead_code)] // Reserved for future use
     pub async fn get_holder_count(&self, app_id: &str) -> Result<u64, DbError> {
         let count = stats_holders::Entity::find()
             .filter(stats_holders::Column::AppId.eq(app_id))

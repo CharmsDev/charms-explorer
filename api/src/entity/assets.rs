@@ -1,6 +1,6 @@
+use rust_decimal::Decimal;
 use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
-use rust_decimal::Decimal;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Eq, Serialize, Deserialize)]
 #[sea_orm(table_name = "assets")]
@@ -25,6 +25,7 @@ pub struct Model {
     pub image_url: Option<String>,
     pub total_supply: Option<Decimal>,
     pub decimals: i16, // [RJJ-DECIMALS] Dynamic decimal precision (default: 8)
+    pub is_reference_nft: bool, // True if this NFT is a reference for tokens (should be hidden from NFT list)
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -19,6 +19,7 @@ impl AssetRepository {
     }
 
     /// Find assets with pagination and optional filtering
+    /// Note: Reference NFTs (is_reference_nft = true) are excluded from NFT listings
     pub async fn find_paginated(
         &self,
         asset_type: Option<&str>,
@@ -30,6 +31,11 @@ impl AssetRepository {
 
         if let Some(asset_type) = asset_type {
             query = query.filter(Column::AssetType.eq(asset_type));
+
+            // For NFT listings, exclude reference NFTs (they are hidden, only used for token metadata)
+            if asset_type == "nft" {
+                query = query.filter(Column::IsReferenceNft.eq(false));
+            }
         }
 
         if let Some(network) = network {
@@ -47,6 +53,7 @@ impl AssetRepository {
     }
 
     /// Count assets with optional filtering
+    /// Note: Reference NFTs are excluded from NFT counts
     pub async fn count_assets(
         &self,
         asset_type: Option<&str>,
@@ -56,6 +63,11 @@ impl AssetRepository {
 
         if let Some(asset_type) = asset_type {
             query = query.filter(Column::AssetType.eq(asset_type));
+
+            // For NFT counts, exclude reference NFTs
+            if asset_type == "nft" {
+                query = query.filter(Column::IsReferenceNft.eq(false));
+            }
         }
 
         if let Some(network) = network {
@@ -100,6 +112,7 @@ impl AssetRepository {
     }
 
     /// Find assets by asset type
+    #[allow(dead_code)] // Available via AssetService
     pub async fn find_by_asset_type(
         &self,
         asset_type: &str,
@@ -113,6 +126,7 @@ impl AssetRepository {
     }
 
     /// Find assets by network
+    #[allow(dead_code)] // Available via AssetService
     pub async fn find_by_network(
         &self,
         network: &str,
@@ -126,6 +140,7 @@ impl AssetRepository {
     }
 
     /// Get all assets
+    #[allow(dead_code)] // Reserved for future use
     pub async fn find_all(&self) -> Result<Vec<Model>, Box<dyn std::error::Error + Send + Sync>> {
         let assets = Asset::find()
             .order_by_desc(Column::CreatedAt)
@@ -135,6 +150,7 @@ impl AssetRepository {
     }
 
     /// Count assets by asset type
+    #[allow(dead_code)] // Reserved for future use
     pub async fn count_by_type(
         &self,
         asset_type: &str,
@@ -144,5 +160,57 @@ impl AssetRepository {
             .count(self.db.as_ref())
             .await?;
         Ok(count as i64)
+    }
+
+    /// Find reference NFT by hash (for token metadata lookup)
+    /// Searches for NFTs where app_id starts with "n/{hash}/"
+    /// Prioritizes NFTs with metadata (name, image_url) over empty ones
+    pub async fn find_reference_nft_by_hash(
+        &self,
+        hash: &str,
+    ) -> Result<Option<Model>, Box<dyn std::error::Error + Send + Sync>> {
+        let pattern = format!("n/{}/%", hash);
+
+        // Get all NFTs matching the hash pattern
+        let assets = Asset::find()
+            .filter(Column::AssetType.eq("nft"))
+            .filter(Column::AppId.like(&pattern))
+            .order_by_asc(Column::BlockHeight)
+            .all(self.db.as_ref())
+            .await?;
+
+        if assets.is_empty() {
+            return Ok(None);
+        }
+
+        // Prioritize NFT with metadata (name or image_url present)
+        // This handles cases where multiple NFTs exist for the same hash (different vouts)
+        for asset in &assets {
+            if asset.name.is_some() || asset.image_url.is_some() {
+                return Ok(Some(asset.clone()));
+            }
+        }
+
+        // Fallback to first NFT if none have metadata
+        Ok(Some(assets.into_iter().next().unwrap()))
+    }
+
+    /// Get max total_supply from all assets matching a base app_id prefix
+    /// Used to get the correct total supply for tokens with multiple outputs (:0, :1, etc.)
+    pub async fn get_max_total_supply_by_prefix(
+        &self,
+        base_app_id: &str,
+    ) -> Result<Option<rust_decimal::Decimal>, Box<dyn std::error::Error + Send + Sync>> {
+        let pattern = format!("{}:%", base_app_id);
+
+        let assets = Asset::find()
+            .filter(Column::AppId.like(&pattern))
+            .all(self.db.as_ref())
+            .await?;
+
+        // Find max total_supply among all matching assets
+        let max_supply = assets.into_iter().filter_map(|a| a.total_supply).max();
+
+        Ok(max_supply)
     }
 }

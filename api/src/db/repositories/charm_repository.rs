@@ -20,6 +20,7 @@ impl CharmRepository {
     }
 
     /// Returns a reference to the underlying database connection
+    #[allow(dead_code)] // Used in charm_service for direct queries
     pub fn get_connection(&self) -> &DatabaseConnection {
         &self.conn
     }
@@ -148,6 +149,7 @@ impl CharmRepository {
     }
 
     /// Counts all charms in the database
+    #[allow(dead_code)] // Reserved for future use
     pub async fn count_all(&self) -> Result<i64, DbError> {
         let count = charms::Entity::find().count(&self.conn).await?;
 

@@ -24,6 +24,7 @@ pub struct PaginationParams {
     )]
     pub limit: u64,
     #[serde(default = "default_sort_order")]
+    #[allow(dead_code)] // Deserialized from query but not yet implemented
     pub sort: String,
 }
 
@@ -71,12 +72,14 @@ pub struct CharmsResponse {
 #[derive(Debug, Serialize)]
 pub struct CharmData {
     pub txid: String,
+    pub vout: i32, // [RJJ-ADDRESS] Output index for UTXO identification
     pub charmid: String,
     pub block_height: i32,
     pub data: serde_json::Value,
     pub date_created: String,
     pub asset_type: String,
     pub network: String,
+    pub amount: i64, // [RJJ-ADDRESS] Token amount in this UTXO
     #[serde(default = "default_likes_count")]
     pub likes_count: i64,
     #[serde(default = "default_user_liked")]
@@ -92,12 +95,17 @@ pub struct CharmData {
     pub description: Option<String>,
     /// Whether the spell proof has been verified
     pub verified: bool,
+    // [RJJ-SPELL] Original spell data from transactions table
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub spell: Option<serde_json::Value>,
 }
 
+#[allow(dead_code)] // Used by serde default attribute
 fn default_likes_count() -> i64 {
     0
 }
 
+#[allow(dead_code)] // Used by serde default attribute
 fn default_user_liked() -> bool {
     false
 }

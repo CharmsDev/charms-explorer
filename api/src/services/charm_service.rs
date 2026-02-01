@@ -72,7 +72,7 @@ pub async fn get_charm_numbers_by_type(
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
-            eprintln!("Database error in get_charm_numbers_by_type: {:?}", err);
+            tracing::warn!("Database error in get_charm_numbers_by_type: {:?}", err);
 
             // Return an empty vector instead of propagating the error
             vec![]
@@ -101,7 +101,7 @@ pub async fn get_all_charms_paginated_by_network(
         Ok(result) => result,
         Err(err) => {
             // Log database error for monitoring
-            eprintln!(
+            tracing::warn!(
                 "Database error in get_all_charms_paginated_by_network: {:?}",
                 err
             );
@@ -138,12 +138,14 @@ pub async fn get_all_charms_paginated_by_network(
 
         let charm_data_item = CharmData {
             txid: charm.txid,
+            vout: charm.vout,
             charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data,
             date_created: charm.date_created.to_string(),
             asset_type: charm.asset_type,
             network: charm.network,
+            amount: charm.amount,
             likes_count: 0,
             user_liked: false,
             name,
@@ -151,6 +153,7 @@ pub async fn get_all_charms_paginated_by_network(
             ticker,
             description,
             verified: charm.verified,
+            spell: None,
         };
 
         charm_data.push(charm_data_item);
@@ -183,7 +186,7 @@ pub async fn get_all_charms_paginated(
         Ok(result) => result,
         Err(err) => {
             // Log database error for monitoring
-            eprintln!("Database error in get_all_charms_paginated: {:?}", err);
+            tracing::warn!("Database error in get_all_charms_paginated: {:?}", err);
 
             // Return empty response on database error
             return Ok(PaginatedResponse {
@@ -233,12 +236,14 @@ pub async fn get_all_charms_paginated(
 
         charm_data.push(CharmData {
             txid: charm.txid,
+            vout: charm.vout,
             charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
             asset_type: charm.asset_type,
             network: charm.network,
+            amount: charm.amount,
             likes_count,
             user_liked,
             name,
@@ -246,6 +251,7 @@ pub async fn get_all_charms_paginated(
             ticker,
             description,
             verified: charm.verified,
+            spell: None,
         });
     }
 
@@ -273,7 +279,7 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
-            eprintln!("Database error in get_all_charms: {:?}", err);
+            tracing::warn!("Database error in get_all_charms: {:?}", err);
 
             // Return an empty vector instead of propagating the error
             vec![]
@@ -315,12 +321,14 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
 
         charm_data.push(CharmData {
             txid: charm.txid,
+            vout: charm.vout,
             charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
             asset_type: charm.asset_type,
             network: charm.network,
+            amount: charm.amount,
             likes_count,
             user_liked,
             name,
@@ -328,6 +336,7 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
             ticker,
             description,
             verified: charm.verified,
+            spell: None,
         });
     }
 
@@ -350,7 +359,7 @@ pub async fn get_charms_by_type_paginated(
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
-            eprintln!("Database error in get_charms_by_type_paginated: {:?}", err);
+            tracing::warn!("Database error in get_charms_by_type_paginated: {:?}", err);
 
             // Return a fallback empty response instead of propagating the error
             return Ok(PaginatedResponse {
@@ -400,12 +409,14 @@ pub async fn get_charms_by_type_paginated(
 
         charm_data.push(CharmData {
             txid: charm.txid,
+            vout: charm.vout,
             charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
             asset_type: charm.asset_type,
             network: charm.network,
+            amount: charm.amount,
             likes_count,
             user_liked,
             name,
@@ -413,6 +424,7 @@ pub async fn get_charms_by_type_paginated(
             ticker,
             description,
             verified: charm.verified,
+            spell: None,
         });
     }
 
@@ -449,7 +461,7 @@ pub async fn get_charms_by_type(
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
-            eprintln!("Database error in get_charms_by_type: {:?}", err);
+            tracing::warn!("Database error in get_charms_by_type: {:?}", err);
 
             // Return an empty vector instead of propagating the error
             vec![]
@@ -491,12 +503,14 @@ pub async fn get_charms_by_type(
 
         charm_data.push(CharmData {
             txid: charm.txid,
+            vout: charm.vout,
             charmid: charm.app_id.clone(),
             block_height: charm.block_height,
             data: charm.data.clone(),
             date_created: charm.date_created.to_string(),
             asset_type: charm.asset_type,
             network: charm.network,
+            amount: charm.amount,
             likes_count,
             user_liked,
             name,
@@ -504,6 +518,7 @@ pub async fn get_charms_by_type(
             ticker,
             description,
             verified: charm.verified,
+            spell: None,
         });
     }
 
@@ -536,7 +551,7 @@ pub async fn get_charm_by_txid(
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
-            eprintln!("Database error in get_charm_by_txid: {:?}", err);
+            tracing::warn!("Database error in get_charm_by_txid: {:?}", err);
 
             // Return a not found error with a friendly message
             return Err(DbError::QueryError(format!(
@@ -552,6 +567,20 @@ pub async fn get_charm_by_txid(
         Some(charm) => charm,
         None => {
             return Err(DbError::QueryError(format!("Charm with txid {} not found", txid)).into());
+        }
+    };
+
+    // [RJJ-SPELL] Get original spell from transactions table
+    let spell = match state
+        .repositories
+        .transactions
+        .get_spell_by_txid(txid)
+        .await
+    {
+        Ok(spell_opt) => spell_opt,
+        Err(err) => {
+            tracing::warn!("Error getting spell from transactions: {:?}", err);
+            None
         }
     };
 
@@ -581,12 +610,14 @@ pub async fn get_charm_by_txid(
 
     Ok(CharmData {
         txid: charm.txid,
+        vout: charm.vout,
         charmid: charm.app_id,
         block_height: charm.block_height,
         data: charm.data,
         date_created: charm.date_created.to_string(),
         asset_type: charm.asset_type,
         network: charm.network,
+        amount: charm.amount,
         likes_count,
         user_liked,
         name,
@@ -594,6 +625,7 @@ pub async fn get_charm_by_txid(
         ticker,
         description,
         verified: charm.verified,
+        spell, // [RJJ-SPELL] Include original spell from transactions
     })
 }
 
@@ -608,7 +640,7 @@ pub async fn get_charm_by_charmid(
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
-            eprintln!("Database error in get_charm_by_charmid: {:?}", err);
+            tracing::warn!("Database error in get_charm_by_charmid: {:?}", err);
 
             // Return a not found error with a friendly message
             return Err(DbError::QueryError(format!(
@@ -649,12 +681,14 @@ pub async fn get_charm_by_charmid(
         if !is_empty_spell_charm(&charm.data) {
             return Ok(CharmData {
                 txid: charm.txid.clone(),
+                vout: charm.vout,
                 charmid: charm.app_id.clone(),
                 block_height: charm.block_height,
                 data: charm.data.clone(),
                 date_created: charm.date_created.to_string(),
                 asset_type: charm.asset_type.clone(),
                 network: charm.network.clone(),
+                amount: charm.amount,
                 likes_count,
                 user_liked,
                 name: name.clone(),
@@ -662,6 +696,7 @@ pub async fn get_charm_by_charmid(
                 ticker: ticker.clone(),
                 description: description.clone(),
                 verified: charm.verified,
+                spell: None,
             });
         }
     }
@@ -670,12 +705,14 @@ pub async fn get_charm_by_charmid(
     let first_charm = &charms[0];
     Ok(CharmData {
         txid: first_charm.txid.clone(),
+        vout: first_charm.vout,
         charmid: first_charm.app_id.clone(),
         block_height: first_charm.block_height,
         data: first_charm.data.clone(),
         date_created: first_charm.date_created.to_string(),
         asset_type: first_charm.asset_type.clone(),
         network: first_charm.network.clone(),
+        amount: first_charm.amount,
         likes_count,
         user_liked,
         name,
@@ -683,6 +720,7 @@ pub async fn get_charm_by_charmid(
         ticker,
         description,
         verified: first_charm.verified,
+        spell: None,
     })
 }
 
@@ -704,7 +742,7 @@ pub async fn add_like(
             likes_count,
         }),
         Err(err) => {
-            eprintln!("Database error in add_like: {:?}", err);
+            tracing::warn!("Database error in add_like: {:?}", err);
 
             Err(DbError::QueryError("Failed to add like".to_string()).into())
         }
@@ -729,7 +767,7 @@ pub async fn remove_like(
             likes_count,
         }),
         Err(err) => {
-            eprintln!("Database error in remove_like: {:?}", err);
+            tracing::warn!("Database error in remove_like: {:?}", err);
 
             Err(DbError::QueryError("Failed to remove like".to_string()).into())
         }
@@ -747,7 +785,7 @@ pub async fn get_charms_by_address(
     let charms = match state.repositories.charm.find_by_address(address).await {
         Ok(result) => result,
         Err(err) => {
-            eprintln!("Database error in get_charms_by_address: {:?}", err);
+            tracing::warn!("Database error in get_charms_by_address: {:?}", err);
             return Ok(CharmsResponse { charms: vec![] });
         }
     };
@@ -784,12 +822,14 @@ pub async fn get_charms_by_address(
 
         charm_data.push(CharmData {
             txid: charm.txid,
+            vout: charm.vout,
             charmid: charm.app_id.clone(), // Using app_id as charmid
             block_height: charm.block_height,
             data: charm.data,
             date_created: charm.date_created.to_string(),
             asset_type: charm.asset_type,
             network: charm.network,
+            amount: charm.amount,
             likes_count,
             user_liked,
             name,
@@ -797,6 +837,7 @@ pub async fn get_charms_by_address(
             ticker,
             description,
             verified: charm.verified,
+            spell: None,
         });
     }
 
@@ -804,6 +845,7 @@ pub async fn get_charms_by_address(
 }
 
 /// Extract hash from app_id (removes t/ or n/ prefix) [RJJ-ADDRESS-SEARCH]
+#[allow(dead_code)] // Reserved for future address search enhancements
 fn extract_hash_from_app_id(app_id: &str) -> String {
     let parts: Vec<&str> = app_id.split('/').collect();
     if parts.len() >= 2 {
@@ -845,7 +887,7 @@ async fn get_metadata_map(
     {
         Ok(assets) => assets,
         Err(err) => {
-            eprintln!("Error fetching assets metadata: {:?}", err);
+            tracing::warn!("Error fetching assets metadata: {:?}", err);
             vec![]
         }
     };

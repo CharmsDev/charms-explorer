@@ -1,9 +1,9 @@
 // Handlers for Bitcoin transaction data (non-charm transactions)
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -63,7 +63,7 @@ pub async fn get_bitcoin_transaction(
     match tx_result {
         Ok(tx_data) => Ok(Json(tx_data)),
         Err(e) => {
-            eprintln!("Error fetching Bitcoin transaction {}: {}", txid, e);
+            tracing::error!("Error fetching Bitcoin transaction {}: {}", txid, e);
             Err(crate::error::ExplorerError::NotFound(format!(
                 "Transaction {} not found",
                 txid

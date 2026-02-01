@@ -12,8 +12,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::routing::{delete, get, post, Router};
-use http::{header, Method};
+use axum::routing::{Router, delete, get, post};
+use http::{Method, header};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -21,10 +21,10 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    diagnose_database, get_asset_by_id, get_asset_counts, get_asset_holders, get_assets,
+    AppState, diagnose_database, get_asset_by_id, get_asset_counts, get_asset_holders, get_assets,
     get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_address,
-    get_charms_by_type, get_charms_count_by_type, get_indexer_status, health_check, like_charm,
-    reset_indexer, unlike_charm, AppState,
+    get_charms_by_type, get_charms_count_by_type, get_indexer_status, get_reference_nft_by_hash,
+    health_check, like_charm, reset_indexer, unlike_charm,
 };
 
 fn load_env() {
@@ -91,6 +91,10 @@ async fn main() {
         .route("/charms/{txid}", get(get_charm_by_txid))
         .route("/charms", get(get_charms))
         .route("/assets/count", get(get_asset_counts))
+        .route(
+            "/assets/reference-nft/{hash}",
+            get(get_reference_nft_by_hash),
+        )
         .route("/assets/{app_id}/holders", get(get_asset_holders))
         .route("/assets/{asset_id}", get(get_asset_by_id))
         .route("/assets", get(get_assets))
