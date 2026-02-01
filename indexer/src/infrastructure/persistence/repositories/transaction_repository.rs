@@ -237,4 +237,92 @@ impl TransactionRepository {
             entity.network,
         )
     }
+
+    // ==================== Fast Reindex Methods ====================
+
+    /// Get the block range (min, max) for a given network
+    pub async fn get_block_range(
+        &self,
+        network: &str,
+    ) -> Result<(Option<u64>, Option<u64>), DbError> {
+        use sea_orm::{FromQueryResult, Statement};
+
+        #[derive(Debug, FromQueryResult)]
+        struct BlockRange {
+            min_block: Option<i32>,
+            max_block: Option<i32>,
+        }
+
+        let result: Option<BlockRange> =
+            BlockRange::find_by_statement(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"SELECT MIN(block_height) as min_block, MAX(block_height) as max_block 
+               FROM transactions WHERE network = $1 AND block_height IS NOT NULL"#,
+                [network.into()],
+            ))
+            .one(&self.conn)
+            .await?;
+
+        Ok(match result {
+            Some(r) => (r.min_block.map(|v| v as u64), r.max_block.map(|v| v as u64)),
+            None => (None, None),
+        })
+    }
+
+    /// Get all distinct block heights with transactions for a network (sorted ascending)
+    pub async fn get_blocks_with_transactions(&self, network: &str) -> Result<Vec<u64>, DbError> {
+        use sea_orm::{FromQueryResult, Statement};
+
+        #[derive(Debug, FromQueryResult)]
+        struct BlockHeight {
+            block_height: i32,
+        }
+
+        let results: Vec<BlockHeight> =
+            BlockHeight::find_by_statement(Statement::from_sql_and_values(
+                sea_orm::DatabaseBackend::Postgres,
+                r#"SELECT DISTINCT block_height FROM transactions 
+               WHERE network = $1 AND block_height IS NOT NULL 
+               ORDER BY block_height ASC"#,
+                [network.into()],
+            ))
+            .all(&self.conn)
+            .await?;
+
+        Ok(results.into_iter().map(|r| r.block_height as u64).collect())
+    }
+
+    /// Get transactions for a specific block (with hex data for reindexing)
+    pub async fn get_transactions_for_reindex(
+        &self,
+        block_height: u64,
+        network: &str,
+    ) -> Result<Vec<(String, String, i64)>, DbError> {
+        use sea_orm::{FromQueryResult, Statement};
+
+        #[derive(Debug, FromQueryResult)]
+        struct TxReindex {
+            txid: String,
+            hex: Option<String>,
+            ordinal: i64,
+        }
+
+        let results: Vec<TxReindex> = TxReindex::find_by_statement(Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            r#"SELECT txid, raw->>'hex' as hex, ordinal FROM transactions 
+               WHERE block_height = $1 AND network = $2 
+               ORDER BY ordinal ASC"#,
+            [
+                sea_orm::Value::Int(Some(block_height as i32)),
+                network.into(),
+            ],
+        ))
+        .all(&self.conn)
+        .await?;
+
+        Ok(results
+            .into_iter()
+            .filter_map(|r| r.hex.map(|h| (r.txid, h, r.ordinal)))
+            .collect())
+    }
 }

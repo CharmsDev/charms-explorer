@@ -22,6 +22,7 @@ pub struct SpellDetector<'a> {
     bitcoin_client: &'a BitcoinClient,
     charm_repository: &'a CharmRepository,
     spell_repository: &'a SpellRepository,
+    #[allow(dead_code)] // Reserved for future metadata extraction
     asset_repository: &'a AssetRepository,
     charm_queue_service: &'a Option<CharmQueueService>,
 }
@@ -148,10 +149,13 @@ impl<'a> SpellDetector<'a> {
             )));
         }
 
-        crate::utils::logging::log_info(&format!(
-            "[{}] 📜 Block {}: Spell saved for tx {}",
-            network, block_height, txid
-        ));
+        // Log only if not in silent mode (fast reindex)
+        if std::env::var("SILENT_SPELL_LOGS").is_err() {
+            crate::utils::logging::log_info(&format!(
+                "[{}] 📜 Block {}: Spell saved for tx {}",
+                network, block_height, txid
+            ));
+        }
 
         // [RJJ-S01] STEP 3: Extract charms from spell
         let asset_infos = NativeCharmParser::extract_asset_info(&normalized_spell);
@@ -173,33 +177,46 @@ impl<'a> SpellDetector<'a> {
                 "other"
             };
 
-            // Extract amount from spell data (native_data.tx.outs[index]["0"])
-            let amount = if let Some(native_data) = spell_json.get("native_data") {
-                if let Some(tx) = native_data.get("tx") {
-                    if let Some(outs) = tx.get("outs").and_then(|v| v.as_array()) {
-                        if let Some(out) = outs.get(index) {
-                            out.get("0").and_then(|v| v.as_i64()).unwrap_or(0)
+            // Extract amount and metadata from spell data (spell_json.tx.outs[vout_index]["0"])
+            // spell_json is already the serialized NormalizedSpell (it becomes native_data in spell_data)
+            // For NFTs, "0" contains an object with metadata (name, image, etc.)
+            // For tokens, "0" contains the amount as integer
+            let output_index = asset_info.vout_index as usize;
+            let (amount, nft_metadata) = if let Some(tx) = spell_json.get("tx") {
+                if let Some(outs) = tx.get("outs").and_then(|v| v.as_array()) {
+                    if let Some(out) = outs.get(output_index) {
+                        if let Some(out_value) = out.get("0") {
+                            // Check if it's an object (NFT metadata) or number (token amount)
+                            if out_value.is_object() {
+                                // NFT with metadata object
+                                (0i64, Some(out_value.clone()))
+                            } else if let Some(amt) = out_value.as_i64() {
+                                // Token with amount
+                                (amt, None)
+                            } else {
+                                (0, None)
+                            }
                         } else {
-                            0
+                            (0, None)
                         }
                     } else {
-                        0
+                        (0, None)
                     }
                 } else {
-                    0
+                    (0, None)
                 }
             } else {
-                0
+                (0, None)
             };
 
             // TODO: Identify correct vout by finding outputs with 1000 or 330 satoshis
             // For now, use sequential vout (will be corrected in future update)
             let vout = (index + 1) as i32; // vout 1, 2, 3... (0 is spell)
 
-            // Create charm-specific data (not the entire spell)
+            // Create charm-specific data with NFT metadata if available
             let charm_data = json!({
                 "app_id": asset_info.app_id,
-                "data": null, // Charm-specific data (if available from spell)
+                "data": nft_metadata, // NFT metadata (name, image, etc.) or null for tokens
                 "type": "charm",
                 "asset_type": asset_type
             });
@@ -288,18 +305,22 @@ impl<'a> SpellDetector<'a> {
             }
         }
 
-        crate::utils::logging::log_info(&format!(
-            "[{}] ✅ Block {}: Saved spell + {} charms for tx {}",
-            network,
-            block_height,
-            charms.len(),
-            txid
-        ));
+        // Log only if not in silent mode (fast reindex)
+        if std::env::var("SILENT_SPELL_LOGS").is_err() {
+            crate::utils::logging::log_info(&format!(
+                "[{}] ✅ Block {}: Saved spell + {} charms for tx {}",
+                network,
+                block_height,
+                charms.len(),
+                txid
+            ));
+        }
 
         Ok((Some(spell), charms))
     }
 
     /// Extract hash from app_id (removes t/ or n/ prefix)
+    #[allow(dead_code)] // Reserved for future use
     fn extract_hash_from_app_id(&self, app_id: &str) -> String {
         if let Some(stripped) = app_id.strip_prefix("t/") {
             stripped.split('/').next().unwrap_or(app_id).to_string()
@@ -312,9 +333,10 @@ impl<'a> SpellDetector<'a> {
 
     /// Extract NFT metadata from asset_info
     /// Returns (name, symbol, description, image_url, decimals)
+    #[allow(dead_code)]
     fn extract_nft_metadata(
         &self,
-        asset_info: &crate::domain::services::native_charm_parser::AssetInfo,
+        _asset_info: &crate::domain::services::native_charm_parser::AssetInfo,
     ) -> (
         Option<String>,
         Option<String>,
@@ -326,5 +348,128 @@ impl<'a> SpellDetector<'a> {
         // For now, return None for all fields (metadata extraction from charm data needs protocol spec)
         // TODO: Parse metadata from asset_info.data JSON structure
         (None, None, None, None, None)
+    }
+
+    /// [BATCH MODE] Parse spell and charms from hex WITHOUT any DB writes
+    /// Returns: (Option<Spell>, Vec<Charm>) - pure parsing, no side effects
+    /// Use this for batch processing where inserts are done separately
+    pub fn parse_spell_only(
+        txid: &str,
+        block_height: u64,
+        raw_tx_hex: &str,
+        network: &str,
+    ) -> Result<(Option<Spell>, Vec<Charm>), CharmError> {
+        let blockchain = "Bitcoin".to_string();
+
+        // STEP 1: Extract and verify spell using native parser
+        let (normalized_spell, spell_json) =
+            match NativeCharmParser::extract_and_verify_charm(raw_tx_hex, false) {
+                Ok(spell) => {
+                    let spell_json = serde_json::to_value(&spell).map_err(|e| {
+                        CharmError::ProcessingError(format!(
+                            "Failed to serialize spell data: {}",
+                            e
+                        ))
+                    })?;
+                    (spell, spell_json)
+                }
+                Err(_) => {
+                    return Ok((None, vec![]));
+                }
+            };
+
+        // Extract Bitcoin address from the transaction
+        let address =
+            AddressExtractor::extract_charm_holder_address(raw_tx_hex, network).unwrap_or(None);
+
+        // STEP 2: Create Spell object (no save)
+        let spell_data = json!({
+            "type": "spell",
+            "detected": true,
+            "has_native_data": true,
+            "native_data": spell_json,
+            "version": "native_parser"
+        });
+
+        let spell = Spell::new(
+            txid.to_string(),
+            block_height,
+            spell_data,
+            Utc::now().naive_utc(),
+            "spell".to_string(),
+            blockchain.clone(),
+            network.to_string(),
+        );
+
+        // STEP 3: Extract charms from spell
+        let asset_infos = NativeCharmParser::extract_asset_info(&normalized_spell);
+
+        // STEP 4: Create charm objects (no save)
+        let mut charms = Vec::new();
+
+        for (index, asset_info) in asset_infos.iter().enumerate() {
+            let asset_type = if asset_info.app_id.starts_with("t/") {
+                "token"
+            } else if asset_info.app_id.starts_with("n/") {
+                "nft"
+            } else if asset_info.app_id.starts_with("B/") {
+                "dapp"
+            } else {
+                "other"
+            };
+
+            let output_index = asset_info.vout_index as usize;
+            let (amount, nft_metadata) = if let Some(tx) = spell_json.get("tx") {
+                if let Some(outs) = tx.get("outs").and_then(|v| v.as_array()) {
+                    if let Some(out) = outs.get(output_index) {
+                        if let Some(out_value) = out.get("0") {
+                            if out_value.is_object() {
+                                (0i64, Some(out_value.clone()))
+                            } else if let Some(amt) = out_value.as_i64() {
+                                (amt, None)
+                            } else {
+                                (0, None)
+                            }
+                        } else {
+                            (0, None)
+                        }
+                    } else {
+                        (0, None)
+                    }
+                } else {
+                    (0, None)
+                }
+            } else {
+                (0, None)
+            };
+
+            let vout = (index + 1) as i32;
+
+            let charm_data = json!({
+                "app_id": asset_info.app_id,
+                "data": nft_metadata,
+                "type": "charm",
+                "asset_type": asset_type
+            });
+
+            let charm = Charm::new(
+                txid.to_string(),
+                vout,
+                Some(block_height),
+                charm_data,
+                Utc::now().naive_utc(),
+                asset_type.to_string(),
+                blockchain.clone(),
+                network.to_string(),
+                address.clone(),
+                false,
+                asset_info.app_id.clone(),
+                amount,
+            );
+
+            charms.push(charm);
+        }
+
+        Ok((Some(spell), charms))
     }
 }

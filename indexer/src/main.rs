@@ -1,4 +1,22 @@
+//! Charms Indexer - Bitcoin blockchain indexer for Charms protocol
+//!
+//! ## Operation Modes
+//!
+//! - **Production Mode** (default): Indexes new blocks + mempool in real-time
+//! - **Reindex Mode** (`REINDEX_MODE=true`): Batch processes historical blocks, then exits
+//!
+//! ## Usage
+//!
+//! ```bash
+//! # Production mode (default)
+//! cargo run --release
+//!
+//! # Reindex mode
+//! REINDEX_MODE=true cargo run --release
+//! ```
+
 use charms_indexer::application::indexer::NetworkManager;
+use charms_indexer::application::reindexer;
 use charms_indexer::config::AppConfig;
 use charms_indexer::infrastructure::persistence::{DbPool, RepositoryFactory};
 use charms_indexer::utils::logging;
@@ -7,64 +25,84 @@ use charms_indexer::utils::logging;
 async fn main() {
     logging::init_logger();
 
-    // Log version information for deployment tracking
-    let _version = env!("CARGO_PKG_VERSION");
-
     let config = AppConfig::from_env();
 
-    // Log connection details
-
-    // Network configuration logging
-    if config.indexer.enable_bitcoin_testnet4 {
-        if let Some(_btc_config) = config.get_bitcoin_config("testnet4") {}
-    }
-
-    if config.indexer.enable_bitcoin_mainnet {
-        if let Some(_btc_config) = config.get_bitcoin_config("mainnet") {}
-    }
-
-    if config.indexer.enable_cardano {}
-
-    // Database connection and processor initialization
-    match DbPool::new(&config).await {
-        Ok(db_pool) => {
-            let repositories = RepositoryFactory::create_repositories(&db_pool);
-
-            let mut network_manager = NetworkManager::new(config.clone());
-
-            // [RJJ-S01] Now includes spell repository for spell-first architecture
-            // [RJJ-STATS-HOLDERS] Now includes stats_holders repository
-            // [RJJ-DEX] Now includes dex_orders repository
-            match network_manager
-                .initialize(
-                    repositories.charm,
-                    repositories.asset,
-                    repositories.spell,         // [RJJ-S01]
-                    repositories.stats_holders, // [RJJ-STATS-HOLDERS]
-                    repositories.dex_orders,    // [RJJ-DEX]
-                    repositories.transaction,
-                    repositories.bookmark,
-                    repositories.summary,
-                )
-                .await
-            {
-                Ok(_) => {
-                    // Start processors and handle shutdown
-
-                    if let Err(e) = network_manager.start_all().await {
-                        logging::log_error(&format!("Error starting processors: {}", e));
-                    }
-
-                    tokio::signal::ctrl_c()
-                        .await
-                        .expect("Failed to listen for Ctrl+C");
-                    network_manager.stop_all().await;
-                }
-                Err(e) => {
-                    logging::log_error(&format!("Error initializing processors: {}", e));
-                }
-            }
+    // Connect to database
+    let db_pool = match DbPool::new(&config).await {
+        Ok(pool) => pool,
+        Err(e) => {
+            logging::log_error(&format!("Failed to connect to database: {}", e));
+            return;
         }
-        Err(e) => logging::log_error(&format!("Failed to connect to database: {}", e)),
+    };
+
+    let repositories = RepositoryFactory::create_repositories(&db_pool);
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // MODE SWITCH: Reindex vs Production
+    // ═══════════════════════════════════════════════════════════════════════
+
+    if reindexer::is_enabled() {
+        // REINDEX MODE: Batch process historical blocks, then exit
+        if let Err(e) = reindexer::run(
+            &config,
+            repositories.charm.clone(),
+            repositories.asset.clone(),
+            repositories.spell.clone(),
+            repositories.stats_holders.clone(),
+            repositories.transaction.clone(),
+            repositories.bookmark.clone(),
+        )
+        .await
+        {
+            logging::log_error(&format!("Reindex failed: {}", e));
+        }
+        return; // Exit after reindexing
+    }
+
+    // PRODUCTION MODE: Real-time indexing of new blocks + mempool
+    run_production_indexer(config, repositories).await;
+}
+
+/// Production indexer - runs indefinitely processing new blocks
+async fn run_production_indexer(
+    config: AppConfig,
+    repositories: charms_indexer::infrastructure::persistence::Repositories,
+) {
+    let mut network_manager = NetworkManager::new(config.clone());
+
+    match network_manager
+        .initialize(
+            repositories.charm.clone(),
+            repositories.asset.clone(),
+            repositories.spell.clone(),
+            repositories.stats_holders.clone(),
+            repositories.dex_orders.clone(),
+            repositories.transaction.clone(),
+            repositories.bookmark.clone(),
+            repositories.summary.clone(),
+        )
+        .await
+    {
+        Ok(_) => {
+            logging::log_info("═══════════════════════════════════════════════════════════════");
+            logging::log_info("  PRODUCTION MODE - Real-time blockchain indexing");
+            logging::log_info("═══════════════════════════════════════════════════════════════");
+
+            if let Err(e) = network_manager.start_all().await {
+                logging::log_error(&format!("Error starting processors: {}", e));
+                return;
+            }
+
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for Ctrl+C");
+
+            logging::log_info("\nShutting down...");
+            network_manager.stop_all().await;
+        }
+        Err(e) => {
+            logging::log_error(&format!("Error initializing processors: {}", e));
+        }
     }
 }

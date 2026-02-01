@@ -131,8 +131,9 @@ impl NetworkManager {
         let dummy_config = self
             .config
             .get_bitcoin_config("mainnet")
-            .unwrap_or_else(|| panic!("Need at least one Bitcoin config for database writer"));
-        let dummy_client = SimpleBitcoinClient::new(dummy_config).unwrap();
+            .expect("Need at least one Bitcoin config for database writer");
+        let dummy_client = SimpleBitcoinClient::new(dummy_config)
+            .expect("Failed to create Bitcoin client for database writer");
         let writer_charm_service = Arc::new(CharmService::new(
             BitcoinClient::from_simple_client(dummy_client),
             charm_repository.clone(),

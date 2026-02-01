@@ -2,15 +2,9 @@ use sea_orm::DatabaseConnection;
 
 use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository,
-    BookmarkRepository,
-    CharmRepository,
-    DexOrdersRepository,
-    Repositories,
-    SpellRepository,
-    StatsHoldersRepository,
-    SummaryRepository,
-    TransactionRepository, // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository, [RJJ-DEX] Added DexOrdersRepository
+    AssetRepository, BlockStatusRepository, BookmarkRepository, CharmRepository,
+    DexOrdersRepository, Repositories, SpellRepository, StatsHoldersRepository, SummaryRepository,
+    TransactionRepository,
 };
 
 /// Factory for creating repositories
@@ -26,11 +20,12 @@ impl RepositoryFactory {
 
         Repositories::new(
             Self::create_asset_repository(conn.clone()),
+            Self::create_block_status_repository(conn.clone()),
             Self::create_bookmark_repository(conn.clone()),
             Self::create_charm_repository(conn.clone()),
-            Self::create_dex_orders_repository(conn.clone()), // [RJJ-DEX]
-            Self::create_spell_repository(conn.clone()),      // [RJJ-S01]
-            Self::create_stats_holders_repository(conn.clone()), // [RJJ-STATS-HOLDERS]
+            Self::create_dex_orders_repository(conn.clone()),
+            Self::create_spell_repository(conn.clone()),
+            Self::create_stats_holders_repository(conn.clone()),
             Self::create_summary_repository(conn.clone()),
             Self::create_transaction_repository(conn),
         )
@@ -77,5 +72,10 @@ impl RepositoryFactory {
     /// [RJJ-DEX] New repository for Cast DEX order tracking
     pub fn create_dex_orders_repository(conn: DatabaseConnection) -> DexOrdersRepository {
         DexOrdersRepository::new(conn)
+    }
+
+    /// Create a block_status repository
+    pub fn create_block_status_repository(conn: DatabaseConnection) -> BlockStatusRepository {
+        BlockStatusRepository::new(conn)
     }
 }

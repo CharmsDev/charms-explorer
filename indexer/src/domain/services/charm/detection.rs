@@ -118,8 +118,8 @@ impl<'a> CharmDetector<'a> {
             return Ok(None);
         }
 
-        // Extract asset information from the spell
-        let asset_infos = if let Some(ref spell) = normalized_spell_opt {
+        // Extract asset information from the spell (used for metadata extraction)
+        let _asset_infos = if let Some(ref spell) = normalized_spell_opt {
             NativeCharmParser::extract_asset_info(spell)
         } else {
             vec![]
@@ -340,7 +340,7 @@ impl<'a> CharmDetector<'a> {
         }
 
         // Subtract input amounts
-        for (txid, app_id, amount) in input_amounts {
+        for (_txid, app_id, amount) in input_amounts {
             // Convert token app_id to NFT app_id for grouping
             let nft_app_id = if app_id.starts_with("t/") {
                 app_id.replacen("t/", "n/", 1)

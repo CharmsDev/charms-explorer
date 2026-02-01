@@ -13,7 +13,7 @@
 ///! 3. Save each charm with correct vout (1, 2, 3...)
 mod detection;
 mod persistence;
-mod spell_detection;
+pub mod spell_detection; // [BATCH MODE] Made public for direct parsing access
 mod spent_tracking; // [RJJ-S01] New spell-first detection
 
 use std::fmt;
@@ -107,6 +107,14 @@ impl CharmService {
     /// [RJJ-STATS-HOLDERS] Get reference to stats_holders repository
     pub fn get_stats_holders_repository(&self) -> &StatsHoldersRepository {
         &self.stats_holders_repository
+    }
+
+    /// Get list of block heights that already have charms processed
+    pub async fn get_processed_block_heights(&self, network: &str) -> Result<Vec<u64>, CharmError> {
+        self.charm_repository
+            .get_distinct_block_heights(network)
+            .await
+            .map_err(|e| CharmError::DetectionError(e.to_string()))
     }
 
     // ==================== Detection Methods ====================
@@ -359,6 +367,19 @@ impl CharmService {
 
     // ==================== Spent Tracking Methods ====================
 
+    /// Get unspent charms by (txid, vout) pairs - used to check actual DB state
+    pub async fn get_unspent_charms_by_txid_vout(
+        &self,
+        txid_vouts: Vec<(String, i32)>,
+    ) -> Result<Vec<(String, i32, String, Option<String>, i64)>, CharmError> {
+        self.charm_repository
+            .get_unspent_charms_by_txid_vout(txid_vouts)
+            .await
+            .map_err(|e| {
+                CharmError::ProcessingError(format!("Failed to get unspent charms: {}", e))
+            })
+    }
+
     /// Mark a charm as spent by its txid and vout
     /// [RJJ-S01] Updated: now requires both txid and vout
     pub async fn mark_charm_as_spent(&self, txid: &str, vout: i32) -> Result<(), CharmError> {
@@ -396,10 +417,10 @@ impl CharmService {
                 .update_supply_on_spent(app_id, *amount, asset_type)
                 .await
             {
-                eprintln!(
-                    "[CharmService] Warning: Failed to update supply for {}: {}",
+                crate::utils::logging::log_warning(&format!(
+                    "[CharmService] Failed to update supply for {}: {}",
                     app_id, e
-                );
+                ));
             }
         }
 
@@ -424,11 +445,10 @@ impl CharmService {
                 .update_holders_batch(holder_updates)
                 .await
             {
-                eprintln!(
-                    "[CharmService] Warning: Failed to update stats_holders for spent charms: {}",
+                crate::utils::logging::log_warning(&format!(
+                    "[CharmService] Failed to update stats_holders for spent charms: {}",
                     e
-                );
-                // Don't fail the entire operation if stats update fails
+                ));
             }
         }
 

@@ -79,6 +79,35 @@ impl CharmRepository {
         }
     }
 
+    /// Get distinct block heights that have charms for a network
+    pub async fn get_distinct_block_heights(&self, network: &str) -> Result<Vec<u64>, DbError> {
+        let stmt = Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "SELECT DISTINCT block_height FROM charms WHERE network = '{}' AND block_height IS NOT NULL ORDER BY block_height",
+                network
+            ),
+        );
+
+        let results = self
+            .conn
+            .query_all(stmt)
+            .await
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        let heights: Vec<u64> = results
+            .iter()
+            .filter_map(|row| {
+                #[allow(unused_imports)]
+                use sea_orm::TryGetable;
+                let height: Option<i32> = row.try_get("", "block_height").ok();
+                height.map(|h| h as u64)
+            })
+            .collect();
+
+        Ok(heights)
+    }
+
     /// Get a charm by its transaction ID and vout
     /// [RJJ-S01] Updated: now requires both txid and vout (composite primary key)
     pub async fn get_by_txid_vout(&self, txid: &str, vout: i32) -> Result<Option<Charm>, DbError> {
@@ -443,6 +472,58 @@ impl CharmRepository {
         Ok(results
             .into_iter()
             .map(|c| (c.txid, c.app_id, c.amount as u64))
+            .collect())
+    }
+
+    /// Get unspent charms by (txid, vout) pairs
+    /// Returns (txid, vout, app_id, address, amount) for unspent charms only
+    pub async fn get_unspent_charms_by_txid_vout(
+        &self,
+        txid_vouts: Vec<(String, i32)>,
+    ) -> Result<Vec<(String, i32, String, Option<String>, i64)>, DbError> {
+        if txid_vouts.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Build OR conditions for each (txid, vout) pair
+        let mut conditions = sea_orm::Condition::any();
+        for (txid, vout) in &txid_vouts {
+            conditions = conditions.add(
+                sea_orm::Condition::all()
+                    .add(charms::Column::Txid.eq(txid.clone()))
+                    .add(charms::Column::Vout.eq(*vout)),
+            );
+        }
+
+        let results = charms::Entity::find()
+            .filter(conditions)
+            .filter(charms::Column::Spent.eq(false))
+            .all(&self.conn)
+            .await?;
+
+        Ok(results
+            .into_iter()
+            .map(|c| (c.txid, c.vout, c.app_id, c.address, c.amount))
+            .collect())
+    }
+
+    /// Get unspent charms by block height and network
+    /// Returns (app_id, address, amount) for stats_holders updates during reindex
+    pub async fn get_unspent_charms_by_block(
+        &self,
+        block_height: i32,
+        network: &str,
+    ) -> Result<Vec<(String, Option<String>, i64)>, DbError> {
+        let results = charms::Entity::find()
+            .filter(charms::Column::BlockHeight.eq(block_height))
+            .filter(charms::Column::Network.eq(network))
+            .filter(charms::Column::Spent.eq(false))
+            .all(&self.conn)
+            .await?;
+
+        Ok(results
+            .into_iter()
+            .map(|c| (c.app_id, c.address, c.amount))
             .collect())
     }
 }

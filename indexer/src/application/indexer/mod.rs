@@ -1,3 +1,8 @@
+//! Production Indexer Module
+//!
+//! Real-time blockchain indexing for new blocks and mempool.
+//! For historical reindexing, see `application::reindexer`.
+
 pub mod bitcoin_processor;
 pub mod network_manager;
 pub mod processor_trait;

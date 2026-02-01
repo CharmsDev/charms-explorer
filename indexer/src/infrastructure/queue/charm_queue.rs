@@ -54,6 +54,7 @@ pub struct CharmSaveRequest {
     pub app_id: String,
     pub amount: i64,
     pub tags: Option<String>,
+    pub spent: bool,
 }
 
 /// Unified request to save charm-related data (charm + transaction + assets)
@@ -82,6 +83,7 @@ impl CharmSaveRequest {
             app_id: charm.app_id.clone(),
             amount: charm.amount,
             tags: charm.tags.clone(),
+            spent: charm.spent,
         }
     }
 

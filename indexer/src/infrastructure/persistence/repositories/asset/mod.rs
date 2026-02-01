@@ -1,8 +1,8 @@
 //! Asset repository module
 
-mod helpers;
+pub mod helpers;
 mod query;
-mod save;
+pub mod save;
 mod supply;
 
 use sea_orm::DatabaseConnection;
@@ -69,5 +69,15 @@ impl AssetRepository {
         asset_type: &str,
     ) -> Result<(), DbError> {
         supply::update_supply_on_spent(&self.db, app_id, amount, asset_type).await
+    }
+
+    /// Update NFT metadata (name, image_url) and mark as reference NFT
+    pub async fn update_nft_metadata(
+        &self,
+        app_id: &str,
+        name: Option<&str>,
+        image_url: Option<&str>,
+    ) -> Result<(), DbError> {
+        save::update_nft_metadata(&self.db, app_id, name, image_url).await
     }
 }

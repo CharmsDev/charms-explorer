@@ -268,10 +268,42 @@ impl DatabaseWriter {
 
             // 1b. Update stats_holders for new charms [RJJ-STATS-HOLDERS]
             // [RJJ-TOKEN-METADATA] Convert token app_ids to NFT app_ids for consolidation
+            // Only update holders for UNSPENT charms - query actual DB state after save
             if all_success && !charm_batch.is_empty() {
+                // Get txids to query actual spent state from database
+                let txid_vouts: Vec<(String, i32)> = batch
+                    .iter()
+                    .map(|req| (req.charm.txid.clone(), req.charm.vout))
+                    .collect();
+
+                // Query actual spent state from database for these charms
+                let unspent_charms = match self
+                    .charm_service
+                    .get_unspent_charms_by_txid_vout(txid_vouts)
+                    .await
+                {
+                    Ok(charms) => charms,
+                    Err(e) => {
+                        logging::log_warning(&format!(
+                            "[DATABASE_WRITER] Failed to query unspent charms: {}",
+                            e
+                        ));
+                        vec![]
+                    }
+                };
+
+                // Create a set of unspent (txid, vout) pairs for fast lookup
+                let unspent_set: std::collections::HashSet<(String, i32)> =
+                    unspent_charms.iter().map(|c| (c.0.clone(), c.1)).collect();
+
                 let holder_updates: Vec<(String, String, i64, i32)> = batch
                     .iter()
                     .filter_map(|req| {
+                        // Skip spent charms - check actual DB state
+                        if !unspent_set.contains(&(req.charm.txid.clone(), req.charm.vout)) {
+                            return None;
+                        }
+
                         req.charm.address.as_ref().map(|addr| {
                             // Convert token app_id (t/HASH) to NFT app_id (n/HASH) for consolidation
                             let nft_app_id = if req.charm.app_id.starts_with("t/") {

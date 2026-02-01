@@ -1,12 +1,12 @@
 //! Simplified Bitcoin client using the new provider system
 
-use std::sync::Arc;
 use bitcoincore_rpc::bitcoin::{Block, BlockHash};
+use std::sync::Arc;
 
 use crate::config::{BitcoinConfig, NetworkId, NetworkType};
 use crate::infrastructure::bitcoin::error::BitcoinClientError;
-use crate::infrastructure::bitcoin::providers::BitcoinProvider;
 use crate::infrastructure::bitcoin::provider_factory::ProviderFactory;
+use crate::infrastructure::bitcoin::providers::BitcoinProvider;
 
 /// Simple Bitcoin client that wraps a single provider
 #[derive(Debug, Clone)]
@@ -21,10 +21,10 @@ impl SimpleBitcoinClient {
     pub fn new(config: &BitcoinConfig) -> Result<Self, BitcoinClientError> {
         let provider = ProviderFactory::create_provider(config)?;
         let network_id = NetworkId::new(NetworkType::Bitcoin, &config.network);
-        
+
         // Log which provider is being used
-        eprintln!("Using provider: {}", provider.provider_name());
-        
+        crate::utils::logging::log_info(&format!("Using provider: {}", provider.provider_name()));
+
         Ok(Self {
             provider,
             network: config.network.clone(),
@@ -55,8 +55,10 @@ impl SimpleBitcoinClient {
     ) -> Result<String, BitcoinClientError> {
         // Apply provider-specific rate limiting
         self.provider.apply_rate_limiting().await;
-        
-        self.provider.get_raw_transaction_hex(txid, block_hash).await
+
+        self.provider
+            .get_raw_transaction_hex(txid, block_hash)
+            .await
     }
 
     /// Get the network name

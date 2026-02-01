@@ -3,6 +3,7 @@
 pub mod prelude;
 
 pub mod assets;
+pub mod block_status;
 pub mod bookmark;
 pub mod charms;
 pub mod dex_orders;

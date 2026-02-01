@@ -1,4 +1,6 @@
+pub mod asset;
 pub mod asset_repository;
+pub mod block_status_repository;
 pub mod bookmark_repository;
 pub mod charm_repository;
 pub mod dex_orders_repository;
@@ -8,6 +10,7 @@ pub mod summary_repository;
 pub mod transaction_repository; // [RJJ-DEX]
 
 pub use asset_repository::AssetRepository;
+pub use block_status_repository::BlockStatusRepository;
 pub use bookmark_repository::BookmarkRepository;
 pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository;
@@ -23,6 +26,8 @@ pub use transaction_repository::TransactionRepository; // [RJJ-DEX]
 pub struct Repositories {
     /// Repository for asset operations
     pub asset: AssetRepository,
+    /// Repository for block status tracking
+    pub block_status: BlockStatusRepository,
     /// Repository for bookmark operations
     pub bookmark: BookmarkRepository,
     /// Repository for charm operations
@@ -46,6 +51,7 @@ impl Repositories {
     /// [RJJ-DEX] Now includes dex_orders repository
     pub fn new(
         asset: AssetRepository,
+        block_status: BlockStatusRepository,
         bookmark: BookmarkRepository,
         charm: CharmRepository,
         dex_orders: DexOrdersRepository,       // [RJJ-DEX]
@@ -56,6 +62,7 @@ impl Repositories {
     ) -> Self {
         Self {
             asset,
+            block_status,
             bookmark,
             charm,
             dex_orders,    // [RJJ-DEX]

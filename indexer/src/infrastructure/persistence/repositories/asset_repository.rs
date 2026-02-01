@@ -24,8 +24,6 @@ impl AssetRepository {
 
     /// Save or update asset with supply accumulation
     pub async fn save_or_update_asset(&self, asset: &Asset, amount: i64) -> Result<(), DbError> {
-        // Processing asset silently
-
         // Check if asset already exists
         let existing_asset = Assets::find()
             .filter(assets::Column::AppId.eq(&asset.app_id))
@@ -35,11 +33,10 @@ impl AssetRepository {
 
         match existing_asset {
             Some(existing) => {
-                // Asset exists, update supply using Decimal for large numbers
+                // Asset exists, update supply
                 let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
                 let amount_decimal = Decimal::from(amount);
                 let new_supply = old_supply + amount_decimal;
-                // Reduced logging for asset updates
 
                 let update_model = assets::ActiveModel {
                     id: Set(existing.id),
@@ -52,13 +49,9 @@ impl AssetRepository {
                     .exec(&self.db)
                     .await
                     .map_err(|e| DbError::SeaOrmError(e))?;
-
-                // Asset updated silently
             }
             None => {
                 // Asset doesn't exist, create new one
-                // Creating new asset silently
-
                 let active_model = assets::ActiveModel {
                     id: NotSet,
                     app_id: Set(asset.app_id.clone()),
@@ -78,6 +71,8 @@ impl AssetRepository {
                     description: Set(None),
                     image_url: Set(None),
                     total_supply: Set(Some(Decimal::from(amount))),
+                    decimals: Set(8),
+                    is_reference_nft: Set(false),
                     created_at: Set(Utc::now().into()),
                     updated_at: Set(Utc::now().into()),
                 };
@@ -86,8 +81,6 @@ impl AssetRepository {
                     .exec(&self.db)
                     .await
                     .map_err(|e| DbError::SeaOrmError(e))?;
-
-                // Asset created silently
             }
         }
 
@@ -96,11 +89,11 @@ impl AssetRepository {
 
     /// Save a single asset to the database (legacy method)
     pub async fn save_asset(&self, asset: &Asset) -> Result<(), DbError> {
-        // Use the new method with amount = 1 for backward compatibility
         self.save_or_update_asset(asset, 1).await
     }
 
     /// Save multiple assets in a batch operation
+    /// Delegates to asset/save.rs which handles NFT-token metadata inheritance
     pub async fn save_batch(
         &self,
         assets: Vec<(
@@ -115,124 +108,8 @@ impl AssetRepository {
             String, // network
         )>,
     ) -> Result<(), DbError> {
-        if assets.is_empty() {
-            return Ok(());
-        }
-
-        let assets_count = assets.len();
-
-        // Log only for larger batches to reduce noise
-        if assets_count > 5 {
-            println!("💾 Batch saving {} assets to database", assets_count);
-        }
-
-        let now = Utc::now();
-        let active_models: Vec<assets::ActiveModel> = assets
-            .into_iter()
-            .map(
-                |(
-                    app_id,
-                    txid,
-                    vout_index,
-                    charm_id,
-                    block_height,
-                    data,
-                    asset_type,
-                    blockchain,
-                    network,
-                )| {
-                    // Extract supply from data JSON
-                    let supply = data.get("supply").and_then(|v| v.as_u64()).unwrap_or(1);
-
-                    // Extract metadata from data JSON
-                    let name = data.get("name").and_then(|v| v.as_str()).map(String::from);
-                    let symbol = data
-                        .get("symbol")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-                    let description = data
-                        .get("description")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-                    let image_url = data
-                        .get("image_url")
-                        .and_then(|v| v.as_str())
-                        .map(String::from);
-                    // Note: decimals is stored in data JSON, not as separate column
-
-                    assets::ActiveModel {
-                        id: NotSet,
-                        app_id: Set(app_id),
-                        txid: Set(txid),
-                        vout_index: Set(vout_index),
-                        charm_id: Set(charm_id),
-                        block_height: Set(block_height as i32),
-                        date_created: Set(now.into()),
-                        data: Set(data),
-                        asset_type: Set(asset_type),
-                        blockchain: Set(blockchain),
-                        network: Set(network),
-                        name: Set(name),
-                        symbol: Set(symbol),
-                        description: Set(description),
-                        image_url: Set(image_url),
-                        total_supply: Set(Some(Decimal::from(supply))),
-                        created_at: Set(now.into()),
-                        updated_at: Set(now.into()),
-                    }
-                },
-            )
-            .collect();
-
-        // Insert or update assets using ON CONFLICT DO UPDATE
-        // When a token arrives with the same app_id as an NFT, increment the supply
-        for model in active_models {
-            let app_id = model.app_id.clone().unwrap();
-            let supply_to_add = model
-                .total_supply
-                .clone()
-                .unwrap()
-                .unwrap_or(Decimal::from(0));
-
-            // Try to find existing asset
-            let existing = Assets::find()
-                .filter(assets::Column::AppId.eq(&app_id))
-                .one(&self.db)
-                .await
-                .map_err(DbError::SeaOrmError)?;
-
-            if let Some(existing_asset) = existing {
-                // Asset exists - increment supply (for tokens adding to NFT)
-                let current_supply = existing_asset.total_supply.unwrap_or(Decimal::from(0));
-                let new_supply = current_supply + supply_to_add;
-
-                let mut update_model: assets::ActiveModel = existing_asset.into();
-                update_model.total_supply = Set(Some(new_supply));
-                update_model.updated_at = Set(now.into());
-
-                // Only update metadata if provided (NFT creation, not token increment)
-                if model.name.clone().unwrap().is_some() {
-                    update_model.name = model.name;
-                    update_model.symbol = model.symbol;
-                    update_model.description = model.description;
-                    update_model.image_url = model.image_url;
-                }
-
-                update_model
-                    .update(&self.db)
-                    .await
-                    .map_err(DbError::SeaOrmError)?;
-            } else {
-                // Asset doesn't exist - insert new
-                model.insert(&self.db).await.map_err(DbError::SeaOrmError)?;
-            }
-        }
-
-        // Only log for larger batches
-        if assets_count > 5 {
-            println!("✅ Batch saved {} assets successfully", assets_count);
-        }
-        Ok(())
+        crate::infrastructure::persistence::repositories::asset::save::save_batch(&self.db, assets)
+            .await
     }
 
     /// Find asset by app_id
@@ -290,37 +167,32 @@ impl AssetRepository {
     }
 
     /// Update supply when charms are marked as spent
-    /// Decrements supply for the given app_id and amount
     pub async fn update_supply_on_spent(
         &self,
         app_id: &str,
         amount: i64,
         asset_type: &str,
     ) -> Result<(), DbError> {
-        // Extract hash for NFT-Token matching
         let hash = self.extract_hash_from_app_id(app_id);
 
-        // Determine which asset to update
         let target_app_id = if asset_type == "token" {
-            // For tokens, try to update parent NFT first
-            let parent_nft_app_id = format!("n/{}", hash);
+            let parent_nft_pattern = format!("n/{}/%", hash);
             let parent_nft = Assets::find()
-                .filter(assets::Column::AppId.eq(&parent_nft_app_id))
+                .filter(assets::Column::AssetType.eq("nft"))
+                .filter(assets::Column::AppId.like(&parent_nft_pattern))
                 .one(&self.db)
                 .await
                 .map_err(|e| DbError::SeaOrmError(e))?;
 
-            if parent_nft.is_some() {
-                parent_nft_app_id
+            if let Some(nft) = parent_nft {
+                nft.app_id
             } else {
-                // No parent NFT, update token asset directly
                 app_id.to_string()
             }
         } else {
             app_id.to_string()
         };
 
-        // Find and update the asset
         let asset = Assets::find()
             .filter(assets::Column::AppId.eq(&target_app_id))
             .one(&self.db)
@@ -330,7 +202,7 @@ impl AssetRepository {
         if let Some(asset_model) = asset {
             let old_supply = asset_model.total_supply.unwrap_or(Decimal::ZERO);
             let amount_decimal = Decimal::from(amount);
-            let new_supply = (old_supply - amount_decimal).max(Decimal::ZERO); // Prevent negative supply
+            let new_supply = (old_supply - amount_decimal).max(Decimal::ZERO);
 
             let update_model = assets::ActiveModel {
                 id: Set(asset_model.id),
@@ -348,14 +220,101 @@ impl AssetRepository {
         Ok(())
     }
 
-    /// Extract hash from app_id (removes t/ or n/ prefix)
+    /// Extract hash from app_id (removes t/ or n/ prefix and returns only the 64-char hash)
     fn extract_hash_from_app_id(&self, app_id: &str) -> String {
-        if let Some(stripped) = app_id.strip_prefix("t/") {
-            stripped.split('/').next().unwrap_or(app_id).to_string()
+        let without_prefix = if let Some(stripped) = app_id.strip_prefix("t/") {
+            stripped
         } else if let Some(stripped) = app_id.strip_prefix("n/") {
-            stripped.split('/').next().unwrap_or(app_id).to_string()
+            stripped
         } else {
-            app_id.to_string()
+            app_id
+        };
+
+        // Hash is 64 characters
+        if without_prefix.len() >= 64 {
+            without_prefix[..64].to_string()
+        } else {
+            without_prefix.to_string()
         }
+    }
+
+    /// Mark NFT as reference and update token with inherited name
+    pub async fn mark_nft_as_reference_and_get_name(
+        &self,
+        nft_pattern: &str,
+        token_app_id: &str,
+    ) -> Result<(), DbError> {
+        // Find parent NFT by pattern
+        let parent_nft = Assets::find()
+            .filter(assets::Column::AssetType.eq("nft"))
+            .filter(assets::Column::AppId.like(nft_pattern))
+            .one(&self.db)
+            .await
+            .map_err(|e| DbError::SeaOrmError(e))?;
+
+        if let Some(nft) = parent_nft {
+            // Mark NFT as reference
+            let mut nft_active: assets::ActiveModel = nft.clone().into();
+            nft_active.is_reference_nft = Set(true);
+            nft_active.updated_at = Set(Utc::now().into());
+            Assets::update(nft_active)
+                .exec(&self.db)
+                .await
+                .map_err(|e| DbError::SeaOrmError(e))?;
+
+            // Update token with inherited name
+            if let Some(name) = nft.name {
+                let token = Assets::find()
+                    .filter(assets::Column::AppId.eq(token_app_id))
+                    .one(&self.db)
+                    .await
+                    .map_err(|e| DbError::SeaOrmError(e))?;
+
+                if let Some(token_model) = token {
+                    let mut token_active: assets::ActiveModel = token_model.into();
+                    token_active.name = Set(Some(name));
+                    token_active.updated_at = Set(Utc::now().into());
+                    Assets::update(token_active)
+                        .exec(&self.db)
+                        .await
+                        .map_err(|e| DbError::SeaOrmError(e))?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update NFT metadata (name, image_url) directly
+    pub async fn update_nft_metadata(
+        &self,
+        app_id: &str,
+        name: Option<&str>,
+        image_url: Option<&str>,
+    ) -> Result<(), DbError> {
+        let existing = Assets::find()
+            .filter(assets::Column::AppId.eq(app_id))
+            .one(&self.db)
+            .await
+            .map_err(|e| DbError::SeaOrmError(e))?;
+
+        if let Some(asset) = existing {
+            let mut active: assets::ActiveModel = asset.into();
+
+            if let Some(n) = name {
+                active.name = Set(Some(n.to_string()));
+            }
+            if let Some(img) = image_url {
+                active.image_url = Set(Some(img.to_string()));
+            }
+            active.updated_at = Set(Utc::now().into());
+
+            active
+                .update(&self.db)
+                .await
+                .map_err(|e| DbError::SeaOrmError(e))?;
+        }
+
+        Ok(())
     }
 }

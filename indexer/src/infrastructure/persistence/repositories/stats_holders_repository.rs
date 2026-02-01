@@ -112,10 +112,10 @@ impl StatsHoldersRepository {
             let entry = grouped.entry(key).or_insert((0, block_height));
             let old_value = entry.0;
             entry.0 = entry.0.checked_add(amount).unwrap_or_else(|| {
-                eprintln!(
-                    "[STATS_HOLDERS] Warning: Overflow adding {} to {} for {}/{}",
+                crate::utils::logging::log_warning(&format!(
+                    "[STATS_HOLDERS] Overflow adding {} to {} for {}/{}",
                     amount, old_value, app_id, address
-                );
+                ));
                 old_value // Keep old value on overflow
             });
             entry.1 = entry.1.max(block_height);

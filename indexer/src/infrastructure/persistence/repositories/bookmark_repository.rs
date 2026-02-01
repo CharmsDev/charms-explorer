@@ -97,7 +97,9 @@ impl BookmarkRepository {
                         // This shouldn't happen, but just in case
                         Err(DbError::Other(format!(
                             "Failed to find bookmark for update: hash={}, network={}, blockchain={}",
-                            hash, network_id.name, network_id.blockchain_type()
+                            hash,
+                            network_id.name,
+                            network_id.blockchain_type()
                         )))
                     }
                 } else {
@@ -137,5 +139,41 @@ impl BookmarkRepository {
 
         // Return the timestamp if found
         Ok(result.map(|b| b.last_updated_at.into()))
+    }
+
+    /// Update bookmark height for a network (used by fast reindexer)
+    /// This updates the existing bookmark rather than creating a new one
+    pub async fn update_bookmark_height(
+        &self,
+        new_height: u64,
+        network_id: &NetworkId,
+    ) -> Result<(), DbError> {
+        // Find existing bookmark for this network
+        let existing = bookmark::Entity::find()
+            .filter(bookmark::Column::Network.eq(network_id.name.clone()))
+            .filter(bookmark::Column::Blockchain.eq(network_id.blockchain_type()))
+            .one(&self.conn)
+            .await?;
+
+        if let Some(model) = existing {
+            let mut update_model: bookmark::ActiveModel = model.into();
+            update_model.height = Set(new_height as i32);
+            update_model.status = Set("confirmed".to_string());
+            update_model.last_updated_at = Set(Utc::now().into());
+            update_model.update(&self.conn).await?;
+            Ok(())
+        } else {
+            // No existing bookmark, create one with placeholder hash
+            let bookmark = bookmark::ActiveModel {
+                hash: Set(format!("fast_reindex_{}", new_height)),
+                height: Set(new_height as i32),
+                status: Set("confirmed".to_string()),
+                last_updated_at: Set(Utc::now().into()),
+                network: Set(network_id.name.clone()),
+                blockchain: Set(network_id.blockchain_type()),
+            };
+            bookmark.insert(&self.conn).await?;
+            Ok(())
+        }
     }
 }
