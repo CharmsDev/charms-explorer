@@ -44,14 +44,6 @@ export default function TransactionsPage() {
             : `https://mempool.space/testnet4/tx/${txid}`;
     };
 
-    const formatTxid = (txid, truncate = false) => {
-        if (!txid) return '';
-        if (truncate) {
-            return `${txid.slice(0, 8)}...${txid.slice(-8)}`;
-        }
-        return txid;
-    };
-
     const formatDate = (dateStr) => {
         if (!dateStr) return '-';
         const date = new Date(dateStr);
@@ -101,16 +93,16 @@ export default function TransactionsPage() {
                     <div className="text-center py-20 text-red-400">{error}</div>
                 ) : (
                     <>
-                        <div className="bg-dark-800/50 rounded-lg overflow-hidden">
-                            <table className="w-full">
+                        <div className="bg-dark-800/50 rounded-lg overflow-x-auto">
+                            <table className="w-full min-w-[900px]">
                                 <thead>
                                     <tr className="border-b border-dark-700">
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">TXID</th>
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">Type</th>
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">Asset</th>
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">Block</th>
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">Network</th>
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">Date</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">TXID</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Type</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Asset</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Block</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Network</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Date</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -125,29 +117,29 @@ export default function TransactionsPage() {
                                                 <td className="px-4 py-3">
                                                     <Link 
                                                         href={`/tx?txid=${tx.txid}&from=transactions`}
-                                                        className="text-primary-400 hover:text-primary-300 font-mono text-xs break-all"
+                                                        className="text-primary-400 hover:text-primary-300 font-mono text-xs whitespace-nowrap"
                                                     >
-                                                        {formatTxid(tx.txid)}
+                                                        {tx.txid}
                                                     </Link>
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <span className={`px-2 py-1 rounded text-xs font-medium ${colors.bg} ${colors.text}`}>
+                                                    <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${colors.bg} ${colors.text}`}>
                                                         {getTransactionLabel(txType)}
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <Link 
                                                         href={`/asset/${tx.id}`}
-                                                        className="text-white hover:text-primary-300 text-sm"
+                                                        className="text-white hover:text-primary-300 text-sm whitespace-nowrap"
                                                     >
-                                                        {tx.name || tx.app_id || '-'}
+                                                        {tx.name || `Charm ${tx.app_id?.substring(0, 8) || ''}` || '-'}
                                                     </Link>
                                                 </td>
-                                                <td className="px-4 py-3 text-dark-300 text-sm">
+                                                <td className="px-4 py-3 text-dark-300 text-sm whitespace-nowrap">
                                                     {tx.block_height?.toLocaleString() || '-'}
                                                 </td>
                                                 <td className="px-4 py-3">
-                                                    <span className={`px-2 py-1 rounded text-xs ${
+                                                    <span className={`px-2 py-1 rounded text-xs whitespace-nowrap ${
                                                         tx.network === 'mainnet' 
                                                             ? 'bg-orange-500/20 text-orange-400' 
                                                             : 'bg-blue-500/20 text-blue-400'
@@ -155,7 +147,7 @@ export default function TransactionsPage() {
                                                         {tx.network || 'testnet4'}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3 text-dark-400 text-sm">
+                                                <td className="px-4 py-3 text-dark-400 text-sm whitespace-nowrap">
                                                     {formatDate(tx.date_created)}
                                                 </td>
                                             </tr>

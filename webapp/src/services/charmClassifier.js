@@ -36,58 +36,65 @@ export const CHARM_ICONS = {
     [CHARM_TYPES.OTHER]: '📦'
 };
 
-// Color schemes for each type
+// Color schemes for each type - Dark mode cohesive palette
 export const CHARM_COLORS = {
     [CHARM_TYPES.BRO_TOKEN]: {
-        bg: 'bg-yellow-500/20',
-        text: 'text-yellow-400',
-        border: 'border-yellow-500/30',
-        gradient: 'from-yellow-400 to-orange-500'
+        bg: 'bg-amber-500/10',
+        text: 'text-amber-400',
+        border: 'border-amber-500/20',
+        gradient: 'from-amber-400 to-yellow-500'
     },
     [CHARM_TYPES.CHARMS_CAST_DEX]: {
-        bg: 'bg-purple-500/20',
-        text: 'text-purple-400',
-        border: 'border-purple-500/30',
-        gradient: 'from-purple-400 to-pink-500'
+        bg: 'bg-violet-500/10',
+        text: 'text-violet-400',
+        border: 'border-violet-500/20',
+        gradient: 'from-violet-400 to-purple-500'
     },
     [CHARM_TYPES.DEX_ORDER]: {
-        bg: 'bg-green-500/20',
-        text: 'text-green-400',
-        border: 'border-green-500/30',
-        gradient: 'from-green-400 to-emerald-500'
+        bg: 'bg-violet-500/10',
+        text: 'text-violet-400',
+        border: 'border-violet-500/20',
+        gradient: 'from-violet-400 to-purple-500'
     },
     [CHARM_TYPES.NFT]: {
-        bg: 'bg-pink-500/20',
-        text: 'text-pink-400',
-        border: 'border-pink-500/30',
-        gradient: 'from-pink-400 to-rose-500'
+        bg: 'bg-purple-500/10',
+        text: 'text-purple-400',
+        border: 'border-purple-500/20',
+        gradient: 'from-purple-400 to-violet-500'
     },
     [CHARM_TYPES.TOKEN]: {
-        bg: 'bg-blue-500/20',
-        text: 'text-blue-400',
-        border: 'border-blue-500/30',
-        gradient: 'from-blue-400 to-cyan-500'
+        bg: 'bg-amber-500/10',
+        text: 'text-amber-300',
+        border: 'border-amber-500/20',
+        gradient: 'from-amber-300 to-orange-400'
     },
     [CHARM_TYPES.DAPP]: {
-        bg: 'bg-cyan-500/20',
-        text: 'text-cyan-400',
-        border: 'border-cyan-500/30',
-        gradient: 'from-cyan-400 to-teal-500'
+        bg: 'bg-slate-500/10',
+        text: 'text-slate-300',
+        border: 'border-slate-500/20',
+        gradient: 'from-slate-400 to-slate-500'
     },
     [CHARM_TYPES.OTHER]: {
-        bg: 'bg-gray-500/20',
-        text: 'text-gray-400',
-        border: 'border-gray-500/30',
-        gradient: 'from-gray-400 to-slate-500'
+        bg: 'bg-slate-500/10',
+        text: 'text-slate-400',
+        border: 'border-slate-500/20',
+        gradient: 'from-slate-400 to-slate-500'
     }
 };
 
-// Known BRO token app_id patterns
-const BRO_APP_ID_PATTERNS = [
-    /^t\/bro$/i,
-    /^t\/\$bro$/i,
-    /bro/i
-];
+// VERIFIED BRO token - only this specific app_id hash is the official $BRO
+// This is the reference NFT hash that defines the official BRO token
+const VERIFIED_BRO_HASH = '3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b';
+
+/**
+ * Check if an app_id belongs to the verified BRO token/NFT family
+ * Only tokens/NFTs with this specific hash are official $BRO
+ */
+function isVerifiedBro(app_id) {
+    if (!app_id) return false;
+    // Match t/HASH/... or n/HASH/... patterns
+    return app_id.includes(VERIFIED_BRO_HASH);
+}
 
 // Known Charms Cast DEX verification keys
 const CHARMS_CAST_VK_PATTERNS = [
@@ -104,15 +111,17 @@ export function classifyCharm(charm) {
 
     const { tags, app_id, asset_type, name, data } = charm;
 
-    // Check tags first (most reliable)
+    // Check tags first for DEX detection
     if (tags) {
         const tagLower = typeof tags === 'string' ? tags.toLowerCase() : '';
         if (tagLower.includes('charms-cast') || tagLower.includes('dex')) {
             return CHARM_TYPES.CHARMS_CAST_DEX;
         }
-        if (tagLower.includes('bro')) {
-            return CHARM_TYPES.BRO_TOKEN;
-        }
+    }
+
+    // Check for VERIFIED BRO token (must have specific hash in app_id)
+    if (app_id && isVerifiedBro(app_id)) {
+        return CHARM_TYPES.BRO_TOKEN;
     }
 
     // Check for DEX data in the charm's data field (from indexer)
@@ -140,22 +149,12 @@ export function classifyCharm(charm) {
         }
     }
 
-    // Check app_id patterns
+    // Check app_id patterns for DEX
     if (app_id) {
         // Charms Cast DEX orders
         if (CHARMS_CAST_VK_PATTERNS.some(pattern => pattern.test(app_id))) {
             return CHARM_TYPES.CHARMS_CAST_DEX;
         }
-        
-        // BRO token
-        if (BRO_APP_ID_PATTERNS.some(pattern => pattern.test(app_id))) {
-            return CHARM_TYPES.BRO_TOKEN;
-        }
-    }
-
-    // Check name for BRO
-    if (name && /bro/i.test(name)) {
-        return CHARM_TYPES.BRO_TOKEN;
     }
 
     // Fall back to asset_type

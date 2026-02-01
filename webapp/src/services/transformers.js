@@ -11,15 +11,16 @@ export const detectCharmType = (charm) => {
         return charm.asset_type;
     }
 
-    // Check app_id prefix (most reliable method)
-    if (charm?.app_id) {
-        if (charm.app_id.startsWith('n/')) {
+    // Check app_id or charmid prefix (most reliable method)
+    const idToCheck = charm?.app_id || charm?.charmid;
+    if (idToCheck) {
+        if (idToCheck.startsWith('n/')) {
             return 'nft';
         }
-        if (charm.app_id.startsWith('t/')) {
+        if (idToCheck.startsWith('t/')) {
             return 'token';
         }
-        if (charm.app_id.startsWith('B/')) {
+        if (idToCheck.startsWith('B/')) {
             return 'dapp';
         }
         // Any other prefix is considered 'other'
@@ -49,6 +50,30 @@ export const detectCharmType = (charm) => {
 };
 
 
+// Extract metadata from spell native_data (where base64 images are stored)
+const extractSpellMetadata = (charm) => {
+    // Structure is charm.data.native_data (not spell_data)
+    const nativeData = charm?.data?.native_data;
+    
+    if (!nativeData?.tx?.outs) return null;
+    
+    for (const out of nativeData.tx.outs) {
+        const data = out["0"] || out[0];
+        if (data && typeof data === 'object') {
+            return {
+                name: data.name,
+                ticker: data.ticker || data.symbol,
+                description: data.description,
+                image: data.image, // base64 image
+                supply_limit: data.supply_limit,
+                decimals: data.decimals,
+                url: data.url
+            };
+        }
+    }
+    return null;
+};
+
 // Transforms a charm object from the API to the format expected by the UI
 export const transformCharmData = (charm) => {
     if (!charm) {
@@ -56,25 +81,36 @@ export const transformCharmData = (charm) => {
     }
 
     const detectedType = detectCharmType(charm);
+    
+    // Try to get metadata from spell native_data first (contains base64 images)
+    const spellMetadata = extractSpellMetadata(charm);
 
     const charmData = getNestedProperty(charm, 'data.data.outs[0].charms.$0000') || {};
 
     const hasApiData = getNestedProperty(charm, 'data.has_api_data');
     const noteOnly = getNestedProperty(charm, 'data.data.note') === "No charm data from API";
 
-    const name = charmData.name ||
+    const name = spellMetadata?.name ||
+        charmData.name ||
+        charm.name ||
         getNestedProperty(charm, 'data.data.name') ||
         `Charm ${charm.charmid?.substring(0, 8) || 'Unknown'}`;
 
-    const description = charmData.description ||
+    const description = spellMetadata?.description ||
+        charmData.description ||
+        charm.description ||
         getNestedProperty(charm, 'data.data.description') ||
         (noteOnly ? 'Charm detected but no metadata available' : 'No description available');
 
-    const image = charmData.image ||
+    // Prioritize base64 image from spell data, then other sources
+    const image = spellMetadata?.image ||
+        charmData.image ||
         getNestedProperty(charm, 'data.data.image') ||
         '/images/logo.png';
 
-    const ticker = charmData.ticker ||
+    const ticker = spellMetadata?.ticker ||
+        charmData.ticker ||
+        charm.ticker ||
         getNestedProperty(charm, 'data.data.ticker') || '';
 
     const supply = getNestedProperty(charm, 'data.data.supply') || 0;

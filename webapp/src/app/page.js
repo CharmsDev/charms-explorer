@@ -1,14 +1,22 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AssetGrid from '../components/AssetGrid';
 import Pagination from '../components/Pagination';
 import { fetchUniqueAssets, getUniqueAssetCounts } from '../services/api';
 
-export default function HomePage() {
+// Inner component that uses useSearchParams
+function HomeContent() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    
+    // Read initial type from URL query params, default to 'nft'
+    const initialType = searchParams.get('type') || 'nft';
+    const validTypes = ['nft', 'token', 'dapp'];
+    const safeInitialType = validTypes.includes(initialType) ? initialType : 'nft';
+    
     const [assets, setAssets] = useState([]);
     const [counts, setCounts] = useState({ total: 0, nft: 0, token: 0, dapp: 0 });
     const [isLoading, setIsLoading] = useState(true);
@@ -17,7 +25,7 @@ export default function HomePage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [sortOrder, setSortOrder] = useState('newest');
     const [selectedNetwork, setSelectedNetwork] = useState('all');
-    const [selectedType, setSelectedType] = useState('all');
+    const [selectedType, setSelectedType] = useState(safeInitialType);
     const [error, setError] = useState(null);
 
     const ITEMS_PER_PAGE = 12;
@@ -44,10 +52,16 @@ export default function HomePage() {
         }
     };
 
-    // Handle type change from FilterTabs
+    // Handle type change from FilterTabs - update URL
     const handleTypeChange = (type) => {
         setSelectedType(type);
         setCurrentPage(1); // Reset to first page when changing type
+        
+        // Update URL with new type parameter
+        const params = new URLSearchParams(searchParams.toString());
+        params.set('type', type);
+        router.push(`/?${params.toString()}`, { scroll: false });
+        
         loadData(type, selectedNetwork, 1, sortOrder);
     };
 
@@ -99,9 +113,8 @@ export default function HomePage() {
         loadData();
     }, []);
 
-    // Filter tabs configuration
+    // Filter tabs configuration (no 'All' - only NFTs, Tokens, dApps)
     const filterTabs = [
-        { type: 'all', label: 'All', icon: '📦', count: counts.total },
         { type: 'nft', label: 'NFTs', icon: '🎨', count: counts.nft },
         { type: 'token', label: 'Tokens', icon: '🪙', count: counts.token },
         { type: 'dapp', label: 'dApps', icon: '⚙️', count: counts.dapp },
@@ -219,5 +232,20 @@ export default function HomePage() {
                 />
             )}
         </div>
+    );
+}
+
+// Main export wrapped in Suspense for useSearchParams
+export default function HomePage() {
+    return (
+        <Suspense fallback={
+            <div className="container mx-auto px-4 py-8">
+                <div className="flex justify-center items-center min-h-[400px]">
+                    <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+                </div>
+            </div>
+        }>
+            <HomeContent />
+        </Suspense>
     );
 }

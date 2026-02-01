@@ -45,9 +45,22 @@ export const fetchAssetsByType = async (assetType, page = 1, limit = 20, sort = 
         }
 
         const assets = data.data.assets;
+        
+        // Map assets to expected format
+        // Images for tokens will be fetched on-demand from reference NFT by AssetCard
+        const mappedAssets = assets.map(asset => ({
+            ...asset,
+            id: asset.app_id || asset.id,
+            type: asset.asset_type,
+            image: asset.image_url, // May be null for tokens, will be fetched from reference NFT
+            ticker: asset.symbol,
+            createdAt: asset.created_at,
+            supply: asset.total_supply,
+            app_id: asset.app_id
+        }));
 
         return {
-            assets: assets,
+            assets: mappedAssets,
             total: data.pagination.total,
             page: data.pagination.page,
             totalPages: data.pagination.total_pages
@@ -114,7 +127,13 @@ export const getAssetCounts = async () => {
 
 export const fetchAssetHolders = async (appId) => {
     try {
-        const response = await fetch(`${ENDPOINTS.ASSET_HOLDERS(appId)}`);
+        // [RJJ-STATS-HOLDERS] Normalize app_id to use :0 suffix for holders lookup
+        // Holders are consolidated under the base token app_id (ending in :0)
+        let normalizedAppId = appId;
+        if (appId && appId.match(/:[0-9]+$/)) {
+            normalizedAppId = appId.replace(/:[0-9]+$/, ':0');
+        }
+        const response = await fetch(`${ENDPOINTS.ASSET_HOLDERS(normalizedAppId)}`);
 
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
@@ -125,6 +144,33 @@ export const fetchAssetHolders = async (appId) => {
     } catch (error) {
         console.error('[API] Error fetching asset holders:', error);
         throw error;
+    }
+};
+
+/**
+ * Fetch asset data by app_id from the /assets endpoint
+ * This returns asset data including total_supply, decimals, etc.
+ */
+export const fetchAssetByAppId = async (appId) => {
+    try {
+        const encodedAppId = encodeURIComponent(appId);
+        const response = await fetch(`${ENDPOINTS.ASSETS}?app_id=${encodedAppId}&limit=1`);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        
+        // Return the first matching asset
+        if (data?.data?.assets && data.data.assets.length > 0) {
+            return data.data.assets[0];
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('[API] Error fetching asset by app_id:', error);
+        return null;
     }
 };
 
@@ -150,31 +196,30 @@ const getUniqueAppIdKey = (appId) => {
 };
 
 /**
+ * Extract base hash from app_id (without prefix and without txid:vout)
+ */
+const getBaseHash = (appId) => {
+    if (!appId) return null;
+    const parts = appId.split('/');
+    if (parts.length >= 2) {
+        return parts[1]; // Return just the HASH part
+    }
+    return null;
+};
+
+/**
  * Fetch unique assets (grouping tokens/NFTs by their reference)
  * This filters out duplicate mints of the same token type
+ * Also filters out NFT references that are just metadata for tokens
  */
 export const fetchUniqueAssets = async (assetType = 'all', page = 1, limit = 20, sort = 'newest', network = null) => {
     try {
-        // Fetch more items than needed to account for duplicates
-        const fetchLimit = Math.min(limit * 5, 500);
+        // Fetch ALL assets to properly deduplicate and filter
+        const fetchLimit = 500;
         
-        let url = `${ENDPOINTS.ASSETS}`;
-        const params = new URLSearchParams();
-
-        if (assetType && assetType !== 'all') {
-            params.append('asset_type', assetType);
-        }
-
+        let url = `${ENDPOINTS.ASSETS}?limit=${fetchLimit}`;
         if (network && network !== 'all') {
-            params.append('network', network);
-        }
-
-        params.append('page', '1'); // Always fetch from first page for deduplication
-        params.append('limit', fetchLimit.toString());
-        params.append('sort', sort);
-
-        if (params.toString()) {
-            url += `?${params.toString()}`;
+            url += `&network=${network}`;
         }
 
         const response = await fetch(url);
@@ -196,19 +241,61 @@ export const fetchUniqueAssets = async (assetType = 'all', page = 1, limit = 20,
 
         const allAssets = data.data.assets;
         
-        // Deduplicate: keep only unique assets by their reference key
+        // Build a set of hashes that have tokens (t/HASH)
+        // These NFTs (n/HASH) are just references, not real NFTs
+        const tokenHashes = new Set();
+        for (const asset of allAssets) {
+            if (asset.app_id?.startsWith('t/')) {
+                const hash = getBaseHash(asset.app_id);
+                if (hash) tokenHashes.add(hash);
+            }
+        }
+        
+        // Deduplicate and filter based on type
         const seen = new Map();
         const uniqueAssets = [];
         
         for (const asset of allAssets) {
-            const key = getUniqueAppIdKey(asset.app_id);
-            if (key && !seen.has(key)) {
-                seen.set(key, true);
-                uniqueAssets.push(asset);
+            const appId = asset.app_id;
+            if (!appId) continue;
+            
+            const key = getUniqueAppIdKey(appId);
+            if (!key || seen.has(key)) continue;
+            
+            // Determine actual type based on app_id prefix
+            let actualType = 'other';
+            if (appId.startsWith('n/')) {
+                // Check if this NFT is just a token reference
+                const hash = getBaseHash(appId);
+                if (tokenHashes.has(hash)) {
+                    // Skip - this is a token reference NFT, not a real NFT
+                    continue;
+                }
+                actualType = 'nft';
+            } else if (appId.startsWith('t/')) {
+                actualType = 'token';
+            } else if (appId.startsWith('b/')) {
+                actualType = 'dapp';
             }
+            
+            // Filter by requested type
+            if (assetType !== 'all' && actualType !== assetType) {
+                continue;
+            }
+            
+            seen.set(key, true);
+            // Ensure asset has correct type for display
+            uniqueAssets.push({ ...asset, asset_type: actualType });
         }
         
-        // Apply pagination to unique results
+        // Sort
+        if (sort === 'newest') {
+            uniqueAssets.sort((a, b) => (b.block_height || 0) - (a.block_height || 0));
+        } else {
+            uniqueAssets.sort((a, b) => (a.block_height || 0) - (b.block_height || 0));
+        }
+        
+        // Apply pagination
         const startIndex = (page - 1) * limit;
         const paginatedAssets = uniqueAssets.slice(startIndex, startIndex + limit);
         const totalUnique = uniqueAssets.length;
@@ -227,10 +314,10 @@ export const fetchUniqueAssets = async (assetType = 'all', page = 1, limit = 20,
 
 /**
  * Get counts of unique assets (not individual charms)
+ * Excludes NFT references that are just metadata for tokens
  */
 export const getUniqueAssetCounts = async (network = null) => {
     try {
-        // Fetch all assets to count unique ones
         const fetchLimit = 500;
         
         let url = `${ENDPOINTS.ASSETS}?limit=${fetchLimit}`;
@@ -247,7 +334,16 @@ export const getUniqueAssetCounts = async (network = null) => {
         const data = await response.json();
         const allAssets = data.data?.assets || [];
         
-        // Count unique by type
+        // Build set of hashes that have tokens
+        const tokenHashes = new Set();
+        for (const asset of allAssets) {
+            if (asset.app_id?.startsWith('t/')) {
+                const hash = getBaseHash(asset.app_id);
+                if (hash) tokenHashes.add(hash);
+            }
+        }
+        
+        // Count unique by actual type (based on app_id prefix)
         const seenByType = {
             nft: new Set(),
             token: new Set(),
@@ -255,11 +351,23 @@ export const getUniqueAssetCounts = async (network = null) => {
         };
         
         for (const asset of allAssets) {
-            const key = getUniqueAppIdKey(asset.app_id);
-            const type = asset.asset_type || 'other';
+            const appId = asset.app_id;
+            if (!appId) continue;
             
-            if (key && seenByType[type]) {
-                seenByType[type].add(key);
+            const key = getUniqueAppIdKey(appId);
+            if (!key) continue;
+            
+            // Determine actual type based on prefix
+            if (appId.startsWith('n/')) {
+                const hash = getBaseHash(appId);
+                // Skip NFT references that are just token metadata
+                if (!tokenHashes.has(hash)) {
+                    seenByType.nft.add(key);
+                }
+            } else if (appId.startsWith('t/')) {
+                seenByType.token.add(key);
+            } else if (appId.startsWith('b/')) {
+                seenByType.dapp.add(key);
             }
         }
         

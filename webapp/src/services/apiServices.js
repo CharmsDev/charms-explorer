@@ -17,7 +17,8 @@ export {
     fetchAssetsByType,
     getAssetById,
     getAssetCounts,
-    fetchAssetHolders
+    fetchAssetHolders,
+    fetchAssetByAppId
 } from './api/assets';
 
 export {

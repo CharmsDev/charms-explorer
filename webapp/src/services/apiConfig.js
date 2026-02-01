@@ -8,13 +8,14 @@ export const API_BASE_URL = process.env.NEXT_PUBLIC_CHARMS_API_URL || 'http://lo
 // API Endpoints
 export const ENDPOINTS = {
     CHARMS: `${API_BASE_URL}/charms`,
-    CHARM_BY_CHARMID: (charmid) => `${API_BASE_URL}/charms/by-charmid/${charmid}`,
+    CHARM_BY_CHARMID: (charmid) => `${API_BASE_URL}/charms/by-charmid/${encodeURIComponent(charmid)}`,
     CHARM_BY_TXID: (txid) => `${API_BASE_URL}/charms/${txid}`,
     CHARMS_BY_ADDRESS: (address) => `${API_BASE_URL}/charms/by-address/${address}`, // [RJJ-ADDRESS-SEARCH]
     CHARMS_COUNT_BY_TYPE: `${API_BASE_URL}/charms/count-by-type`,
     ASSETS: `${API_BASE_URL}/assets`,
     ASSET_COUNTS: `${API_BASE_URL}/assets/count`,
     ASSET_HOLDERS: (appId) => `${API_BASE_URL}/assets/${encodeURIComponent(appId)}/holders`, // [RJJ-STATS-HOLDERS]
+    REFERENCE_NFT: (hash) => `${API_BASE_URL}/assets/reference-nft/${encodeURIComponent(hash)}`, // [RJJ-REF-NFT]
     STATUS: `${API_BASE_URL}/status`,
     RESET: `${API_BASE_URL}/reset`,
     LIKE_CHARM: `${API_BASE_URL}/charms/like`,

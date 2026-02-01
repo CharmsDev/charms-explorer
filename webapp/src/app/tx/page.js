@@ -320,10 +320,12 @@ function TransactionPageContent() {
                         ) : (
                             <div className="card p-6">
                                 <h2 className="text-xl font-semibold text-white mb-6">Spell Data (Raw JSON)</h2>
-                                <p className="text-dark-400 text-xs mb-3">Byte arrays are displayed as hex strings for readability</p>
+                                <p className="text-dark-400 text-xs mb-3">
+                                    {charm.spell ? 'Original spell extracted from transaction' : 'Byte arrays are displayed as hex strings for readability'}
+                                </p>
                                 <div className="bg-dark-900/50 rounded-lg p-4 overflow-x-auto max-h-[600px] overflow-y-auto">
                                     <pre className="text-xs sm:text-sm text-green-400 font-mono whitespace-pre-wrap break-words">
-                                        {formatSpellData(charm.data)}
+                                        {formatSpellData(charm.spell?.native_data || charm.spell || charm.data)}
                                     </pre>
                                 </div>
                             </div>

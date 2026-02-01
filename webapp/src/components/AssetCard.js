@@ -1,20 +1,25 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { classifyCharm, getCharmBadgeProps, CHARM_TYPES } from '@/services/charmClassifier';
 import { getRefNftAppId, getCachedNftReference, fetchNftReferenceMetadata } from '@/services/api/tokenMetadata';
+import { getReferenceNftImage, extractHashFromAppId, fetchReferenceNftByHash } from '@/services/api/referenceNft';
+import { getDisplayMetadata } from '@/services/spellParser';
 
 export default function AssetCard({ asset, nftReferenceMap }) {
     const [imageError, setImageError] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
     const [imageLoaded, setImageLoaded] = useState(false);
     const [nftMetadata, setNftMetadata] = useState(null);
+    const [spellImage, setSpellImage] = useState(null);
     const placeholderImage = "/images/logo.png";
 
-    // For tokens (t/...), fetch NFT reference metadata
+    // Fetch metadata based on asset type
     useEffect(() => {
         const appId = asset.app_id || asset.id;
+        
+        // For tokens (t/...), fetch reference NFT metadata for image
         if (appId?.startsWith('t/')) {
             // First check if passed via prop (preloaded)
             if (nftReferenceMap) {
@@ -24,18 +29,37 @@ export default function AssetCard({ asset, nftReferenceMap }) {
                     return;
                 }
             }
-            // Then check cache
+            // Then check old cache
             const cached = getCachedNftReference(appId);
             if (cached) {
                 setNftMetadata(cached);
-            } else {
-                // Fetch if not cached
-                fetchNftReferenceMetadata(appId).then(meta => {
-                    if (meta) setNftMetadata(meta);
+                return;
+            }
+            // Fetch from new reference NFT endpoint
+            const hash = extractHashFromAppId(appId);
+            if (hash) {
+                fetchReferenceNftByHash(hash).then(refNft => {
+                    if (refNft) {
+                        setNftMetadata(refNft);
+                        if (refNft.image_url) {
+                            setSpellImage(refNft.image_url);
+                        }
+                    }
                 });
             }
         }
-    }, [asset.app_id, asset.id, nftReferenceMap]);
+        // For NFTs (n/...) without image, fetch from reference NFT endpoint
+        else if (appId?.startsWith('n/') && !asset.image && !asset.image_url) {
+            const hash = extractHashFromAppId(appId);
+            if (hash) {
+                fetchReferenceNftByHash(hash).then(refNft => {
+                    if (refNft?.image_url) {
+                        setSpellImage(refNft.image_url);
+                    }
+                });
+            }
+        }
+    }, [asset.app_id, asset.id, asset.image, asset.image_url, nftReferenceMap]);
 
     // Classify the charm to get special badges
     const charmType = classifyCharm(asset);
@@ -55,14 +79,14 @@ export default function AssetCard({ asset, nftReferenceMap }) {
     };
     const formattedDate = formatDate();
 
-    // Get type-specific styling and icon
+    // Get type-specific styling and icon - Dark mode cohesive palette
     const getTypeDetails = () => {
-        // Special handling for BRO token
+        // Special handling for BRO token (verified)
         if (charmType === CHARM_TYPES.BRO_TOKEN) {
             return {
-                color: 'from-yellow-500 to-orange-600',
-                bgColor: 'bg-yellow-900/20',
-                borderColor: 'border-yellow-500/30',
+                color: 'from-amber-400 to-yellow-500',
+                bgColor: 'bg-amber-500/10',
+                borderColor: 'border-amber-500/20',
                 icon: '🪙',
                 label: '$BRO'
             };
@@ -71,9 +95,9 @@ export default function AssetCard({ asset, nftReferenceMap }) {
         // Special handling for Charms Cast DEX
         if (charmType === CHARM_TYPES.CHARMS_CAST_DEX) {
             return {
-                color: 'from-purple-500 to-pink-600',
-                bgColor: 'bg-purple-900/20',
-                borderColor: 'border-purple-500/30',
+                color: 'from-violet-400 to-purple-500',
+                bgColor: 'bg-violet-500/10',
+                borderColor: 'border-violet-500/20',
                 icon: '🔄',
                 label: 'DEX'
             };
@@ -82,33 +106,33 @@ export default function AssetCard({ asset, nftReferenceMap }) {
         switch (asset.asset_type) {
             case 'nft':
                 return {
-                    color: 'from-purple-500 to-indigo-700',
-                    bgColor: 'bg-purple-900/20',
-                    borderColor: 'border-purple-500/30',
+                    color: 'from-purple-400 to-violet-500',
+                    bgColor: 'bg-purple-500/10',
+                    borderColor: 'border-purple-500/20',
                     icon: '🖼️',
                     label: 'NFT'
                 };
             case 'token':
                 return {
-                    color: 'from-green-500 to-emerald-700',
-                    bgColor: 'bg-green-900/20',
-                    borderColor: 'border-green-500/30',
+                    color: 'from-amber-300 to-orange-400',
+                    bgColor: 'bg-amber-500/10',
+                    borderColor: 'border-amber-500/20',
                     icon: '🪙',
                     label: 'Token'
                 };
             case 'dapp':
                 return {
-                    color: 'from-blue-500 to-cyan-700',
-                    bgColor: 'bg-blue-900/20',
-                    borderColor: 'border-blue-500/30',
-                    icon: '⚡',
-                    label: 'DApp'
+                    color: 'from-slate-400 to-slate-500',
+                    bgColor: 'bg-slate-500/10',
+                    borderColor: 'border-slate-500/20',
+                    icon: '⚙️',
+                    label: 'dApp'
                 };
             default:
                 return {
-                    color: 'from-gray-500 to-slate-700',
-                    bgColor: 'bg-gray-900/20',
-                    borderColor: 'border-gray-500/30',
+                    color: 'from-slate-400 to-slate-500',
+                    bgColor: 'bg-slate-500/10',
+                    borderColor: 'border-slate-500/20',
                     icon: '📦',
                     label: asset.asset_type || 'Asset'
                 };
@@ -135,13 +159,17 @@ export default function AssetCard({ asset, nftReferenceMap }) {
         return supply.toFixed(decimals);
     };
 
-    // Get display name with fallback - use NFT reference for tokens
+    // Get normalized metadata using the standardized parser
+    const displayMeta = useMemo(() => {
+        return getDisplayMetadata(asset, nftMetadata);
+    }, [asset, nftMetadata]);
+
+    // Get display name with fallback
+    // Assets are now pre-transformed with name field from spell metadata
     const getDisplayName = () => {
-        // For tokens, prefer NFT reference metadata
-        if (nftMetadata?.name) return nftMetadata.name;
-        if (nftMetadata?.symbol) return nftMetadata.symbol;
+        // First check if asset already has transformed name field
         if (asset.name) return asset.name;
-        if (asset.symbol) return asset.symbol;
+        if (displayMeta.name) return displayMeta.name;
         // Fallback: show shortened app_id
         const appId = asset.app_id || asset.id;
         if (appId) {
@@ -152,26 +180,26 @@ export default function AssetCard({ asset, nftReferenceMap }) {
         return `Asset ${asset.id}`;
     };
 
-    // Get display image with fallback - use NFT reference for tokens
+    // Get display image with fallback
     const getDisplayImage = () => {
         if (imageError) return placeholderImage;
-        // For tokens, prefer NFT reference image
+        // For tokens, use NFT reference metadata image
         if (nftMetadata?.image_url) return nftMetadata.image_url;
+        // For NFTs, use spell image fetched from charm
+        if (spellImage) return spellImage;
+        // Check asset's own image fields
+        if (asset.image && asset.image !== '/images/logo.png') return asset.image;
         if (asset.image_url) return asset.image_url;
+        // Try displayMeta (for raw assets)
+        if (displayMeta.image) return displayMeta.image;
         return placeholderImage;
     };
     
-    // Get display description - use NFT reference for tokens
-    const getDisplayDescription = () => {
-        if (nftMetadata?.description) return nftMetadata.description;
-        return asset.description;
-    };
+    // Get display description
+    const getDisplayDescription = () => displayMeta.description;
     
-    // Get display symbol - use NFT reference for tokens
-    const getDisplaySymbol = () => {
-        if (nftMetadata?.symbol) return nftMetadata.symbol;
-        return asset.symbol;
-    };
+    // Get display symbol
+    const getDisplaySymbol = () => displayMeta.ticker;
 
     const isPlaceholder = getDisplayImage() === placeholderImage;
 
@@ -219,14 +247,20 @@ export default function AssetCard({ asset, nftReferenceMap }) {
 
             {/* Asset Info */}
             <div className="space-y-2">
-                {/* Name and Symbol in same line */}
+                {/* Type label + Name (+ Symbol if different from name) */}
+                <div className="flex items-center gap-2 mb-1">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded bg-gradient-to-r ${typeDetails.color} text-white`}>
+                        {typeDetails.label}
+                    </span>
+                </div>
                 <div className="flex items-center justify-between">
                     <Link href={assetDetailUrl} className="flex-1 min-w-0">
                         <h3 className="font-semibold text-white text-lg truncate hover:text-primary-400 transition-colors cursor-pointer">
                             {getDisplayName()}
                         </h3>
                     </Link>
-                    {getDisplaySymbol() && (
+                    {/* Only show ticker if different from name */}
+                    {getDisplaySymbol() && getDisplaySymbol().toLowerCase() !== getDisplayName().toLowerCase() && (
                         <span className="ml-2 text-sm text-dark-400 font-mono flex-shrink-0">
                             ${getDisplaySymbol()}
                         </span>
