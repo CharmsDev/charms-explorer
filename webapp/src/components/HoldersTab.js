@@ -27,7 +27,6 @@ export default function HoldersTab({ appId }) {
                 setTotalHolders(data.total_holders || 0);
                 setTotalSupply(data.total_supply || 0);
             } catch (err) {
-                console.error('Error loading holders:', err);
                 setError('Failed to load holder data');
             } finally {
                 setLoading(false);

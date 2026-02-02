@@ -1,6 +1,7 @@
 'use client';
 
 import { ENDPOINTS } from '../apiConfig';
+import { logger } from '../apiUtils';
 
 // Cache for NFT reference metadata to avoid repeated API calls
 const nftReferenceCache = new Map();
@@ -63,7 +64,7 @@ async function fetchCharmByAppId(appId) {
         const charm = await response.json();
         return charm;
     } catch (error) {
-        console.error('[TokenMetadata] Error fetching charm by app_id:', error);
+        logger.error('TokenMetadata.fetchCharmByAppId', error);
         return null;
     }
 }
@@ -142,7 +143,7 @@ export async function fetchNftReferenceMetadata(tokenAppId) {
         
         return null;
     } catch (error) {
-        console.error('[TokenMetadata] Error fetching NFT reference:', error);
+        logger.error('TokenMetadata.fetchNftReference', error);
         return null;
     }
 }
@@ -175,9 +176,9 @@ export async function preloadNftReferenceCache() {
             }
         });
         
-        console.log(`[TokenMetadata] Preloaded ${nftReferenceCache.size} NFT references`);
+        logger.info('TokenMetadata', `Preloaded ${nftReferenceCache.size} NFT references`);
     } catch (error) {
-        console.error('[TokenMetadata] Error preloading cache:', error);
+        logger.error('TokenMetadata.preloadCache', error);
     }
 }
 
@@ -236,7 +237,7 @@ export async function fetchCharmSpellImage(appId) {
         
         return null;
     } catch (error) {
-        console.error('[TokenMetadata] Error fetching charm spell image:', error);
+        logger.error('TokenMetadata.fetchCharmSpellImage', error);
         return null;
     }
 }

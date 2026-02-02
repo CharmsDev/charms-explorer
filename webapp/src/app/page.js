@@ -46,7 +46,7 @@ function HomeContent() {
             setAssets(response.assets || []);
             setTotalPages(response.totalPages || 1);
         } catch (error) {
-            console.error('Error loading data:', error);
+            // Error handled silently - UI shows empty state
         } finally {
             setIsLoading(false);
         }

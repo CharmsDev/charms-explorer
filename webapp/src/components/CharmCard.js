@@ -174,7 +174,7 @@ export default function CharmCard({ charm }) {
                                         setIsLiked(true);
                                     }
                                 } catch (error) {
-                                    console.error('Error toggling like:', error);
+                                    // Silent fail for like toggle
                                 } finally {
                                     setIsLikeLoading(false);
                                 }

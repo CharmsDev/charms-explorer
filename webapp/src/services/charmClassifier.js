@@ -109,7 +109,9 @@ const CHARMS_CAST_VK_PATTERNS = [
 export function classifyCharm(charm) {
     if (!charm) return CHARM_TYPES.OTHER;
 
-    const { tags, app_id, asset_type, name, data } = charm;
+    const { tags, app_id, charmid, asset_type, name, data } = charm;
+    // Use app_id or charmid (API returns charmid, transformed uses app_id)
+    const effectiveAppId = app_id || charmid;
 
     // Check tags first for DEX detection
     if (tags) {
@@ -120,7 +122,7 @@ export function classifyCharm(charm) {
     }
 
     // Check for VERIFIED BRO token (must have specific hash in app_id)
-    if (app_id && isVerifiedBro(app_id)) {
+    if (effectiveAppId && isVerifiedBro(effectiveAppId)) {
         return CHARM_TYPES.BRO_TOKEN;
     }
 
@@ -149,10 +151,10 @@ export function classifyCharm(charm) {
         }
     }
 
-    // Check app_id patterns for DEX
-    if (app_id) {
-        // Charms Cast DEX orders
-        if (CHARMS_CAST_VK_PATTERNS.some(pattern => pattern.test(app_id))) {
+    // Check app_id/charmid patterns for DEX
+    if (effectiveAppId) {
+        // Charms Cast DEX orders (b/ prefix)
+        if (CHARMS_CAST_VK_PATTERNS.some(pattern => pattern.test(effectiveAppId))) {
             return CHARM_TYPES.CHARMS_CAST_DEX;
         }
     }

@@ -1,7 +1,7 @@
 'use client';
 
 import { ENDPOINTS } from '../apiConfig';
-import { handleApiError } from '../apiUtils';
+import { handleApiError, logger } from '../apiUtils';
 import { transformCharmsArray, countCharmsByType, createDefaultCharm } from '../transformers';
 import { fetchRawCharmsData } from './charms';
 
@@ -35,7 +35,7 @@ export const fetchAssetsByType = async (assetType, page = 1, limit = 20, sort = 
         const data = await response.json();
 
         if (!data.data || !data.data.assets) {
-            console.warn('[API] No assets data in response');
+            logger.warn('fetchAssetsByType', 'No assets data in response');
             return {
                 assets: [],
                 total: 0,
@@ -66,7 +66,7 @@ export const fetchAssetsByType = async (assetType, page = 1, limit = 20, sort = 
             totalPages: data.pagination.total_pages
         };
     } catch (error) {
-        console.error('[API] Error fetching assets by type:', error);
+        logger.error('fetchAssetsByType', error);
         throw error;
     }
 };
@@ -78,14 +78,14 @@ export const getAssetById = async (id) => {
         const response = await fetch(ENDPOINTS.CHARM_BY_CHARMID(charmId));
 
         if (!response.ok) {
-            console.warn(`Charm not found with ID: ${charmId}, using default charm`);
+            logger.warn('getAssetById', `Charm not found: ${charmId}`);
             return createDefaultCharm(id);
         }
 
         const charm = await response.json();
         return transformCharmsArray([charm])[0];
     } catch (error) {
-        console.error('Error fetching asset by ID:', error);
+        logger.error('getAssetById', error);
         try {
             const data = await fetchRawCharmsData();
             const charm = data.charms.find(charm => charm.charmid === id);
@@ -106,7 +106,7 @@ export const getAssetCounts = async () => {
         const response = await fetch(ENDPOINTS.ASSET_COUNTS);
 
         if (!response.ok) {
-            console.warn('Asset counts endpoint not available, falling back to charms data');
+            logger.warn('getAssetCounts', 'Endpoint not available, falling back');
             const data = await fetchRawCharmsData();
             return countCharmsByType(data.charms || []);
         }
@@ -114,12 +114,12 @@ export const getAssetCounts = async () => {
         const counts = await response.json();
         return counts;
     } catch (error) {
-        console.error('Error getting asset counts:', error);
+        logger.error('getAssetCounts', error);
         try {
             const data = await fetchRawCharmsData();
             return countCharmsByType(data.charms || []);
         } catch (fallbackError) {
-            console.error('Fallback asset counts also failed:', fallbackError);
+            logger.error('getAssetCounts.fallback', fallbackError);
             return { total: 0, nft: 0, token: 0, dapp: 0 };
         }
     }
@@ -142,7 +142,7 @@ export const fetchAssetHolders = async (appId) => {
         const data = await response.json();
         return data;
     } catch (error) {
-        console.error('[API] Error fetching asset holders:', error);
+        logger.error('fetchAssetHolders', error);
         throw error;
     }
 };
@@ -169,7 +169,7 @@ export const fetchAssetByAppId = async (appId) => {
         
         return null;
     } catch (error) {
-        console.error('[API] Error fetching asset by app_id:', error);
+        logger.error('fetchAssetByAppId', error);
         return null;
     }
 };
@@ -265,12 +265,7 @@ export const fetchUniqueAssets = async (assetType = 'all', page = 1, limit = 20,
             // Determine actual type based on app_id prefix
             let actualType = 'other';
             if (appId.startsWith('n/')) {
-                // Check if this NFT is just a token reference
-                const hash = getBaseHash(appId);
-                if (tokenHashes.has(hash)) {
-                    // Skip - this is a token reference NFT, not a real NFT
-                    continue;
-                }
+                // Show ALL NFTs including reference NFTs
                 actualType = 'nft';
             } else if (appId.startsWith('t/')) {
                 actualType = 'token';
@@ -307,7 +302,7 @@ export const fetchUniqueAssets = async (assetType = 'all', page = 1, limit = 20,
             totalPages: Math.ceil(totalUnique / limit)
         };
     } catch (error) {
-        console.error('[API] Error fetching unique assets:', error);
+        logger.error('fetchUniqueAssets', error);
         throw error;
     }
 };
@@ -359,11 +354,8 @@ export const getUniqueAssetCounts = async (network = null) => {
             
             // Determine actual type based on prefix
             if (appId.startsWith('n/')) {
-                const hash = getBaseHash(appId);
-                // Skip NFT references that are just token metadata
-                if (!tokenHashes.has(hash)) {
-                    seenByType.nft.add(key);
-                }
+                // Count ALL NFTs including reference NFTs
+                seenByType.nft.add(key);
             } else if (appId.startsWith('t/')) {
                 seenByType.token.add(key);
             } else if (appId.startsWith('b/')) {
@@ -378,7 +370,7 @@ export const getUniqueAssetCounts = async (network = null) => {
             dapp: seenByType.dapp.size
         };
     } catch (error) {
-        console.error('[API] Error getting unique asset counts:', error);
+        logger.error('getUniqueAssetCounts', error);
         return { total: 0, nft: 0, token: 0, dapp: 0 };
     }
 };

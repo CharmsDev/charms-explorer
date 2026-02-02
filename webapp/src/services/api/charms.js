@@ -1,7 +1,7 @@
 'use client';
 
 import { ENDPOINTS } from '../apiConfig';
-import { fixJsonResponse, handleApiError } from '../apiUtils';
+import { fixJsonResponse, handleApiError, logger } from '../apiUtils';
 import { transformCharmsArray, countCharmsByType, createDefaultCharm } from '../transformers';
 
 export const fetchRawCharmsData = async () => {
@@ -13,31 +13,31 @@ export const fetchRawCharmsData = async () => {
             const data = JSON.parse(responseText);
 
             if (!response.ok) {
-                console.warn(`API error (${response.status}): ${data.error || 'Unknown error'}`);
+                logger.warn('fetchRawCharmsData', `API error (${response.status}): ${data.error || 'Unknown error'}`);
                 return { charms: [] };
             }
 
             return data;
         } catch (parseError) {
-            console.error('JSON parse error:', parseError);
+            logger.error('fetchRawCharmsData', parseError);
 
             try {
                 const fixedJson = fixJsonResponse(responseText);
                 const data = JSON.parse(fixedJson);
 
                 if (!response.ok) {
-                    console.warn(`API error (${response.status}): ${data.error || 'Unknown error'}`);
+                    logger.warn('fetchRawCharmsData', `API error (${response.status}): ${data.error || 'Unknown error'}`);
                     return { charms: [] };
                 }
 
                 return data;
             } catch (error) {
-                console.error('Error fixing JSON:', error);
+                logger.error('fetchRawCharmsData', error);
                 return { charms: [] };
             }
         }
     } catch (error) {
-        console.error('Error fetching charms data:', error);
+        logger.error('fetchRawCharmsData', error);
         return { charms: [] };
     }
 };
@@ -66,7 +66,7 @@ export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network
         const data = await response.json();
 
         if (!data.data || !data.data.charms) {
-            console.warn('[API] No charms data in response');
+            logger.warn('fetchAssets', 'No charms data in response');
             return {
                 assets: [],
                 total: 0,
@@ -97,7 +97,7 @@ export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network
             totalPages: totalPages
         };
     } catch (error) {
-        console.error('[API] Error fetching assets:', error);
+        logger.error('fetchAssets', error);
         throw error;
     }
 };
@@ -111,7 +111,7 @@ export const getCharmsCountByType = async (network = null) => {
         const response = await fetch(url);
 
         if (!response.ok) {
-            console.warn('Charms count-by-type endpoint not available, falling back to charms data');
+            logger.warn('getCharmsCountByType', 'Endpoint not available, falling back');
             const data = await fetchRawCharmsData();
             return countCharmsByType(data.charms || []);
         }
@@ -119,12 +119,12 @@ export const getCharmsCountByType = async (network = null) => {
         const counts = await response.json();
         return counts;
     } catch (error) {
-        console.error('Error getting charms counts:', error);
+        logger.error('getCharmsCountByType', error);
         try {
             const data = await fetchRawCharmsData();
             return countCharmsByType(data.charms || []);
         } catch (fallbackError) {
-            console.error('Fallback to charms data also failed:', fallbackError);
+            logger.error('getCharmsCountByType.fallback', fallbackError);
             return { total: 0, nft: 0, token: 0, dapp: 0 };
         }
     }
@@ -141,7 +141,7 @@ export const fetchCharmsByAddress = async (address) => {
         const data = await response.json();
         return data;
     } catch (error) {
-        console.error('[API] Error fetching charms by address:', error);
+        logger.error('fetchCharmsByAddress', error);
         throw error;
     }
 };
@@ -157,7 +157,7 @@ export const getCharmByTxId = async (txid) => {
         const data = await response.json();
         return data;
     } catch (error) {
-        console.error('[API] Error fetching charm by txid:', error);
+        logger.error('getCharmByTxId', error);
         throw error;
     }
 };
@@ -182,7 +182,7 @@ export const likeCharm = async (charmId, userId = 1) => {
         const data = await response.json();
         return data;
     } catch (error) {
-        console.error('Error liking charm:', error);
+        logger.error('likeCharm', error);
         throw handleApiError(error, 'like charm');
     }
 };
@@ -207,7 +207,7 @@ export const unlikeCharm = async (charmId, userId = 1) => {
         const data = await response.json();
         return data;
     } catch (error) {
-        console.error('Error unliking charm:', error);
+        logger.error('unlikeCharm', error);
         throw handleApiError(error, 'unlike charm');
     }
 };

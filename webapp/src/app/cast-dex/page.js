@@ -98,7 +98,6 @@ export default function CastDexPage() {
             setTransactions(castCharms);
             setError(null);
         } catch (err) {
-            console.error('Error loading Cast transactions:', err);
             setError('Failed to load Cast Dex transactions from indexer.');
         } finally {
             setLoading(false);

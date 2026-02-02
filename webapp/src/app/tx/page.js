@@ -101,7 +101,6 @@ function TransactionPageContent() {
                         });
                         setError(null);
                     } catch (btcErr) {
-                        console.error('Error loading Bitcoin transaction:', btcErr);
                         setError('Transaction not found on blockchain.');
                     }
                 }

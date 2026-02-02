@@ -1,6 +1,7 @@
 'use client';
 
 import { ENDPOINTS } from '../apiConfig';
+import { logger } from '../apiUtils';
 
 /**
  * Reference NFT Service
@@ -75,7 +76,7 @@ export async function fetchReferenceNftByHash(hash) {
         const response = await fetch(ENDPOINTS.REFERENCE_NFT(hash));
         
         if (!response.ok) {
-            console.warn(`[ReferenceNFT] Not found for hash: ${hash.substring(0, 16)}...`);
+            logger.warn('ReferenceNFT', `Not found for hash: ${hash.substring(0, 16)}...`);
             return null;
         }
         
@@ -86,7 +87,7 @@ export async function fetchReferenceNftByHash(hash) {
         
         return data;
     } catch (error) {
-        console.error(`[ReferenceNFT] Error fetching for hash ${hash.substring(0, 16)}...:`, error);
+        logger.error('ReferenceNFT', error);
         return null;
     } finally {
         pendingFetches.delete(hash);

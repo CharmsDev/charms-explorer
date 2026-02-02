@@ -142,7 +142,6 @@ export default function StatusPage() {
       setLastUpdated(new Date());
     } catch (err) {
       setError(err.message);
-      console.error("Error fetching data:", err);
     } finally {
       setLoading(false);
     }

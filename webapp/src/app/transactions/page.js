@@ -31,7 +31,6 @@ export default function TransactionsPage() {
             setTotalPages(result.totalPages || 1);
             setError(null);
         } catch (err) {
-            console.error('Error loading transactions:', err);
             setError('Failed to load transactions');
         } finally {
             setLoading(false);

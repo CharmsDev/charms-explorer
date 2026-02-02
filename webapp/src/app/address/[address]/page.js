@@ -72,7 +72,6 @@ export default function AddressPage() {
                 setNftImages(images);
 
             } catch (error) {
-                console.error('[AddressPage] Error loading charms:', error);
                 setError(error.message);
             } finally {
                 setIsLoading(false);
@@ -111,9 +110,22 @@ export default function AddressPage() {
             <div className="bg-dark-900 pt-24 pb-6">
                 <div className="container mx-auto px-4">
                     <h1 className="text-3xl font-bold mb-3 gradient-text">Address Portfolio</h1>
-                    <p className="text-dark-300 font-mono text-sm break-all mb-4">
-                        {address}
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                        <p className="text-dark-300 font-mono text-sm break-all flex-1">
+                            {address}
+                        </p>
+                        <a
+                            href={`https://mempool.space/address/${address}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-4 py-2 bg-orange-600/20 hover:bg-orange-600/40 border border-orange-500/50 rounded-lg text-orange-300 hover:text-orange-200 transition-colors text-sm font-medium whitespace-nowrap"
+                        >
+                            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/>
+                            </svg>
+                            View on Mempool.space ↗
+                        </a>
+                    </div>
 
                     {!isLoading && !error && (
                         <div className="flex items-center space-x-6 text-sm">

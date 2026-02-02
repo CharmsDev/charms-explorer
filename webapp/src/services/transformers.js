@@ -157,6 +157,8 @@ export const transformCharmData = (charm) => {
         url,
         attributes,
         rawCharmData: charmData,
+        // Preserve original data for spell parsing
+        data: charm.data,
         // Network and blockchain info
         network: charm.network,
         blockchain: charm.blockchain,

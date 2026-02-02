@@ -119,6 +119,24 @@ export function parseSpellMetadata(charm) {
         }
     }
 
+    // Try nested data.data structure (common API response format)
+    if (charm.data.data && typeof charm.data.data === 'object') {
+        const nestedData = charm.data.data;
+        const { standard, extra } = extractAllFields(nestedData);
+        
+        return {
+            name: standard.name || null,
+            description: standard.description || null,
+            image: standard.image || null,
+            ticker: standard.ticker || standard.symbol || null,
+            url: standard.url || null,
+            supply_limit: standard.supply_limit || null,
+            decimals: standard.decimals ?? null,
+            extraFields: extra,
+            raw: nestedData
+        };
+    }
+
     // Try direct data structure
     if (charm.data.name || charm.data.image) {
         const { standard, extra } = extractAllFields(charm.data);

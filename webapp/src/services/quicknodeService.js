@@ -100,7 +100,10 @@ export async function getTransaction(txid) {
             },
         };
     } catch (error) {
-        console.error('Error fetching transaction from QuickNode:', error);
+        // Silently fail in production, throw in dev
+        if (process.env.NODE_ENV === 'development') {
+            console.error('[QuickNode] Error fetching transaction:', error);
+        }
         throw error;
     }
 }

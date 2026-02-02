@@ -69,7 +69,7 @@ export default function AssetDetailPage() {
                 const data = await getAssetById(appid);
                 setAsset(data);
             } catch (error) {
-                console.error('Error loading asset:', error);
+                // Error handled - UI shows empty state
             } finally {
                 setIsLoading(false);
             }
@@ -97,7 +97,6 @@ export default function AssetDetailPage() {
                         message: result.message
                     });
                 } catch (error) {
-                    console.error('Error verifying image hash:', error);
                     setHashVerification({
                         status: 'error',
                         computedHash: null,
@@ -411,7 +410,6 @@ export default function AssetDetailPage() {
                                                                             message: result.message
                                                                         });
                                                                     } catch (error) {
-                                                                        console.error('Error verifying image hash:', error);
                                                                         setHashVerification({
                                                                             status: 'error',
                                                                             computedHash: null,
