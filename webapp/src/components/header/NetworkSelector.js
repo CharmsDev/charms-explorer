@@ -43,14 +43,14 @@ export default function NetworkSelector() {
                         title="Coming soon"
                         className="px-3 py-1 text-xs rounded-lg bg-dark-800 text-dark-500 cursor-not-allowed"
                     >
-                        🚫 Mainnet
+                        Mainnet
                     </button>
                     <button
                         disabled
                         title="Coming soon"
                         className="px-3 py-1 text-xs rounded-lg bg-dark-800 text-dark-500 cursor-not-allowed"
                     >
-                        🚫 Preprod
+                        Preprod
                     </button>
                 </div>
             </div>
