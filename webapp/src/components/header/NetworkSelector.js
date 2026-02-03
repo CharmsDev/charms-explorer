@@ -34,27 +34,23 @@ export default function NetworkSelector() {
 
             <div className="mx-4"></div>
 
-            {/* Cardano section */}
-            <div className="flex items-center">
-                <span className="text-sm font-medium text-white mr-2">Cardano</span>
+            {/* Cardano section - Disabled */}
+            <div className="flex items-center opacity-50">
+                <span className="text-sm font-medium text-dark-400 mr-2">Cardano</span>
                 <div className="flex items-center space-x-1">
                     <button
-                        onClick={() => toggleNetwork('cardanoMainnet')}
-                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoMainnet
-                            ? 'bg-primary-600 text-white'
-                            : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                        }`}
+                        disabled
+                        title="Coming soon"
+                        className="px-3 py-1 text-xs rounded-lg bg-dark-800 text-dark-500 cursor-not-allowed"
                     >
-                        Mainnet
+                        🚫 Mainnet
                     </button>
                     <button
-                        onClick={() => toggleNetwork('cardanoPreprod')}
-                        className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoPreprod
-                            ? 'bg-primary-600 text-white'
-                            : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                        }`}
+                        disabled
+                        title="Coming soon"
+                        className="px-3 py-1 text-xs rounded-lg bg-dark-800 text-dark-500 cursor-not-allowed"
                     >
-                        Preprod
+                        🚫 Preprod
                     </button>
                 </div>
             </div>

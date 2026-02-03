@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { fetchAssets } from '@/services/apiServices';
+import { useNetwork } from '@/context/NetworkContext';
 import { 
     classifyTransaction, 
     getTransactionLabel, 
@@ -10,6 +11,7 @@ import {
 } from '@/services/transactions/transactionClassifier';
 
 export default function TransactionsPage() {
+    const { getNetworkParam, isHydrated } = useNetwork();
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -18,14 +20,12 @@ export default function TransactionsPage() {
     const [total, setTotal] = useState(0);
     const ITEMS_PER_PAGE = 50;
 
-    useEffect(() => {
-        loadTransactions();
-    }, [page]);
-
-    const loadTransactions = async () => {
+    const loadTransactions = useCallback(async () => {
         try {
             setLoading(true);
-            const result = await fetchAssets(page, ITEMS_PER_PAGE, 'newest');
+            const networkParam = getNetworkParam();
+            const apiNetworkParam = networkParam === 'all' ? null : networkParam;
+            const result = await fetchAssets(page, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
             setTransactions(result.assets || []);
             setTotal(result.total || 0);
             setTotalPages(result.totalPages || 1);
@@ -35,7 +35,13 @@ export default function TransactionsPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [page, getNetworkParam]);
+
+    useEffect(() => {
+        if (isHydrated) {
+            loadTransactions();
+        }
+    }, [isHydrated, loadTransactions]);
 
     const getMempoolUrl = (txid, network) => {
         return network === 'mainnet'

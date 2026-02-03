@@ -1,16 +1,18 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AssetGrid from '../components/AssetGrid';
 import Pagination from '../components/Pagination';
 import { fetchUniqueAssets, getUniqueAssetCounts } from '../services/api';
+import { useNetwork } from '../context/NetworkContext';
 
 // Inner component that uses useSearchParams
 function HomeContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
+    const { getNetworkParam, isHydrated } = useNetwork();
     
     // Read initial type from URL query params, default to 'nft'
     const initialType = searchParams.get('type') || 'nft';
@@ -24,25 +26,24 @@ function HomeContent() {
     const [totalPages, setTotalPages] = useState(1);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortOrder, setSortOrder] = useState('newest');
-    const [selectedNetwork, setSelectedNetwork] = useState('all');
     const [selectedType, setSelectedType] = useState(safeInitialType);
-    const [error, setError] = useState(null);
 
     const ITEMS_PER_PAGE = 12;
 
-    const loadData = async (type = selectedType, network = selectedNetwork, page = currentPage, sort = sortOrder) => {
+    const loadData = useCallback(async (type = selectedType, page = currentPage, sort = sortOrder) => {
         try {
             setIsLoading(true);
 
-            // Determine network parameter for API call
-            const networkParam = network === 'all' ? null : network;
+            // Get network param from context (mainnet, testnet4, or all)
+            const networkParam = getNetworkParam();
+            const apiNetworkParam = networkParam === 'all' ? null : networkParam;
 
             // Fetch unique asset counts
-            const countsData = await getUniqueAssetCounts(networkParam);
+            const countsData = await getUniqueAssetCounts(apiNetworkParam);
             setCounts(countsData);
 
             // Fetch unique assets (deduplicated by reference)
-            const response = await fetchUniqueAssets(type, page, ITEMS_PER_PAGE, sort, networkParam);
+            const response = await fetchUniqueAssets(type, page, ITEMS_PER_PAGE, sort, apiNetworkParam);
             setAssets(response.assets || []);
             setTotalPages(response.totalPages || 1);
         } catch (error) {
@@ -50,7 +51,7 @@ function HomeContent() {
         } finally {
             setIsLoading(false);
         }
-    };
+    }, [selectedType, currentPage, sortOrder, getNetworkParam]);
 
     // Handle type change from FilterTabs - update URL
     const handleTypeChange = (type) => {
@@ -62,7 +63,7 @@ function HomeContent() {
         params.set('type', type);
         router.push(`/?${params.toString()}`, { scroll: false });
         
-        loadData(type, selectedNetwork, 1, sortOrder);
+        loadData(type, 1, sortOrder);
     };
 
     // Handle sort order change
@@ -70,7 +71,7 @@ function HomeContent() {
         const newSort = event.target.value;
         setSortOrder(newSort);
         setCurrentPage(1); // Reset to first page when sorting changes
-        loadData(selectedType, selectedNetwork, 1, newSort);
+        loadData(selectedType, 1, newSort);
     };
 
     // Handle search
@@ -106,12 +107,15 @@ function HomeContent() {
     // Handle pagination
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
-        loadData(selectedType, selectedNetwork, newPage, sortOrder);
+        loadData(selectedType, newPage, sortOrder);
     };
 
+    // Load data when hydrated (localStorage loaded) or when network changes
     useEffect(() => {
-        loadData();
-    }, []);
+        if (isHydrated) {
+            loadData();
+        }
+    }, [isHydrated, getNetworkParam]);
 
     // Filter tabs configuration (no 'All' - only NFTs, Tokens, dApps)
     const filterTabs = [

@@ -28,14 +28,22 @@ export default function AssetHero({
             <div className="flex flex-col lg:flex-row gap-8 items-center">
                 {/* Left: Title, Badge, Stats */}
                 <div className="flex-1 space-y-4">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
+                        {/* Network Badge - Prominent */}
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                            asset.network === 'mainnet' 
+                                ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                                : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                        }`}>
+                            ₿ {asset.network === 'mainnet' ? 'Mainnet' : 'Testnet4'}
+                        </span>
                         {isBroToken && (
                             <span className="px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-amber-400 to-yellow-500 text-white">
                                 🪙 $BRO
                             </span>
                         )}
                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                            asset.type === 'token' ? 'bg-blue-500/20 text-blue-400' :
+                            asset.type === 'token' ? 'bg-amber-500/20 text-amber-400' :
                             asset.type === 'nft' ? 'bg-purple-500/20 text-purple-400' :
                             'bg-green-500/20 text-green-400'
                         }`}>

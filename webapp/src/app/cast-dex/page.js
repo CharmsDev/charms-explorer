@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { fetchRawCharmsData } from '@/services/apiServices';
+import { useNetwork } from '@/context/NetworkContext';
 import { classifyCharm, CHARM_TYPES } from '@/services/charmClassifier';
 
 const CAST_APP_URL = process.env.NEXT_PUBLIC_CAST_APP_URL || 'https://cast.charms.dev';
@@ -74,25 +75,29 @@ const extractOrderDetails = (charm) => {
 };
 
 export default function CastDexPage() {
+    const { getNetworkParam, isHydrated } = useNetwork();
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    useEffect(() => {
-        loadCastTransactions();
-    }, []);
-
-    const loadCastTransactions = async () => {
+    const loadCastTransactions = useCallback(async () => {
         try {
             setLoading(true);
             // Fetch raw charms data to access the full data field
             const result = await fetchRawCharmsData();
             const allCharms = result?.data?.charms || result?.charms || [];
             
-            // Filter only Cast DEX transactions using raw data
+            // Get current network filter
+            const networkParam = getNetworkParam();
+            
+            // Filter only Cast DEX transactions using raw data and network
             const castCharms = allCharms.filter(charm => {
                 const type = classifyCharm(charm);
-                return type === CHARM_TYPES.CHARMS_CAST_DEX;
+                if (type !== CHARM_TYPES.CHARMS_CAST_DEX) return false;
+                
+                // Apply network filter
+                if (networkParam === 'all') return true;
+                return charm.network === networkParam;
             });
             
             setTransactions(castCharms);
@@ -102,7 +107,13 @@ export default function CastDexPage() {
         } finally {
             setLoading(false);
         }
-    };
+    }, [getNetworkParam]);
+
+    useEffect(() => {
+        if (isHydrated) {
+            loadCastTransactions();
+        }
+    }, [isHydrated, loadCastTransactions]);
 
     const getMempoolUrl = (txid, network) => {
         if (!txid) return null;

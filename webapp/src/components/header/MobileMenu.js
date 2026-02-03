@@ -59,25 +59,21 @@ export default function MobileMenu({ isOpen, onClose }) {
                         </button>
                     </div>
 
-                    <p className="text-xs text-dark-400 mb-2">Cardano Network</p>
-                    <div className="flex flex-wrap gap-2 mb-4">
+                    <p className="text-xs text-dark-500 mb-2">Cardano Network <span className="text-dark-600">(Coming soon)</span></p>
+                    <div className="flex flex-wrap gap-2 mb-4 opacity-50">
                         <button
-                            onClick={() => toggleNetwork('cardanoMainnet')}
-                            className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoMainnet
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                                }`}
+                            disabled
+                            title="Coming soon"
+                            className="px-3 py-1 text-xs rounded-lg bg-dark-800 text-dark-500 cursor-not-allowed"
                         >
-                            Mainnet
+                            🚫 Mainnet
                         </button>
                         <button
-                            onClick={() => toggleNetwork('cardanoPreprod')}
-                            className={`px-3 py-1 text-xs rounded-lg transition-colors ${selectedNetworks.cardanoPreprod
-                                ? 'bg-primary-600 text-white'
-                                : 'bg-dark-800 text-dark-400 hover:bg-dark-700'
-                                }`}
+                            disabled
+                            title="Coming soon"
+                            className="px-3 py-1 text-xs rounded-lg bg-dark-800 text-dark-500 cursor-not-allowed"
                         >
-                            Preprod
+                            🚫 Preprod
                         </button>
                     </div>
                 </div>

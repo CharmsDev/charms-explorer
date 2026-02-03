@@ -16,40 +16,12 @@ export default function AssetCard({ asset, nftReferenceMap }) {
     const placeholderImage = "/images/logo.png";
 
     // Fetch metadata based on asset type
+    // Both tokens and NFTs can fetch image from reference NFT
     useEffect(() => {
         const appId = asset.app_id || asset.id;
         
-        // For tokens (t/...), fetch reference NFT metadata for image
-        if (appId?.startsWith('t/')) {
-            // First check if passed via prop (preloaded)
-            if (nftReferenceMap) {
-                const nftAppId = getRefNftAppId(appId);
-                if (nftAppId && nftReferenceMap[nftAppId]) {
-                    setNftMetadata(nftReferenceMap[nftAppId]);
-                    return;
-                }
-            }
-            // Then check old cache
-            const cached = getCachedNftReference(appId);
-            if (cached) {
-                setNftMetadata(cached);
-                return;
-            }
-            // Fetch from new reference NFT endpoint
-            const hash = extractHashFromAppId(appId);
-            if (hash) {
-                fetchReferenceNftByHash(hash).then(refNft => {
-                    if (refNft) {
-                        setNftMetadata(refNft);
-                        if (refNft.image_url) {
-                            setSpellImage(refNft.image_url);
-                        }
-                    }
-                });
-            }
-        }
-        // For NFTs (n/...) without image, fetch from reference NFT endpoint
-        else if (appId?.startsWith('n/') && !asset.image && !asset.image_url) {
+        // For tokens (t/...) or NFTs (n/...) without image, fetch from reference NFT endpoint
+        if ((appId?.startsWith('t/') || appId?.startsWith('n/')) && !asset.image && !asset.image_url) {
             const hash = extractHashFromAppId(appId);
             if (hash) {
                 fetchReferenceNftByHash(hash).then(refNft => {
@@ -59,7 +31,7 @@ export default function AssetCard({ asset, nftReferenceMap }) {
                 });
             }
         }
-    }, [asset.app_id, asset.id, asset.image, asset.image_url, nftReferenceMap]);
+    }, [asset.app_id, asset.id, asset.image, asset.image_url]);
 
     // Classify the charm to get special badges
     const charmType = classifyCharm(asset);
@@ -181,11 +153,10 @@ export default function AssetCard({ asset, nftReferenceMap }) {
     };
 
     // Get display image with fallback
+    // Both tokens and NFTs can use image from reference NFT
     const getDisplayImage = () => {
         if (imageError) return placeholderImage;
-        // For tokens, use NFT reference metadata image
-        if (nftMetadata?.image_url) return nftMetadata.image_url;
-        // For NFTs, use spell image fetched from charm
+        // Use spell image fetched from reference NFT (for both tokens and NFTs)
         if (spellImage) return spellImage;
         // Check asset's own image fields
         if (asset.image && asset.image !== '/images/logo.png') return asset.image;
@@ -239,9 +210,13 @@ export default function AssetCard({ asset, nftReferenceMap }) {
                     />
                 </div>
 
-                {/* Network Badge */}
-                <div className="absolute bottom-2 left-2 px-2 py-1 bg-dark-800/90 backdrop-blur-sm rounded-md text-xs text-dark-300">
-                    {asset.network}
+                {/* Network Badge - Color coded */}
+                <div className={`absolute bottom-2 left-2 px-2 py-1 backdrop-blur-sm rounded-md text-xs font-medium ${
+                    asset.network === 'mainnet' 
+                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                        : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                }`}>
+                    {asset.network === 'mainnet' ? '₿ Mainnet' : '₿ Testnet4'}
                 </div>
             </Link>
 

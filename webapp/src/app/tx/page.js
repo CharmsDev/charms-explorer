@@ -182,6 +182,14 @@ function TransactionPageContent() {
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-lg font-semibold text-dark-300">TXID</h2>
                                 <TransactionBadge type={analysis.type} size="sm" />
+                                {/* Network Badge */}
+                                <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                    charm.network === 'mainnet' 
+                                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                                        : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                }`}>
+                                    ₿ {charm.network === 'mainnet' ? 'Mainnet' : 'Testnet4'}
+                                </span>
                             </div>
                             <div className="flex items-center text-dark-400 text-sm break-all">
                                 <span className="font-mono">{txid}</span>
