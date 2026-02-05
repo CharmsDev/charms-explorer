@@ -155,4 +155,42 @@ impl CharmRepository {
 
         Ok(count as i64)
     }
+
+    /// Batch fetch charms by multiple txids (avoids N+1 queries)
+    pub async fn get_by_txids(&self, txids: &[String]) -> Result<Vec<charms::Model>, DbError> {
+        if txids.is_empty() {
+            return Ok(vec![]);
+        }
+        charms::Entity::find()
+            .filter(charms::Column::Txid.is_in(txids.to_vec()))
+            .all(&self.conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// [RJJ-SUPPLY] Calculate circulating supply from unspent charms
+    /// This is the single source of truth for token supply
+    /// Returns SUM(amount) WHERE app_id LIKE 'prefix%' AND spent = false
+    pub async fn get_circulating_supply_by_app_id_prefix(
+        &self,
+        app_id_prefix: &str,
+    ) -> Result<Option<i64>, DbError> {
+        use sea_orm::{DbBackend, FromQueryResult, Statement};
+
+        #[derive(FromQueryResult)]
+        struct SupplyResult {
+            total: Option<rust_decimal::Decimal>,
+        }
+
+        let result = SupplyResult::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT SUM(amount) as total FROM charms WHERE app_id LIKE $1 AND spent = false"#,
+            [format!("{}%", app_id_prefix).into()],
+        ))
+        .one(&self.conn)
+        .await
+        .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        Ok(result.and_then(|r| r.total.map(|d| d.to_string().parse::<i64>().unwrap_or(0))))
+    }
 }

@@ -101,6 +101,7 @@ pub struct AssetQueryParams {
     pub limit: Option<u64>,
     #[allow(dead_code)]
     pub sort: Option<String>,
+    pub app_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -141,7 +142,7 @@ pub struct PaginationInfo {
     pub total_pages: u64,
 }
 
-/// Get assets with optional filtering by type and network
+/// Get assets with optional filtering by type, network, and app_id
 pub async fn get_assets(
     Query(params): Query<AssetQueryParams>,
     State(state): State<AppState>,
@@ -152,26 +153,52 @@ pub async fn get_assets(
     let limit = params.limit.unwrap_or(20);
     let offset = (page - 1) * limit;
 
-    match asset_service
-        .get_assets_paginated(
-            params.asset_type.as_deref(),
-            params.network.as_deref(),
-            limit,
-            offset,
-        )
-        .await
-    {
+    // If app_id is provided, search by app_id directly
+    let (assets, total) = if let Some(ref app_id) = params.app_id {
+        match asset_service.get_asset_by_app_id(app_id).await {
+            Ok(Some(asset)) => (vec![asset], 1u64),
+            Ok(None) => (vec![], 0u64),
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    } else {
+        match asset_service
+            .get_assets_paginated(
+                params.asset_type.as_deref(),
+                params.network.as_deref(),
+                limit,
+                offset,
+            )
+            .await
+        {
+            Ok(result) => result,
+            Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        }
+    };
+
+    match Ok::<_, ()>((assets, total)) {
         Ok((assets, total)) => {
-            // Fetch charm data for each asset to extract rich metadata
+            // Batch fetch all charms by txids (single query instead of N+1)
+            let txids: Vec<String> = assets.iter().map(|a| a.txid.clone()).collect();
+            let charms = state
+                .repositories
+                .charm
+                .get_by_txids(&txids)
+                .await
+                .unwrap_or_default();
+
+            // Create lookup map for O(1) access
+            let charm_map: HashMap<String, _> =
+                charms.into_iter().map(|c| (c.txid.clone(), c)).collect();
+
             let mut asset_items = Vec::new();
             for asset in assets {
-                let mut name = asset.name;
-                let mut symbol = asset.symbol;
-                let mut description = asset.description;
-                let mut image_url = asset.image_url;
+                let mut name = asset.name.clone();
+                let mut symbol = asset.symbol.clone();
+                let mut description = asset.description.clone();
+                let mut image_url = asset.image_url.clone();
 
-                // Try to fetch related charm data for metadata extraction
-                if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&asset.txid).await {
+                // Use pre-fetched charm data for metadata extraction
+                if let Some(charm) = charm_map.get(&asset.txid) {
                     let (charm_name, charm_symbol, charm_description, charm_image_url) =
                         extract_asset_metadata_from_charm(&charm.data);
 
@@ -312,8 +339,7 @@ pub async fn get_asset_by_id(
             let _decimals = asset.decimals; // Keep for potential future use
 
             // [RJJ-TOKEN-METADATA] If this is a token, try to inherit metadata from reference NFT
-            // Also get total_supply from the primary token record (:0)
-            let mut total_supply = asset.total_supply;
+            let total_supply = asset.total_supply;
             if asset.app_id.starts_with("t/") {
                 // Convert t/HASH/... to n/HASH/... to find reference NFT
                 let nft_app_id = asset.app_id.replacen("t/", "n/", 1);
@@ -325,22 +351,6 @@ pub async fn get_asset_by_id(
                     symbol = symbol.or(nft_asset.symbol);
                     description = description.or(nft_asset.description);
                     image_url = image_url.or(nft_asset.image_url);
-                    // decimals is not Option, so we keep the asset's decimals
-                }
-
-                // [RJJ-TOTAL-SUPPLY] Get max total_supply from all records of this token
-                // Different outputs (:0, :1, etc.) may have different supply values
-                if let Some(pos) = asset.app_id.rfind(':') {
-                    let base_app_id = &asset.app_id[..pos];
-                    // Query all assets with this base app_id and get max total_supply
-                    if let Ok(max_supply) = asset_service
-                        .get_max_total_supply_by_app_id_prefix(base_app_id)
-                        .await
-                    {
-                        if max_supply.is_some() {
-                            total_supply = max_supply;
-                        }
-                    }
                 }
             }
 

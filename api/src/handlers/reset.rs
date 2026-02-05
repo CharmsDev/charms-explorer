@@ -1,8 +1,8 @@
 // Indexer reset endpoint handler implementation
 
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{Json, extract::State, response::IntoResponse};
 use sea_orm::{ConnectionTrait, DatabaseConnection, Statement};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::handlers::AppState;
 
@@ -15,18 +15,17 @@ pub async fn reset_indexer(State(app_state): State<AppState>) -> impl IntoRespon
 
 /// Performs the reset operation by clearing all indexer tables
 async fn perform_reset(conn: &DatabaseConnection) -> Value {
-    // Clear all tables
-    let bookmark_result = clear_table(conn, "bookmark").await;
+    // Clear all tables - use block_status instead of legacy bookmark
+    let block_status_result = clear_table(conn, "block_status").await;
     let transactions_result = clear_table(conn, "transactions").await;
     let charms_result = clear_table(conn, "charms").await;
 
-    // Check if all operations were successful
-    let success = bookmark_result.is_ok() && transactions_result.is_ok() && charms_result.is_ok();
+    let success =
+        block_status_result.is_ok() && transactions_result.is_ok() && charms_result.is_ok();
 
-    // Collect any error messages
     let mut errors = Vec::new();
-    if let Err(e) = &bookmark_result {
-        errors.push(format!("Failed to clear bookmark table: {}", e));
+    if let Err(e) = &block_status_result {
+        errors.push(format!("Failed to clear block_status table: {}", e));
     }
     if let Err(e) = &transactions_result {
         errors.push(format!("Failed to clear transactions table: {}", e));
@@ -43,7 +42,7 @@ async fn perform_reset(conn: &DatabaseConnection) -> Value {
             format!("Failed to reset indexer: {}", errors.join(", "))
         },
         "tables_cleared": {
-            "bookmark": bookmark_result.is_ok(),
+            "block_status": block_status_result.is_ok(),
             "transactions": transactions_result.is_ok(),
             "charms": charms_result.is_ok()
         }

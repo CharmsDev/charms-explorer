@@ -2,7 +2,7 @@
 
 use bitcoincore_rpc::{Auth, Client, RpcApi};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 
 use crate::config::ApiConfig;
@@ -69,32 +69,37 @@ impl DiagnosticService {
                 let mut summary_rows = Vec::new();
                 for row in rows {
                     let mut row_data = HashMap::new();
-                    
+
                     // Extract all fields from the row
                     if let Ok(id) = row.try_get::<i32>("", "id") {
                         row_data.insert("id", json!(id));
                     }
-                    
+
                     if let Ok(network) = row.try_get::<String>("", "network") {
                         row_data.insert("network", json!(network));
                     }
-                    
-                    if let Ok(last_processed_block) = row.try_get::<i32>("", "last_processed_block") {
+
+                    if let Ok(last_processed_block) = row.try_get::<i32>("", "last_processed_block")
+                    {
                         row_data.insert("last_processed_block", json!(last_processed_block));
                     }
-                    
-                    if let Ok(latest_confirmed_block) = row.try_get::<i32>("", "latest_confirmed_block") {
+
+                    if let Ok(latest_confirmed_block) =
+                        row.try_get::<i32>("", "latest_confirmed_block")
+                    {
                         row_data.insert("latest_confirmed_block", json!(latest_confirmed_block));
                     }
-                    
+
                     if let Ok(total_charms) = row.try_get::<i64>("", "total_charms") {
                         row_data.insert("total_charms", json!(total_charms));
                     }
-                    
-                    if let Ok(bitcoin_node_status) = row.try_get::<String>("", "bitcoin_node_status") {
+
+                    if let Ok(bitcoin_node_status) =
+                        row.try_get::<String>("", "bitcoin_node_status")
+                    {
                         row_data.insert("bitcoin_node_status", json!(bitcoin_node_status));
                     }
-                    
+
                     summary_rows.push(json!(row_data));
                 }
 
@@ -163,7 +168,7 @@ impl DiagnosticService {
                 } else {
                     row.try_get_by_index::<String>(0).unwrap_or_default()
                 }
-            },
+            }
             _ => "Unknown".to_string(),
         };
 
@@ -221,11 +226,11 @@ impl DiagnosticService {
     async fn list_tables(&self) -> Result<Vec<String>, String> {
         // First, try to directly list the expected tables we know should exist
         let expected_tables = vec![
-            "bookmark".to_string(),
+            "block_status".to_string(),
             "charms".to_string(),
             "transactions".to_string(),
             "summary".to_string(),
-            "seaql_migrations".to_string(),
+            "assets".to_string(),
         ];
 
         // Check if we can access at least one of the expected tables

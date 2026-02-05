@@ -203,7 +203,21 @@ pub async fn get_all_charms_paginated(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, app_ids.clone()).await;
+
+    // [RJJ-PERF] Batch fetch likes data (2 queries instead of 2N)
+    let likes_counts = state
+        .repositories
+        .likes
+        .get_likes_counts_batch(&app_ids)
+        .await
+        .unwrap_or_default();
+    let user_likes = state
+        .repositories
+        .likes
+        .get_user_likes_batch(&app_ids, user_id)
+        .await
+        .unwrap_or_default();
 
     let mut charm_data = Vec::new();
 
@@ -212,21 +226,9 @@ pub async fn get_all_charms_paginated(
             continue;
         }
 
-        // Get likes count for this charm
-        let likes_count = (state
-            .repositories
-            .likes
-            .get_likes_count(&charm.app_id)
-            .await)
-            .unwrap_or(0);
-
-        // Check if the user has liked this charm
-        let user_liked = (state
-            .repositories
-            .likes
-            .has_user_liked(&charm.app_id, user_id)
-            .await)
-            .unwrap_or(false);
+        // Get likes from batch results
+        let likes_count = *likes_counts.get(&charm.app_id).unwrap_or(&0);
+        let user_liked = user_likes.contains(&charm.app_id);
 
         // Get metadata for this charm
         let (name, image, ticker, description) = metadata_map
@@ -376,7 +378,21 @@ pub async fn get_charms_by_type_paginated(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, app_ids.clone()).await;
+
+    // [RJJ-PERF] Batch fetch likes data (2 queries instead of 2N)
+    let likes_counts = state
+        .repositories
+        .likes
+        .get_likes_counts_batch(&app_ids)
+        .await
+        .unwrap_or_default();
+    let user_likes = state
+        .repositories
+        .likes
+        .get_user_likes_batch(&app_ids, user_id)
+        .await
+        .unwrap_or_default();
 
     let mut charm_data = Vec::new();
 
@@ -385,21 +401,9 @@ pub async fn get_charms_by_type_paginated(
             continue;
         }
 
-        // Get likes count for this charm
-        let likes_count = (state
-            .repositories
-            .likes
-            .get_likes_count(&charm.app_id)
-            .await)
-            .unwrap_or(0);
-
-        // Check if the user has liked this charm
-        let user_liked = (state
-            .repositories
-            .likes
-            .has_user_liked(&charm.app_id, user_id)
-            .await)
-            .unwrap_or(false);
+        // Get likes from batch results
+        let likes_count = *likes_counts.get(&charm.app_id).unwrap_or(&0);
+        let user_liked = user_likes.contains(&charm.app_id);
 
         // Get metadata for this charm
         let (name, image, ticker, description) = metadata_map
@@ -792,27 +796,29 @@ pub async fn get_charms_by_address(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, app_ids.clone()).await;
+
+    // [RJJ-PERF] Batch fetch likes data (2 queries instead of 2N)
+    let likes_counts = state
+        .repositories
+        .likes
+        .get_likes_counts_batch(&app_ids)
+        .await
+        .unwrap_or_default();
+    let user_likes = state
+        .repositories
+        .likes
+        .get_user_likes_batch(&app_ids, user_id)
+        .await
+        .unwrap_or_default();
 
     // Transform charms to CharmData format
     let mut charm_data = Vec::new();
 
     for charm in charms {
-        // Get likes count for this charm
-        let likes_count = state
-            .repositories
-            .likes
-            .get_likes_count(&charm.app_id)
-            .await
-            .unwrap_or(0);
-
-        // Check if the user has liked this charm
-        let user_liked = state
-            .repositories
-            .likes
-            .has_user_liked(&charm.app_id, user_id)
-            .await
-            .unwrap_or(false);
+        // Get likes from batch results
+        let likes_count = *likes_counts.get(&charm.app_id).unwrap_or(&0);
+        let user_liked = user_likes.contains(&charm.app_id);
 
         // Get metadata for this charm
         let (name, image, ticker, description) = metadata_map

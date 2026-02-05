@@ -1,4 +1,5 @@
 use sea_orm::{ColumnTrait, DatabaseConnection, DbErr, EntityTrait, PaginatorTrait, QueryFilter};
+use std::collections::{HashMap, HashSet};
 
 use crate::entity::{likes, prelude::Likes};
 
@@ -75,25 +76,50 @@ impl LikesRepository {
         Ok(count > 0)
     }
 
-    /// Gets all likes for a list of charms
-    #[allow(dead_code)] // Reserved for batch operations
-    pub async fn get_likes_for_charms(
+    /// Batch get likes counts for multiple charms (single query)
+    pub async fn get_likes_counts_batch(
         &self,
         charm_ids: &[String],
-        user_id: Option<i32>,
-    ) -> Result<Vec<(String, i64, bool)>, DbErr> {
-        let mut result = Vec::new();
-
-        // For each charm ID, get the like count and whether the user has liked it
-        for charm_id in charm_ids {
-            let count = self.get_likes_count(charm_id).await?;
-            let user_liked = match user_id {
-                Some(uid) => self.has_user_liked(charm_id, uid).await?,
-                None => false,
-            };
-            result.push((charm_id.clone(), count, user_liked));
+    ) -> Result<HashMap<String, i64>, DbErr> {
+        if charm_ids.is_empty() {
+            return Ok(HashMap::new());
         }
 
-        Ok(result)
+        // Get all likes for these charm_ids in one query
+        let likes = Likes::find()
+            .filter(likes::Column::CharmId.is_in(charm_ids.to_vec()))
+            .all(&self.db)
+            .await?;
+
+        // Count likes per charm_id
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for like in likes {
+            *counts.entry(like.charm_id).or_insert(0) += 1;
+        }
+
+        Ok(counts)
+    }
+
+    /// Batch check if user liked multiple charms (single query)
+    pub async fn get_user_likes_batch(
+        &self,
+        charm_ids: &[String],
+        user_id: i32,
+    ) -> Result<HashSet<String>, DbErr> {
+        if charm_ids.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        // Get all likes by this user for these charm_ids in one query
+        let likes = Likes::find()
+            .filter(likes::Column::CharmId.is_in(charm_ids.to_vec()))
+            .filter(likes::Column::UserId.eq(user_id))
+            .all(&self.db)
+            .await?;
+
+        // Collect charm_ids that user has liked
+        let liked_set: HashSet<String> = likes.into_iter().map(|l| l.charm_id).collect();
+
+        Ok(liked_set)
     }
 }
