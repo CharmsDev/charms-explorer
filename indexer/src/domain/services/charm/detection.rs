@@ -196,7 +196,8 @@ impl<'a> CharmDetector<'a> {
                 .and_then(|v| v.as_str())
                 .map(String::from);
             let image_url = meta
-                .get("url")
+                .get("image")
+                .or_else(|| meta.get("url"))
                 .or_else(|| meta.get("image_url"))
                 .and_then(|v| v.as_str())
                 .map(String::from);

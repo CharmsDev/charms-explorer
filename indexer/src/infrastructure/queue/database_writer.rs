@@ -305,9 +305,11 @@ impl DatabaseWriter {
                         }
 
                         req.charm.address.as_ref().map(|addr| {
-                            // Convert token app_id (t/HASH) to NFT app_id (n/HASH) for consolidation
+                            // Convert token app_id to NFT format for consolidation
+                            // app_id format: {tag}/{identity}/{vk}
+                            // We convert t/X/Y to n/X/Y to group tokens with their NFT
                             let nft_app_id = if req.charm.app_id.starts_with("t/") {
-                                req.charm.app_id.replacen("t/", "n/", 1)
+                                format!("n/{}", &req.charm.app_id[2..])
                             } else {
                                 req.charm.app_id.clone()
                             };

@@ -10,14 +10,8 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::{CharmQueueService, CharmService};
 use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository,
-    BookmarkRepository,
-    CharmRepository,
-    DexOrdersRepository,
-    SpellRepository,
-    StatsHoldersRepository,
-    SummaryRepository,
-    TransactionRepository, // [RJJ-STATS-HOLDERS], [RJJ-DEX] Added DexOrdersRepository
+    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository, SpellRepository,
+    StatsHoldersRepository, SummaryRepository, TransactionRepository,
 };
 use crate::infrastructure::queue::{CharmQueue, DatabaseWriter};
 use crate::utils::logging;
@@ -50,12 +44,12 @@ impl NetworkManager {
         &mut self,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
-        spell_repository: SpellRepository, // [RJJ-S01] New parameter
-        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS] New parameter
-        dex_orders_repository: DexOrdersRepository, // [RJJ-DEX] New parameter
+        spell_repository: SpellRepository,
+        stats_holders_repository: StatsHoldersRepository,
+        dex_orders_repository: DexOrdersRepository,
         transaction_repository: TransactionRepository,
-        bookmark_repository: BookmarkRepository,
         summary_repository: SummaryRepository,
+        block_status_repository: BlockStatusRepository,
     ) -> Result<(), BlockProcessorError> {
         // First, initialize the global charm queue system
         // [RJJ-S01] Now passes spell_repository
@@ -74,14 +68,14 @@ impl NetworkManager {
         if self.config.indexer.enable_bitcoin_testnet4 {
             self.initialize_bitcoin_processor(
                 "testnet4",
-                bookmark_repository.clone(),
                 charm_repository.clone(),
                 asset_repository.clone(),
-                spell_repository.clone(),         // [RJJ-S01]
-                stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
-                dex_orders_repository.clone(),    // [RJJ-DEX]
+                spell_repository.clone(),
+                stats_holders_repository.clone(),
+                dex_orders_repository.clone(),
                 transaction_repository.clone(),
                 summary_repository.clone(),
+                block_status_repository.clone(),
             )
             .await?;
         }
@@ -89,14 +83,14 @@ impl NetworkManager {
         if self.config.indexer.enable_bitcoin_mainnet {
             self.initialize_bitcoin_processor(
                 "mainnet",
-                bookmark_repository.clone(),
                 charm_repository.clone(),
                 asset_repository.clone(),
-                spell_repository.clone(),         // [RJJ-S01]
-                stats_holders_repository.clone(), // [RJJ-STATS-HOLDERS]
-                dex_orders_repository.clone(),    // [RJJ-DEX]
+                spell_repository.clone(),
+                stats_holders_repository.clone(),
+                dex_orders_repository.clone(),
                 transaction_repository.clone(),
                 summary_repository.clone(),
+                block_status_repository.clone(),
             )
             .await?;
         }
@@ -177,20 +171,21 @@ impl NetworkManager {
     }
 
     /// Initialize a Bitcoin processor for a specific network
+    /// Unified processor: handles both live indexing and reindexing from cached data
     /// [RJJ-S01] Now includes spell_repository parameter
     /// [RJJ-STATS-HOLDERS] Now includes stats_holders_repository parameter
     /// [RJJ-DEX] Now includes dex_orders_repository parameter
     async fn initialize_bitcoin_processor(
         &mut self,
         network: &str,
-        bookmark_repository: BookmarkRepository,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
-        spell_repository: SpellRepository, // [RJJ-S01]
-        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
-        dex_orders_repository: DexOrdersRepository, // [RJJ-DEX]
+        spell_repository: SpellRepository,
+        stats_holders_repository: StatsHoldersRepository,
+        dex_orders_repository: DexOrdersRepository,
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
+        block_status_repository: BlockStatusRepository,
     ) -> Result<(), BlockProcessorError> {
         let bitcoin_config = match self.config.get_bitcoin_config(network) {
             Some(config) => config,
@@ -264,9 +259,9 @@ impl NetworkManager {
         let processor = BitcoinProcessor::new(
             bitcoin_client,
             charm_service,
-            bookmark_repository,
             transaction_repository,
             summary_repository,
+            block_status_repository,
             self.config.clone(),
             bitcoin_config.genesis_block_height,
         );

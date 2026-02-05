@@ -1,2 +1,2 @@
 pub mod indexer;
-pub mod reindexer;
+// NOTE: reindexer module removed - unified into indexer using block_status table

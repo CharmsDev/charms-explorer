@@ -1,22 +1,15 @@
 //! Charms Indexer - Bitcoin blockchain indexer for Charms protocol
 //!
-//! ## Operation Modes
-//!
-//! - **Production Mode** (default): Indexes new blocks + mempool in real-time
-//! - **Reindex Mode** (`REINDEX_MODE=true`): Batch processes historical blocks, then exits
+//! Unified indexer that handles both live indexing and reindexing from cached data.
+//! Uses block_status table to track downloaded/processed state.
 //!
 //! ## Usage
 //!
 //! ```bash
-//! # Production mode (default)
 //! cargo run --release
-//!
-//! # Reindex mode
-//! REINDEX_MODE=true cargo run --release
 //! ```
 
 use charms_indexer::application::indexer::NetworkManager;
-use charms_indexer::application::reindexer;
 use charms_indexer::config::AppConfig;
 use charms_indexer::infrastructure::persistence::{DbPool, RepositoryFactory};
 use charms_indexer::utils::logging;
@@ -38,29 +31,7 @@ async fn main() {
 
     let repositories = RepositoryFactory::create_repositories(&db_pool);
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // MODE SWITCH: Reindex vs Production
-    // ═══════════════════════════════════════════════════════════════════════
-
-    if reindexer::is_enabled() {
-        // REINDEX MODE: Batch process historical blocks, then exit
-        if let Err(e) = reindexer::run(
-            &config,
-            repositories.charm.clone(),
-            repositories.asset.clone(),
-            repositories.spell.clone(),
-            repositories.stats_holders.clone(),
-            repositories.transaction.clone(),
-            repositories.bookmark.clone(),
-        )
-        .await
-        {
-            logging::log_error(&format!("Reindex failed: {}", e));
-        }
-        return; // Exit after reindexing
-    }
-
-    // PRODUCTION MODE: Real-time indexing of new blocks + mempool
+    // Unified indexer - uses block_status to determine what needs processing
     run_production_indexer(config, repositories).await;
 }
 
@@ -79,8 +50,8 @@ async fn run_production_indexer(
             repositories.stats_holders.clone(),
             repositories.dex_orders.clone(),
             repositories.transaction.clone(),
-            repositories.bookmark.clone(),
             repositories.summary.clone(),
+            repositories.block_status.clone(),
         )
         .await
     {

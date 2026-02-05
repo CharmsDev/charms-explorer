@@ -3,20 +3,16 @@
 use crate::domain::models::Asset;
 use crate::infrastructure::persistence::entities::assets;
 
-/// Extract hash from app_id (removes t/ or n/ prefix and returns only the hash part)
-/// Example: "t/3d7f.../txid:vout" -> "3d7f..." (64 char hash only)
+/// Extract identity hash from app_id
+/// Format: "{tag}/{identity}/{vk}" -> returns "{identity}"
+/// Example: "t/abc123.../def456..." -> "abc123..."
 pub fn extract_hash_from_app_id(app_id: &str) -> String {
-    let without_prefix = if app_id.starts_with("t/") || app_id.starts_with("n/") {
-        &app_id[2..]
+    // Split by '/' and get the identity part (second element)
+    let parts: Vec<&str> = app_id.split('/').collect();
+    if parts.len() >= 2 {
+        parts[1].to_string()
     } else {
-        app_id
-    };
-
-    // Hash is 64 characters, extract only that part
-    if without_prefix.len() >= 64 {
-        without_prefix[..64].to_string()
-    } else {
-        without_prefix.to_string()
+        app_id.to_string()
     }
 }
 

@@ -19,18 +19,19 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    BookmarkRepository, SummaryRepository, TransactionRepository,
+    BlockStatusRepository, SummaryRepository, TransactionRepository,
 };
 use crate::utils::logging;
 
 /// Processes Bitcoin blocks to find and index charm transactions
+/// Unified processor: handles both live indexing and reindexing from cached data
 #[derive(Debug)]
 pub struct BitcoinProcessor {
     bitcoin_client: BitcoinClient,
     charm_service: CharmService,
-    bookmark_repository: BookmarkRepository,
     transaction_repository: TransactionRepository,
     summary_repository: SummaryRepository,
+    block_status_repository: BlockStatusRepository,
     config: AppConfig,
     current_height: u64,
     genesis_block_height: u64,
@@ -41,18 +42,18 @@ impl BitcoinProcessor {
     pub fn new(
         bitcoin_client: BitcoinClient,
         charm_service: CharmService,
-        bookmark_repository: BookmarkRepository,
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
+        block_status_repository: BlockStatusRepository,
         config: AppConfig,
         genesis_block_height: u64,
     ) -> Self {
         Self {
             bitcoin_client,
             charm_service,
-            bookmark_repository,
             transaction_repository,
             summary_repository,
+            block_status_repository,
             current_height: genesis_block_height,
             config,
             genesis_block_height,
@@ -71,12 +72,12 @@ impl BitcoinProcessor {
         ));
 
         match self
-            .bookmark_repository
+            .block_status_repository
             .get_last_processed_block(self.network_id())
             .await
         {
             Ok(Some(height)) => {
-                self.current_height = height + 1;
+                self.current_height = (height + 1) as u64;
                 logging::log_info(&format!(
                     "[{}] Resuming from block {}",
                     self.network_id().name,
@@ -84,32 +85,87 @@ impl BitcoinProcessor {
                 ));
             }
             Ok(None) => {
-                logging::log_info(&format!(
-                    "[{}] No previous bookmark found, starting from genesis block {}",
-                    self.network_id().name,
-                    self.genesis_block_height
-                ));
                 self.current_height = self.genesis_block_height;
                 logging::log_info(&format!(
-                    "[{}] Starting from block {}",
+                    "[{}] Starting from genesis block {}",
                     self.network_id().name,
                     self.current_height
                 ));
             }
             Err(e) => {
                 logging::log_error(&format!(
-                    "[{}] Error getting bookmark: {}, starting from genesis block",
+                    "[{}] Error getting block_status: {}, starting from genesis",
                     self.network_id().name,
                     e
                 ));
                 self.current_height = self.genesis_block_height;
-                logging::log_info(&format!(
-                    "[{}] Starting from block {}",
+            }
+        }
+    }
+
+    /// Process pending blocks from cache (reindex mode)
+    /// Uses cached transactions from DB instead of fetching from Bitcoin node
+    pub async fn process_pending_blocks_from_cache(&self) -> Result<(), BlockProcessorError> {
+        // Get pending blocks (downloaded but not processed)
+        let pending_blocks = self
+            .block_status_repository
+            .get_pending_blocks(self.network_id(), 10000)
+            .await
+            .map_err(|e| BlockProcessorError::ProcessingError(format!("DB error: {}", e)))?;
+
+        if pending_blocks.is_empty() {
+            logging::log_info(&format!(
+                "[{}] ✅ No pending blocks to reindex",
+                self.network_id().name
+            ));
+            return Ok(());
+        }
+
+        logging::log_info(&format!(
+            "[{}] ♻️ Starting reindex of {} pending blocks from cache",
+            self.network_id().name,
+            pending_blocks.len()
+        ));
+
+        for (i, height) in pending_blocks.iter().enumerate() {
+            let block_processor = BlockProcessor::new(
+                self.bitcoin_client.clone(),
+                self.charm_service.clone(),
+                self.transaction_repository.clone(),
+                self.summary_repository.clone(),
+                self.block_status_repository.clone(),
+            );
+
+            if let Err(e) = block_processor
+                .process_block_from_cache(*height as u64, self.network_id())
+                .await
+            {
+                logging::log_error(&format!(
+                    "[{}] ❌ Error reindexing block {}: {}",
                     self.network_id().name,
-                    self.current_height
+                    height,
+                    e
+                ));
+            }
+
+            // Log progress every 100 blocks
+            if (i + 1) % 100 == 0 {
+                logging::log_info(&format!(
+                    "[{}] ♻️ Reindex progress: {}/{} blocks",
+                    self.network_id().name,
+                    i + 1,
+                    pending_blocks.len()
                 ));
             }
         }
+
+        logging::log_info(&format!(
+            "[{}] ✅ Reindex complete: {} blocks processed",
+            self.network_id().name,
+            pending_blocks.len()
+        ));
+
+        Ok(())
     }
 
     pub async fn process_available_blocks(&mut self) -> Result<(), BlockProcessorError> {
@@ -177,9 +233,9 @@ impl BitcoinProcessor {
             let block_processor = BlockProcessor::new(
                 self.bitcoin_client.clone(),
                 self.charm_service.clone(),
-                self.bookmark_repository.clone(),
                 self.transaction_repository.clone(),
                 self.summary_repository.clone(),
+                self.block_status_repository.clone(),
             );
 
             match block_processor
@@ -217,20 +273,15 @@ impl BitcoinProcessor {
                             next_available
                         ));
 
-                        // Update bookmark for skipped block to show progress in API
-                        let placeholder_hash = format!("skipped-{}", self.current_height);
-                        if let Err(_bookmark_err) = self
-                            .bookmark_repository
-                            .save_bookmark(
-                                &placeholder_hash,
-                                self.current_height,
-                                false,
-                                self.network_id(),
-                            )
-                            .await
-                        {
-                            // Silently continue on bookmark errors
-                        }
+                        // Mark skipped block in block_status
+                        let _ = self
+                            .block_status_repository
+                            .mark_downloaded(self.current_height as i32, None, 0, self.network_id())
+                            .await;
+                        let _ = self
+                            .block_status_repository
+                            .mark_processed(self.current_height as i32, 0, self.network_id())
+                            .await;
 
                         self.current_height = next_available;
                     } else {
@@ -262,6 +313,10 @@ impl BlockchainProcessor for BitcoinProcessor {
     }
 
     async fn start_processing(&mut self) -> Result<(), BlockProcessorError> {
+        // First, process any pending blocks from cache (reindex mode)
+        self.process_pending_blocks_from_cache().await?;
+
+        // Then continue with live processing
         self.initialize_block_height().await;
 
         loop {
@@ -284,9 +339,9 @@ impl BlockchainProcessor for BitcoinProcessor {
         let block_processor = BlockProcessor::new(
             self.bitcoin_client.clone(),
             self.charm_service.clone(),
-            self.bookmark_repository.clone(),
             self.transaction_repository.clone(),
             self.summary_repository.clone(),
+            self.block_status_repository.clone(),
         );
 
         block_processor

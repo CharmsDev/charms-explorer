@@ -55,7 +55,9 @@ impl NativeCharmParser {
                 // Get the app from the spell's app_public_inputs
                 if let Some((app, _)) = spell.app_public_inputs.iter().nth(*app_index as usize) {
                     let asset_info = AssetInfo {
-                        app_id: format!("{}:{}", app, output_index),
+                        // [RJJ-FIX] app_id is directly from App.to_string(): {tag}/{identity}/{vk}
+                        // NO output_index - that was incorrect
+                        app_id: app.to_string(),
                         vout_index: output_index as i32,
                         amount: extract_amount_from_charm_data(charm_data),
                         asset_type: determine_asset_type_from_app(app),

@@ -9,7 +9,7 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    BookmarkRepository, SummaryRepository, TransactionRepository,
+    BlockStatusRepository, SummaryRepository, TransactionRepository,
 };
 use crate::utils::logging;
 
@@ -19,13 +19,14 @@ use super::batch_processor::{
 use super::retry_handler::RetryHandler;
 
 /// Handles processing of individual blocks
+/// Unified processor: works with both live node data and cached transactions
 #[derive(Debug)]
 pub struct BlockProcessor {
     bitcoin_client: BitcoinClient,
     charm_service: CharmService,
-    bookmark_repository: BookmarkRepository,
     transaction_repository: TransactionRepository,
     summary_repository: SummaryRepository,
+    block_status_repository: BlockStatusRepository,
     retry_handler: RetryHandler,
 }
 
@@ -33,42 +34,37 @@ impl BlockProcessor {
     pub fn new(
         bitcoin_client: BitcoinClient,
         charm_service: CharmService,
-        bookmark_repository: BookmarkRepository,
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
+        block_status_repository: BlockStatusRepository,
     ) -> Self {
         Self {
             bitcoin_client,
             charm_service,
-            bookmark_repository,
             transaction_repository,
             summary_repository,
+            block_status_repository,
             retry_handler: RetryHandler::new(),
         }
     }
 
-    /// Process a single block
+    /// Process a single block (unified: live or from cached transactions)
     pub async fn process_block(
         &self,
         height: u64,
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
-        // Get latest height once for the entire block processing
-        let latest_height = self.bitcoin_client.get_block_count().await.map_err(|e| {
-            logging::log_error(&format!(
-                "[{}] Error getting block count: {}",
-                network_id.name, e
-            ));
-            BlockProcessorError::BitcoinClientError(e)
-        })?;
+        let latest_height = self
+            .bitcoin_client
+            .get_block_count()
+            .await
+            .map_err(|e| BlockProcessorError::BitcoinClientError(e))?;
 
-        // 1. Fetch Block Hash
+        // Fetch block from node
         let block_hash = self.get_block_hash(height, network_id).await?;
-
-        // 2. Fetch Block Data
         let block = self.get_block(&block_hash, network_id).await?;
 
-        // 3. Process Transactions (CPU Parallel)
+        // Process transactions
         let (transaction_batch, charm_batch, asset_batch) = self
             .process_transactions(&block, &block_hash, height, latest_height, network_id)
             .await?;
@@ -78,31 +74,29 @@ impl BlockProcessor {
             self.transaction_repository.clone(),
         );
 
-        // 4. Save Transactions (DB)
+        // Save data
         if !transaction_batch.is_empty() {
             batch_processor
                 .save_transaction_batch(transaction_batch.clone(), height, network_id)
                 .await?;
         }
 
-        // 5. Save Charms (Queue)
         if !charm_batch.is_empty() {
             batch_processor
                 .save_charm_batch(charm_batch.clone(), height, network_id)
                 .await?;
         }
 
-        // 6. Save Assets (DB)
         if !asset_batch.is_empty() {
             batch_processor
                 .save_asset_batch(asset_batch.clone(), height, network_id)
                 .await?;
         }
 
-        // 7. Mark Spent Charms (DB)
+        // Mark spent charms
         self.mark_spent_charms(&block, network_id).await?;
 
-        // Update summary table with current statistics
+        // Update summary
         let summary_updater = super::SummaryUpdater::new(
             self.bitcoin_client.clone(),
             self.summary_repository.clone(),
@@ -117,12 +111,33 @@ impl BlockProcessor {
             )
             .await?;
 
-        // Save bookmark ONLY after all processing is complete
-        // This ensures we don't skip blocks if interrupted mid-processing
-        self.save_bookmark(&block_hash, height, latest_height, network_id)
-            .await?;
+        // Update block_status - mark as downloaded and processed
+        let confirmations = latest_height.saturating_sub(height) + 1;
+        let is_confirmed = confirmations >= 6;
 
-        // Single summary line per block with progress
+        let _ = self
+            .block_status_repository
+            .mark_downloaded(
+                height as i32,
+                Some(&block_hash.to_string()),
+                block.txdata.len() as i32,
+                network_id,
+            )
+            .await;
+
+        let _ = self
+            .block_status_repository
+            .mark_processed(height as i32, charm_batch.len() as i32, network_id)
+            .await;
+
+        if is_confirmed {
+            let _ = self
+                .block_status_repository
+                .mark_confirmed(height as i32, network_id)
+                .await;
+        }
+
+        // Log progress
         let remaining = latest_height.saturating_sub(height);
         logging::log_info(&format!(
             "[{}] ✅ Block {}: Tx {} | Charms {} ({} remaining)",
@@ -133,48 +148,83 @@ impl BlockProcessor {
             remaining
         ));
 
-        // [RJJ-DEBUG] PAUSE when BRO NFT is detected (n/3d7fe7e4...) - DISABLED FOR NOW
-        // This allows manual verification of NFT metadata extraction before continuing
-        let _has_bro_nft = charm_batch.iter().any(|(_, _, _, _, asset_type, _, _, _, app_id, _, _)| {
-            asset_type == "nft" && app_id.starts_with("n/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b")
-        });
-        
-        if false {
-            logging::log_warning(&format!(
-                "\n\n🛑 ============================================\n\
-                 🛑 PAUSA FORZADA - Bloque 913084 procesado\n\
-                 🛑 ============================================\n\
-                 \n\
-                 Este es el bloque donde aparece el NFT de referencia del token BRO.\n\
-                 \n\
-                 📊 VERIFICAR EN LA BASE DE DATOS:\n\
-                 \n\
-                 1. Supply correcto en assets:\n\
-                    SELECT app_id, asset_type, total_supply, data->>'supply' as data_supply\n\
-                    FROM assets WHERE app_id LIKE 'n/3d7f%' OR app_id LIKE 't/3d7f%';\n\
-                 \n\
-                 2. Metadata del NFT:\n\
-                    SELECT app_id, name, symbol, description, image_url\n\
-                    FROM assets WHERE asset_type = 'nft';\n\
-                 \n\
-                 3. Charms guardados:\n\
-                    SELECT COUNT(*) FROM charms WHERE block_height = 913084;\n\
-                 \n\
-                 ⏸️  El indexer continuará en 60 segundos...\n\
-                 ⏸️  Presiona Ctrl+C para detener si necesitas más tiempo.\n\
-                 \n\
-                 ============================================\n"
-            ));
+        Ok(())
+    }
 
-            // Wait 60 seconds to allow manual verification
-            tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+    /// Process a block from cached transactions in database (reindex mode)
+    /// Uses data from transactions table instead of fetching from Bitcoin node
+    pub async fn process_block_from_cache(
+        &self,
+        height: u64,
+        network_id: &NetworkId,
+    ) -> Result<(), BlockProcessorError> {
+        // Get cached transactions for this block
+        let cached_txs = self
+            .transaction_repository
+            .find_by_block_height(height)
+            .await
+            .map_err(|e| BlockProcessorError::ProcessingError(format!("DB error: {}", e)))?;
 
-            logging::log_info(&format!(
-                "[{}] ▶️  Continuando indexación desde bloque {}...",
-                network_id.name,
-                height + 1
-            ));
+        if cached_txs.is_empty() {
+            // No transactions in cache, mark as processed
+            let _ = self
+                .block_status_repository
+                .mark_processed(height as i32, 0, network_id)
+                .await;
+            return Ok(());
         }
+
+        // Get latest height for confirmations calculation
+        let latest_height = self
+            .bitcoin_client
+            .get_block_count()
+            .await
+            .unwrap_or(height);
+
+        let mut charm_count = 0;
+
+        // Process each cached transaction - reprocess charms
+        for tx in &cached_txs {
+            // Extract hex from raw JSON
+            let tx_hex = tx.raw.get("hex").and_then(|v| v.as_str()).unwrap_or("");
+
+            if tx_hex.is_empty() {
+                continue;
+            }
+
+            // Use the charm service to detect charm
+            match self
+                .charm_service
+                .detect_and_process_charm_from_hex(&tx.txid, height, tx_hex, tx.ordinal as usize)
+                .await
+            {
+                Ok(Some(_)) => {
+                    charm_count += 1;
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    logging::log_error(&format!(
+                        "[{}] Error processing tx {} at height {}: {}",
+                        network_id.name, tx.txid, height, e
+                    ));
+                }
+            }
+        }
+
+        // Update block_status
+        let _ = self
+            .block_status_repository
+            .mark_processed(height as i32, charm_count, network_id)
+            .await;
+
+        // Log progress
+        logging::log_info(&format!(
+            "[{}] ♻️ Reindex Block {}: Tx {} | Charms {}",
+            network_id.name,
+            height,
+            cached_txs.len(),
+            charm_count,
+        ));
 
         Ok(())
     }
@@ -224,33 +274,6 @@ impl BlockProcessor {
         }
     }
 
-    /// Save bookmark for processed block
-    async fn save_bookmark(
-        &self,
-        block_hash: &bitcoin::BlockHash,
-        height: u64,
-        latest_height: u64,
-        network_id: &NetworkId,
-    ) -> Result<(), BlockProcessorError> {
-        let confirmations = latest_height - height + 1;
-        let is_confirmed = confirmations >= 6;
-
-        self.retry_handler
-            .execute_with_retry_and_logging(
-                || async {
-                    self.bookmark_repository
-                        .save_bookmark(&block_hash.to_string(), height, is_confirmed, network_id)
-                        .await
-                },
-                "save bookmark",
-                &network_id.name,
-            )
-            .await
-            .map_err(BlockProcessorError::DbError)?;
-
-        Ok(())
-    }
-
     /// Process all transactions in a block using parallel processing
     /// Optimized to avoid redundant RPC calls by using local block data
     async fn process_transactions(
@@ -278,115 +301,76 @@ impl BlockProcessor {
 
         // Create iterator of futures for parallel processing
         // We use owned data to ensure futures are 'static and Send
-        let futures = tx_data.into_iter().map(|(txid, tx_hex, tx_pos, input_txids)| {
-            let network_clone = network.clone();
-            let blockchain_clone = blockchain.clone();
+        let futures = tx_data
+            .into_iter()
+            .map(|(txid, tx_hex, tx_pos, input_txids)| {
+                let network_clone = network.clone();
+                let blockchain_clone = blockchain.clone();
 
-            let charm_service = charm_service.clone(); // Clone for this task
+                let charm_service = charm_service.clone(); // Clone for this task
 
-            async move {
-                // [RJJ-DEBUG] Log specific transaction for BRO NFT
-                if txid == "ea40035b7e6fed781f6c9c5c2929617594e66dde0e005be233165c31de9d6089" {
-                    logging::log_warning(&format!(
-                        "\n🔍 [DEBUG] Processing BRO NFT transaction:\n\
-                         - TXID: {}\n\
-                         - Block: {}\n\
-                         - TX Hex length: {} bytes\n\
-                         - Calling detect_and_process_charm_from_hex_with_latest...",
-                        txid, height, tx_hex.len()
-                    ));
-                }
-                
-                // Use local hex to detect charm - NO RPC CALL
-                let detection_result = charm_service
-                    .detect_and_process_charm_from_hex_with_latest(
-                        &txid,
-                        height,
-                        &tx_hex,
-                        tx_pos,
-                        latest_height,
-                        input_txids,
-                    )
-                    .await;
-                
-                // [RJJ-DEBUG] Log result for BRO NFT transaction
-                if txid == "ea40035b7e6fed781f6c9c5c2929617594e66dde0e005be233165c31de9d6089" {
-                    match &detection_result {
+                async move {
+                    // Detect charm from transaction hex (no RPC call needed)
+                    let detection_result = charm_service
+                        .detect_and_process_charm_from_hex_with_latest(
+                            &txid,
+                            height,
+                            &tx_hex,
+                            tx_pos,
+                            latest_height,
+                            input_txids,
+                        )
+                        .await;
+
+                    match detection_result {
                         Ok(Some(charm)) => {
-                            logging::log_warning(&format!(
-                                "✅ [DEBUG] BRO NFT DETECTED!\n\
-                                 - App ID: {}\n\
-                                 - Asset Type: {}\n\
-                                 - Amount: {}\n\
-                                 - Vout: {}\n\
-                                 - Data: {:?}",
-                                charm.app_id, charm.asset_type, charm.amount, charm.vout, charm.data
-                            ));
-                        },
-                        Ok(None) => {
-                            logging::log_warning(&format!(
-                                "❌ [DEBUG] BRO NFT NOT DETECTED - Result was None\n\
-                                 - This means the parser did not find a valid charm in the transaction"
-                            ));
-                        },
+                            let confirmations = latest_height - height + 1;
+                            let is_confirmed = confirmations >= 6;
+
+                            let raw_json = json!({
+                                "hex": tx_hex,
+                                "txid": txid,
+                            });
+
+                            let transaction_item = (
+                                txid.clone(),
+                                height,
+                                tx_pos as i64,
+                                raw_json,
+                                charm.data.clone(),
+                                confirmations as i32,
+                                is_confirmed,
+                                blockchain_clone.clone(),
+                                network_clone.clone(),
+                            );
+
+                            let charm_item = (
+                                txid,
+                                charm.vout,
+                                height,
+                                charm.data.clone(),
+                                charm.asset_type.clone(),
+                                blockchain_clone,
+                                network_clone,
+                                charm.address.clone(),
+                                charm.app_id.clone(),
+                                charm.amount,
+                                charm.tags.clone(),
+                            );
+
+                            Some((transaction_item, charm_item, None))
+                        }
+                        Ok(None) => None,
                         Err(e) => {
-                            logging::log_warning(&format!(
-                                "❌ [DEBUG] BRO NFT DETECTION ERROR: {:?}",
-                                e
+                            logging::log_error(&format!(
+                                "[{}] Error processing potential charm {}: {}",
+                                network_clone, txid, e
                             ));
+                            None
                         }
                     }
                 }
-                
-                match detection_result {
-                    Ok(Some(charm)) => {
-                        let confirmations = latest_height - height + 1;
-                        let is_confirmed = confirmations >= 6;
-
-                        let raw_json = json!({
-                            "hex": tx_hex,
-                            "txid": txid,
-                        });
-
-                        let transaction_item = (
-                            txid.clone(),
-                            height,
-                            tx_pos as i64,
-                            raw_json,
-                            charm.data.clone(),
-                            confirmations as i32,
-                            is_confirmed,
-                            blockchain_clone.clone(),
-                            network_clone.clone(),
-                        );
-
-                        let charm_item = (
-                            txid,
-                            charm.vout,
-                            height,
-                            charm.data.clone(),
-                            charm.asset_type.clone(),
-                            blockchain_clone,
-                            network_clone,
-                            charm.address.clone(),
-                            charm.app_id.clone(),
-                            charm.amount,
-                            charm.tags.clone(),
-                        );
-
-                        Some((transaction_item, charm_item, None))
-                    }
-                    Ok(None) => None,
-                    Err(e) => {
-                        logging::log_error(&format!(
-                            "[{}] Error processing potential charm {}: {}",
-                            network_clone, txid, e
-                        ));
-                        None
-                    }
-                }
-            }
-        });
+            });
 
         // Determine batch size from environment or default to safe value for small servers
         let batch_size = std::env::var("INDEXER_BATCH_SIZE")
@@ -468,7 +452,9 @@ impl BlockProcessor {
 
     /// Extracts transaction data into an owned vector to avoid lifetime issues
     /// Returns: (txid, tx_hex, tx_pos, input_txids)
-    fn extract_transaction_data(block: &bitcoin::Block) -> Vec<(String, String, usize, Vec<String>)> {
+    fn extract_transaction_data(
+        block: &bitcoin::Block,
+    ) -> Vec<(String, String, usize, Vec<String>)> {
         block
             .txdata
             .iter()
@@ -481,7 +467,7 @@ impl BlockProcessor {
                     .filter(|input| !input.previous_output.is_null()) // Skip coinbase
                     .map(|input| input.previous_output.txid.to_string())
                     .collect();
-                
+
                 (
                     tx.txid().to_string(),
                     bitcoin::consensus::encode::serialize_hex(tx),

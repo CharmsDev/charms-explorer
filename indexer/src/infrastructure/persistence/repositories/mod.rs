@@ -1,7 +1,6 @@
 pub mod asset;
 pub mod asset_repository;
 pub mod block_status_repository;
-pub mod bookmark_repository;
 pub mod charm_repository;
 pub mod dex_orders_repository;
 pub mod spell_repository;
@@ -11,7 +10,6 @@ pub mod transaction_repository; // [RJJ-DEX]
 
 pub use asset_repository::AssetRepository;
 pub use block_status_repository::BlockStatusRepository;
-pub use bookmark_repository::BookmarkRepository;
 pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository;
 pub use spell_repository::SpellRepository;
@@ -28,8 +26,6 @@ pub struct Repositories {
     pub asset: AssetRepository,
     /// Repository for block status tracking
     pub block_status: BlockStatusRepository,
-    /// Repository for bookmark operations
-    pub bookmark: BookmarkRepository,
     /// Repository for charm operations
     pub charm: CharmRepository,
     /// Repository for DEX orders [RJJ-DEX]
@@ -52,22 +48,20 @@ impl Repositories {
     pub fn new(
         asset: AssetRepository,
         block_status: BlockStatusRepository,
-        bookmark: BookmarkRepository,
         charm: CharmRepository,
-        dex_orders: DexOrdersRepository,       // [RJJ-DEX]
-        spell: SpellRepository,                // [RJJ-S01]
-        stats_holders: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
+        dex_orders: DexOrdersRepository,
+        spell: SpellRepository,
+        stats_holders: StatsHoldersRepository,
         summary: SummaryRepository,
         transaction: TransactionRepository,
     ) -> Self {
         Self {
             asset,
             block_status,
-            bookmark,
             charm,
-            dex_orders,    // [RJJ-DEX]
-            spell,         // [RJJ-S01]
-            stats_holders, // [RJJ-STATS-HOLDERS]
+            dex_orders,
+            spell,
+            stats_holders,
             summary,
             transaction,
         }

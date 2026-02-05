@@ -80,8 +80,9 @@ pub async fn save_or_update_asset(
             // If NFT already exists, do nothing (idempotent)
         }
         "token" => {
-            // Token creation: find parent NFT (n/HASH/...)
-            // Use LIKE pattern because app_id format is n/{hash}/{txid}:{vout}
+            // Token creation: find parent NFT with same identity hash
+            // app_id format: {tag}/{identity}/{vk}
+            // NFT and token share the same identity, so we search by n/{identity}/%
             let parent_nft_pattern = format!("n/{}/%", hash);
             let parent_nft = Assets::find()
                 .filter(assets::Column::AssetType.eq("nft"))
@@ -119,6 +120,8 @@ pub async fn save_or_update_asset(
             }
 
             // ALWAYS create/update token asset record (for Tokens tab display)
+            // app_id is unique per token type: {tag}/{identity}/{vk}
+            // Search by exact app_id - all mints of same token share the same app_id
             let existing_token = Assets::find()
                 .filter(assets::Column::AppId.eq(&asset.app_id))
                 .one(db)
@@ -364,12 +367,16 @@ pub async fn save_batch(
             Decimal::from(1)
         };
 
-        // Check if token already exists
+        // Check if token already exists by exact app_id
+        // app_id is unique per token type: {tag}/{identity}/{vk}
         let existing_token = Assets::find()
             .filter(assets::Column::AppId.eq(&app_id))
             .one(db)
             .await
             .map_err(|e| DbError::SeaOrmError(e))?;
+
+        // Extract identity hash for finding parent NFT
+        let hash = helpers::extract_hash_from_app_id(&app_id);
 
         if let Some(existing) = existing_token {
             // Token exists - add mint amount to existing supply
@@ -389,7 +396,6 @@ pub async fn save_batch(
                 .map_err(|e| DbError::SeaOrmError(e))?;
         } else {
             // Token doesn't exist - create new with inherited metadata from parent NFT
-            let hash = helpers::extract_hash_from_app_id(&app_id);
             let parent_nft_pattern = format!("n/{}/%", hash);
 
             let (name, symbol, description, decimals) = if let Ok(Some(parent_nft)) = Assets::find()

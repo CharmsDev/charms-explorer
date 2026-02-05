@@ -2,9 +2,8 @@ use sea_orm::DatabaseConnection;
 
 use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, BlockStatusRepository, BookmarkRepository, CharmRepository,
-    DexOrdersRepository, Repositories, SpellRepository, StatsHoldersRepository, SummaryRepository,
-    TransactionRepository,
+    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository, Repositories,
+    SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository,
 };
 
 /// Factory for creating repositories
@@ -21,7 +20,6 @@ impl RepositoryFactory {
         Repositories::new(
             Self::create_asset_repository(conn.clone()),
             Self::create_block_status_repository(conn.clone()),
-            Self::create_bookmark_repository(conn.clone()),
             Self::create_charm_repository(conn.clone()),
             Self::create_dex_orders_repository(conn.clone()),
             Self::create_spell_repository(conn.clone()),
@@ -29,11 +27,6 @@ impl RepositoryFactory {
             Self::create_summary_repository(conn.clone()),
             Self::create_transaction_repository(conn),
         )
-    }
-
-    /// Create a bookmark repository
-    pub fn create_bookmark_repository(conn: DatabaseConnection) -> BookmarkRepository {
-        BookmarkRepository::new(conn)
     }
 
     /// Create a charm repository
