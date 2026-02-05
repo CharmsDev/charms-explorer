@@ -99,3 +99,4 @@ database/.env.production
 /database/scripts
 database/tools/
 /scripts/
+/backups/
