@@ -51,14 +51,16 @@ export default function AssetDetailPage() {
                 if (assetResponse) setAssetData(assetResponse);
                 if (holders) setHoldersData(holders);
                 
-                // Fetch reference NFT for tokens or NFTs without image
-                if (appId?.startsWith('t/') || (appId?.startsWith('n/') && !data?.image && !data?.image_url)) {
-                    const hash = extractHashFromAppId(appId);
-                    if (hash) {
-                        const refNft = await fetchReferenceNftByHash(hash);
-                        if (refNft) {
-                            setNftMetadata(refNft);
-                            if (refNft.image_url) setSpellImage(refNft.image_url);
+                // Fetch reference NFT metadata (for link to parent NFT)
+                // Both tokens and NFTs: fetch reference NFT for image display
+                const hash = extractHashFromAppId(appId);
+                if (hash) {
+                    const refNft = await fetchReferenceNftByHash(hash);
+                    if (refNft) {
+                        setNftMetadata(refNft);
+                        // Use image for both tokens and NFTs if asset doesn't have its own
+                        if (!data?.image && !data?.image_url && refNft.image_url) {
+                            setSpellImage(refNft.image_url);
                         }
                     }
                 }
@@ -113,7 +115,8 @@ export default function AssetDetailPage() {
     
     const getDisplayImage = () => {
         if (imageError) return PLACEHOLDER_IMAGE;
-        return nftMetadata?.image_url || spellImage || asset.image || asset.image_url || PLACEHOLDER_IMAGE;
+        // Both tokens and NFTs can use spell image from reference NFT
+        return spellImage || asset.image || asset.image_url || PLACEHOLDER_IMAGE;
     };
 
     const typeLabels = { nft: 'NFTs', token: 'Tokens', dapp: 'dApps' };
