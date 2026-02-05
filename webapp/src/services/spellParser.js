@@ -234,8 +234,115 @@ export function formatFieldName(fieldName) {
 }
 
 /**
+ * Check if a value is a byte array (array of numbers 0-255)
+ * @param {any} value
+ * @returns {boolean}
+ */
+export function isByteArray(value) {
+    if (!Array.isArray(value)) return false;
+    if (value.length === 0) return false;
+    // Check if all elements are integers between 0-255
+    return value.every(v => 
+        typeof v === 'number' && 
+        Number.isInteger(v) && 
+        v >= 0 && 
+        v <= 255
+    );
+}
+
+/**
+ * Convert a byte array to hexadecimal string
+ * @param {number[]} bytes - Array of bytes (0-255)
+ * @returns {string} - Hex string with 0x prefix
+ */
+export function byteArrayToHex(bytes) {
+    if (!Array.isArray(bytes)) return '';
+    const hex = bytes.map(b => b.toString(16).padStart(2, '0')).join('');
+    return `0x${hex}`;
+}
+
+/**
+ * Truncate a hex string for display, showing start and end
+ * @param {string} hex - Hex string
+ * @param {number} showChars - Number of chars to show at start/end (default 8)
+ * @returns {string}
+ */
+export function truncateHex(hex, showChars = 8) {
+    if (!hex || hex.length <= showChars * 2 + 4) return hex;
+    const prefix = hex.startsWith('0x') ? '0x' : '';
+    const cleanHex = hex.startsWith('0x') ? hex.slice(2) : hex;
+    if (cleanHex.length <= showChars * 2) return hex;
+    return `${prefix}${cleanHex.slice(0, showChars)}...${cleanHex.slice(-showChars)}`;
+}
+
+/**
+ * Format a complex value (object/array) for display
+ * Detects byte arrays and converts to hex
+ * @param {any} value
+ * @returns {{ formatted: string, isHex: boolean, fullValue: string|null }}
+ */
+export function formatComplexValue(value) {
+    // Check for byte array first
+    if (isByteArray(value)) {
+        const fullHex = byteArrayToHex(value);
+        return {
+            formatted: truncateHex(fullHex, 8),
+            isHex: true,
+            fullValue: fullHex
+        };
+    }
+    
+    // Handle nested objects that might contain byte arrays
+    if (typeof value === 'object' && value !== null) {
+        const processed = processObjectForDisplay(value);
+        const jsonStr = JSON.stringify(processed, null, 0);
+        const truncated = jsonStr.length > 100 
+            ? jsonStr.substring(0, 100) + '...' 
+            : jsonStr;
+        return {
+            formatted: truncated,
+            isHex: false,
+            fullValue: JSON.stringify(processed, null, 2)
+        };
+    }
+    
+    return {
+        formatted: String(value),
+        isHex: false,
+        fullValue: null
+    };
+}
+
+/**
+ * Process an object recursively, converting byte arrays to hex
+ * @param {any} obj
+ * @returns {any}
+ */
+export function processObjectForDisplay(obj) {
+    if (obj === null || obj === undefined) return obj;
+    
+    if (isByteArray(obj)) {
+        return byteArrayToHex(obj);
+    }
+    
+    if (Array.isArray(obj)) {
+        return obj.map(item => processObjectForDisplay(item));
+    }
+    
+    if (typeof obj === 'object') {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+            result[key] = processObjectForDisplay(value);
+        }
+        return result;
+    }
+    
+    return obj;
+}
+
+/**
  * Format a field value for display
- * Handles different types: strings, numbers, booleans, objects
+ * Handles different types: strings, numbers, booleans, objects, byte arrays
  * @param {any} value
  * @returns {string}
  */
@@ -250,8 +357,10 @@ export function formatFieldValue(value) {
         }
         return value;
     }
+    // Handle arrays and objects
     if (typeof value === 'object') {
-        return JSON.stringify(value);
+        const { formatted } = formatComplexValue(value);
+        return formatted;
     }
     return String(value);
 }

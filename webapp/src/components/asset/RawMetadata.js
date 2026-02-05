@@ -1,8 +1,18 @@
 'use client';
 
-import { getDisplayMetadata, formatFieldName } from '../../services/spellParser';
+import { useState } from 'react';
+import { 
+    getDisplayMetadata, 
+    formatFieldName, 
+    formatComplexValue,
+    isByteArray,
+    byteArrayToHex,
+    processObjectForDisplay
+} from '../../services/spellParser';
 
 export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
+    const [expandedFields, setExpandedFields] = useState({});
+    
     // Use spell metadata if available, otherwise try to get display metadata
     const metadata = spellMetadata || getDisplayMetadata(asset, nftMetadata);
     
@@ -21,6 +31,14 @@ export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
     
     const hasData = standardFields.length > 0 || extraFields.length > 0;
     
+    const toggleExpand = (key) => {
+        setExpandedFields(prev => ({ ...prev, [key]: !prev[key] }));
+    };
+    
+    const copyToClipboard = (text) => {
+        navigator.clipboard.writeText(text);
+    };
+    
     if (!hasData) {
         return (
             <div className="text-dark-400 text-sm py-8 text-center">
@@ -32,7 +50,7 @@ export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
         );
     }
 
-    const renderValue = (value) => {
+    const renderValue = (value, fieldKey = null) => {
         if (value === null || value === undefined) return <span className="text-dark-500">-</span>;
         if (typeof value === 'boolean') return <span className="text-blue-400">{value ? 'Yes' : 'No'}</span>;
         if (typeof value === 'number') return <span className="text-green-400">{value.toLocaleString()}</span>;
@@ -42,8 +60,41 @@ export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
             }
             return <span className="text-white break-all">{value}</span>;
         }
+        // Handle arrays and objects (including byte arrays)
         if (typeof value === 'object') {
-            return <span className="text-dark-300 font-mono text-xs">{JSON.stringify(value)}</span>;
+            const { formatted, isHex, fullValue } = formatComplexValue(value);
+            const isExpanded = fieldKey && expandedFields[fieldKey];
+            
+            return (
+                <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <code className={`font-mono text-xs ${isHex ? 'text-purple-400' : 'text-dark-300'} break-all`}>
+                            {isExpanded && fullValue ? fullValue : formatted}
+                        </code>
+                        {fullValue && (
+                            <div className="flex gap-1">
+                                <button
+                                    onClick={() => toggleExpand(fieldKey)}
+                                    className="text-xs text-dark-500 hover:text-dark-300 px-1.5 py-0.5 bg-dark-700 rounded"
+                                    title={isExpanded ? "Collapse" : "Expand"}
+                                >
+                                    {isExpanded ? '−' : '+'}
+                                </button>
+                                <button
+                                    onClick={() => copyToClipboard(fullValue)}
+                                    className="text-xs text-dark-500 hover:text-dark-300 px-1.5 py-0.5 bg-dark-700 rounded"
+                                    title="Copy full value"
+                                >
+                                    📋
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                    {isHex && (
+                        <span className="text-xs text-dark-600">{value.length} bytes</span>
+                    )}
+                </div>
+            );
         }
         return <span>{String(value)}</span>;
     };
@@ -58,7 +109,7 @@ export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
                         {standardFields.map(({ key, label, value }) => (
                             <div key={key} className={key === 'description' ? 'md:col-span-2' : ''}>
                                 <div className="text-xs text-dark-500 mb-1">{label}</div>
-                                <div className="text-sm">{renderValue(value)}</div>
+                                <div className="text-sm">{renderValue(value, key)}</div>
                             </div>
                         ))}
                     </div>
@@ -73,7 +124,7 @@ export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
                         {extraFields.map(([key, value]) => (
                             <div key={key}>
                                 <div className="text-xs text-dark-500 mb-1">{formatFieldName(key)}</div>
-                                <div className="text-sm">{renderValue(value)}</div>
+                                <div className="text-sm">{renderValue(value, key)}</div>
                             </div>
                         ))}
                     </div>
@@ -87,7 +138,7 @@ export default function RawMetadata({ asset, nftMetadata, spellMetadata }) {
                         View raw spell data
                     </summary>
                     <pre className="mt-2 bg-dark-900 p-3 rounded overflow-x-auto text-dark-400 font-mono">
-                        {JSON.stringify(metadata.raw, null, 2)}
+                        {JSON.stringify(processObjectForDisplay(metadata.raw), null, 2)}
                     </pre>
                 </details>
             )}
