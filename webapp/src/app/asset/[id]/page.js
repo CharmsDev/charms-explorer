@@ -58,8 +58,10 @@ export default function AssetDetailPage() {
                     const refNft = await fetchReferenceNftByHash(hash);
                     if (refNft) {
                         setNftMetadata(refNft);
-                        // Use image for both tokens and NFTs if asset doesn't have its own
-                        if (!data?.image && !data?.image_url && refNft.image_url) {
+                        // Use reference NFT image if asset doesn't have its own real image
+                        const hasOwnImage = data?.image && data.image !== '/images/logo.png' && data.image !== PLACEHOLDER_IMAGE;
+                        const hasOwnImageUrl = data?.image_url && data.image_url !== '/images/logo.png' && data.image_url !== PLACEHOLDER_IMAGE;
+                        if (!hasOwnImage && !hasOwnImageUrl && refNft.image_url) {
                             setSpellImage(refNft.image_url);
                         }
                     }

@@ -20,8 +20,9 @@ export default function AssetCard({ asset, nftReferenceMap }) {
     useEffect(() => {
         const appId = asset.app_id || asset.id;
         
-        // For tokens (t/...) or NFTs (n/...) without image, fetch from reference NFT endpoint
-        if ((appId?.startsWith('t/') || appId?.startsWith('n/')) && !asset.image && !asset.image_url) {
+        // For tokens (t/...) or NFTs (n/...) without a real image, fetch from reference NFT endpoint
+        const hasOwnImage = asset.image && asset.image !== '/images/logo.png' && asset.image !== placeholderImage;
+        if ((appId?.startsWith('t/') || appId?.startsWith('n/')) && !hasOwnImage && !asset.image_url) {
             const hash = extractHashFromAppId(appId);
             if (hash) {
                 fetchReferenceNftByHash(hash).then(refNft => {
