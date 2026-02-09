@@ -5,6 +5,18 @@ const nextConfig = {
         ignoreDuringBuilds: true,
     },
 
+    // Redirect legacy /asset?appid=XXX to /asset/XXX
+    async redirects() {
+        return [
+            {
+                source: '/asset',
+                has: [{ type: 'query', key: 'appid', value: '(?<appid>.+)' }],
+                destination: '/asset/:appid',
+                permanent: true,
+            },
+        ];
+    },
+
     webpack: (config) => {
         // Add polyfills for crypto-related modules
         config.resolve.fallback = {
