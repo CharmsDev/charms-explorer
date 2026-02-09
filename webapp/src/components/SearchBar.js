@@ -61,7 +61,7 @@ export default function SearchBar({ className = '' }) {
                     router.push(`/tx?txid=${value.split(':')[0]}`);
                     break;
                 case 'appid':
-                    router.push(`/asset?appid=${encodeURIComponent(value)}`);
+                    router.push(`/asset/${encodeURIComponent(value)}`);
                     break;
                 default:
                     // For general queries, could implement full-text search later

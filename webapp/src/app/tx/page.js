@@ -409,7 +409,7 @@ function TransactionPageContent() {
                                         </span>
 
                                         <Link 
-                                            href={`/asset?appid=${encodeURIComponent(charm.app_id || charm.charmid)}`}
+                                            href={`/asset/${encodeURIComponent(charm.app_id || charm.charmid)}`}
                                             className="btn btn-primary w-full justify-center"
                                         >
                                             View Asset Details

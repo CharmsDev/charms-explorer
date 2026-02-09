@@ -97,7 +97,7 @@ function HomeContent() {
         }
         // App ID (t/..., n/..., b/...)
         if (/^[tnb]\//.test(query)) {
-            router.push(`/asset?appid=${encodeURIComponent(query)}`);
+            router.push(`/asset/${encodeURIComponent(query)}`);
             return;
         }
         // Default: try as address
