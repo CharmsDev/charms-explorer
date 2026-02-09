@@ -8,12 +8,14 @@ import { getTransaction, isQuickNodeAvailable } from '@/services/quicknodeServic
 import { 
     analyzeTransaction, 
     TRANSACTION_TYPES,
-    isDexTransaction 
+    isDexTransaction,
+    isBeamingTransaction
 } from '@/services/transactions/transactionClassifier';
 import { 
     TransactionBadge, 
     TransactionHeader, 
     DexOrderDetails, 
+    BeamingDetails,
     TokenDetails,
     SpellDataViewer 
 } from '@/components/transactions';
@@ -225,6 +227,17 @@ function TransactionPageContent() {
                                 <div className="mt-6">
                                     <DexOrderDetails 
                                         orderDetails={analysis.orderDetails}
+                                        copyToClipboard={(text) => navigator.clipboard.writeText(text)}
+                                    />
+                                </div>
+                            )}
+
+                            {/* [RJJ-BEAMING] Beaming Details (if applicable) */}
+                            {/* TODO: [RJJ-UNBEAM] Add unbeam details section when unbeam txs are supported */}
+                            {analysis.isBeaming && (
+                                <div className="mt-6">
+                                    <BeamingDetails 
+                                        charm={charm}
                                         copyToClipboard={(text) => navigator.clipboard.writeText(text)}
                                     />
                                 </div>

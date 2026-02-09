@@ -164,7 +164,10 @@ export const transformCharmData = (charm) => {
         blockchain: charm.blockchain,
         block_height: charm.block_height,
         date_created: charm.date_created,
-        app_id: charm.charmid
+        app_id: charm.charmid,
+        // [RJJ-BEAMING] Preserve tags for transaction classification (beaming, bro, etc.)
+        // TODO: [RJJ-UNBEAM] When unbeam txs exist, tags will include 'unbeam' — handle in classifier
+        tags: charm.tags || null
     };
 
     return result;
