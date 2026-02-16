@@ -1,7 +1,6 @@
 pub mod address_extractor;
 pub mod asset_supply_calculator;
 pub mod charm; // Modular charm service
-pub mod charm_queue_service; // Deprecated, kept for module declaration
 pub mod dex; // DEX detection for Charms Cast
 pub mod native_charm_parser;
 pub mod reference_nft_cache;
