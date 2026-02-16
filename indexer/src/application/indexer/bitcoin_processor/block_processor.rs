@@ -211,6 +211,33 @@ impl BlockProcessor {
             }
         }
 
+        // Mark spent charms by fetching the full block from the node
+        // This is necessary because non-charm transactions can also spend charm UTXOs
+        match self.get_block_hash(height, network_id).await {
+            Ok(block_hash) => match self.get_block(&block_hash, network_id).await {
+                Ok(block) => {
+                    if let Err(e) = self.mark_spent_charms(&block, network_id).await {
+                        logging::log_warning(&format!(
+                            "[{}] ⚠️ Failed to mark spent charms for reindex block {}: {}",
+                            network_id.name, height, e
+                        ));
+                    }
+                }
+                Err(e) => {
+                    logging::log_warning(&format!(
+                        "[{}] ⚠️ Could not fetch block {} for spent tracking (pruned?): {}",
+                        network_id.name, height, e
+                    ));
+                }
+            },
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Could not get block hash for height {} during reindex: {}",
+                    network_id.name, height, e
+                ));
+            }
+        }
+
         // Update block_status
         let _ = self
             .block_status_repository
@@ -410,8 +437,8 @@ impl BlockProcessor {
         block: &bitcoin::Block,
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
-        // Collect all input txids (UTXOs being spent) from all transactions in the block
-        let mut spent_txids = Vec::new();
+        // Collect all input (txid, vout) pairs being spent from all transactions in the block
+        let mut spent_txid_vouts: Vec<(String, i32)> = Vec::new();
 
         for tx in &block.txdata {
             // Skip coinbase transactions (they don't spend existing UTXOs)
@@ -419,20 +446,21 @@ impl BlockProcessor {
                 continue;
             }
 
-            // Extract the txid from each input (previous output being spent)
+            // Extract (txid, vout) from each input (previous output being spent)
             for input in &tx.input {
                 let prev_txid = input.previous_output.txid.to_string();
-                spent_txids.push(prev_txid);
+                let prev_vout = input.previous_output.vout as i32;
+                spent_txid_vouts.push((prev_txid, prev_vout));
             }
         }
 
-        // Mark all collected txids as spent in batch using CharmService
-        if !spent_txids.is_empty() {
+        // Mark all collected (txid, vout) pairs as spent in batch using CharmService
+        if !spent_txid_vouts.is_empty() {
             self.retry_handler
                 .execute_with_retry_and_logging(
                     || async {
                         self.charm_service
-                            .mark_charms_as_spent_batch(spent_txids.clone())
+                            .mark_charms_as_spent_batch(spent_txid_vouts.clone())
                             .await
                             .map_err(|e| {
                                 crate::infrastructure::persistence::error::DbError::QueryError(

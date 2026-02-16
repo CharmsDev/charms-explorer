@@ -1,5 +1,4 @@
 ///! Spent UTXO tracking for charms
-
 use crate::domain::errors::CharmError;
 use crate::infrastructure::persistence::repositories::CharmRepository;
 
@@ -19,14 +18,24 @@ impl<'a> SpentTracker<'a> {
         self.charm_repository
             .mark_charm_as_spent(txid, vout)
             .await
-            .map_err(|e| CharmError::ProcessingError(format!("Failed to mark charm as spent: {}", e)))
+            .map_err(|e| {
+                CharmError::ProcessingError(format!("Failed to mark charm as spent: {}", e))
+            })
     }
 
-    /// Mark multiple charms as spent in a batch (optimized for performance)
-    pub async fn mark_charms_as_spent_batch(&self, txids: Vec<String>) -> Result<(), CharmError> {
+    /// Mark multiple charms as spent in a batch using (txid, vout) pairs
+    pub async fn mark_charms_as_spent_batch(
+        &self,
+        txid_vouts: Vec<(String, i32)>,
+    ) -> Result<(), CharmError> {
         self.charm_repository
-            .mark_charms_as_spent_batch(txids)
+            .mark_charms_as_spent_batch(txid_vouts)
             .await
-            .map_err(|e| CharmError::ProcessingError(format!("Failed to mark charms as spent in batch: {}", e)))
+            .map_err(|e| {
+                CharmError::ProcessingError(format!(
+                    "Failed to mark charms as spent in batch: {}",
+                    e
+                ))
+            })
     }
 }

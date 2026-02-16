@@ -404,24 +404,27 @@ impl CharmRepository {
         Ok(())
     }
 
-    /// Mark multiple charms as spent in a batch
-    pub async fn mark_charms_as_spent_batch(&self, txids: Vec<String>) -> Result<(), DbError> {
-        if txids.is_empty() {
+    /// Mark multiple charms as spent in a batch using (txid, vout) pairs
+    pub async fn mark_charms_as_spent_batch(
+        &self,
+        txid_vouts: Vec<(String, i32)>,
+    ) -> Result<(), DbError> {
+        if txid_vouts.is_empty() {
             return Ok(());
         }
 
-        // Use raw SQL for efficient batch update
-        let txids_str = txids
+        // Build WHERE clause with (txid, vout) pairs for precise matching
+        let conditions = txid_vouts
             .iter()
-            .map(|id| format!("'{}'", id))
+            .map(|(txid, vout)| format!("(txid = '{}' AND vout = {})", txid, vout))
             .collect::<Vec<_>>()
-            .join(",");
+            .join(" OR ");
 
         let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!(
-                "UPDATE charms SET spent = true WHERE txid IN ({}) AND spent = false",
-                txids_str
+                "UPDATE charms SET spent = true WHERE ({}) AND spent = false",
+                conditions
             ),
         );
 
@@ -432,18 +435,28 @@ impl CharmRepository {
             .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
-    /// [RJJ-STATS-HOLDERS] Get charm info for stats_holders updates before marking as spent
+    /// Get charm info for stats_holders updates before marking as spent
     /// Returns (app_id, address, amount) for charms that will be marked as spent
     pub async fn get_charms_for_spent_update(
         &self,
-        txids: Vec<String>,
+        txid_vouts: Vec<(String, i32)>,
     ) -> Result<Vec<(String, String, i64)>, DbError> {
-        if txids.is_empty() {
+        if txid_vouts.is_empty() {
             return Ok(vec![]);
         }
 
+        // Build OR conditions for each (txid, vout) pair
+        let mut conditions = sea_orm::Condition::any();
+        for (txid, vout) in &txid_vouts {
+            conditions = conditions.add(
+                sea_orm::Condition::all()
+                    .add(charms::Column::Txid.eq(txid.clone()))
+                    .add(charms::Column::Vout.eq(*vout)),
+            );
+        }
+
         let results = charms::Entity::find()
-            .filter(charms::Column::Txid.is_in(txids))
+            .filter(conditions)
             .filter(charms::Column::Spent.eq(false))
             .all(&self.conn)
             .await?;
