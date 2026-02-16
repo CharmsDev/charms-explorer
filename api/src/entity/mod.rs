@@ -3,6 +3,7 @@
 pub mod assets;
 pub mod bookmark;
 pub mod charms;
+pub mod dex_orders; // [RJJ-DEX]
 pub mod likes;
 pub mod prelude;
 pub mod stats_holders; // [RJJ-STATS-HOLDERS]

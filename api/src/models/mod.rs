@@ -95,6 +95,9 @@ pub struct CharmData {
     pub description: Option<String>,
     /// Whether the spell proof has been verified
     pub verified: bool,
+    // [RJJ-BEAMING] Tags for transaction classification (e.g., "beaming", "bro", "charms-cast")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<String>,
     // [RJJ-SPELL] Original spell data from transactions table
     #[serde(skip_serializing_if = "Option::is_none")]
     pub spell: Option<serde_json::Value>,

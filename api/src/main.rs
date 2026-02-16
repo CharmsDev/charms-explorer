@@ -12,8 +12,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::routing::{Router, delete, get, post};
-use http::{Method, header};
+use axum::routing::{delete, get, post, Router};
+use http::{header, Method};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -21,10 +21,11 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    AppState, diagnose_database, get_asset_by_id, get_asset_counts, get_asset_holders, get_assets,
+    diagnose_database, get_asset_by_id, get_asset_counts, get_asset_holders, get_assets,
     get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_address,
-    get_charms_by_type, get_charms_count_by_type, get_indexer_status, get_reference_nft_by_hash,
-    health_check, like_charm, reset_indexer, unlike_charm,
+    get_charms_by_type, get_charms_count_by_type, get_indexer_status, get_open_orders,
+    get_order_by_id, get_orders_by_asset, get_orders_by_maker, get_reference_nft_by_hash,
+    health_check, like_charm, reset_indexer, unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -98,6 +99,13 @@ async fn main() {
         .route("/assets/{app_id}/holders", get(get_asset_holders))
         .route("/assets/{asset_id}", get(get_asset_by_id))
         .route("/assets", get(get_assets))
+        .route("/dex/orders/open", get(get_open_orders))
+        .route(
+            "/dex/orders/by-asset/{asset_app_id}",
+            get(get_orders_by_asset),
+        )
+        .route("/dex/orders/by-maker/{maker}", get(get_orders_by_maker))
+        .route("/dex/orders/{order_id}", get(get_order_by_id))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

@@ -1,7 +1,13 @@
 //! Block processor for handling individual block processing operations
+//! Implements a linear, synchronous flow per block:
+//! 1. Detect charms from transactions
+//! 2. Save transactions
+//! 3. Save charms
+//! 4. Save assets
+//! 5. Mark spent charms
+//! 6. Update statistics
 
 use bitcoincore_rpc::bitcoin;
-use futures::stream::{self, StreamExt};
 use serde_json::json;
 
 use crate::config::NetworkId;
@@ -48,7 +54,8 @@ impl BlockProcessor {
         }
     }
 
-    /// Process a single block (unified: live or from cached transactions)
+    /// Process a single block with linear synchronous flow:
+    /// detect → save transactions → save charms → save assets → mark spent → update stats
     pub async fn process_block(
         &self,
         height: u64,
@@ -64,9 +71,9 @@ impl BlockProcessor {
         let block_hash = self.get_block_hash(height, network_id).await?;
         let block = self.get_block(&block_hash, network_id).await?;
 
-        // Process transactions
+        // STEP 1: Detect charms from all transactions (no DB writes)
         let (transaction_batch, charm_batch, asset_batch) = self
-            .process_transactions(&block, &block_hash, height, latest_height, network_id)
+            .detect_charms_from_block(&block, height, latest_height, network_id)
             .await?;
 
         let batch_processor = BatchProcessor::new(
@@ -74,29 +81,31 @@ impl BlockProcessor {
             self.transaction_repository.clone(),
         );
 
-        // Save data
+        // STEP 2: Save transactions
         if !transaction_batch.is_empty() {
             batch_processor
                 .save_transaction_batch(transaction_batch.clone(), height, network_id)
                 .await?;
         }
 
+        // STEP 3: Save charms
         if !charm_batch.is_empty() {
             batch_processor
                 .save_charm_batch(charm_batch.clone(), height, network_id)
                 .await?;
         }
 
+        // STEP 4: Save assets
         if !asset_batch.is_empty() {
             batch_processor
                 .save_asset_batch(asset_batch.clone(), height, network_id)
                 .await?;
         }
 
-        // Mark spent charms
+        // STEP 5: Mark spent charms
         self.mark_spent_charms(&block, network_id).await?;
 
-        // Update summary
+        // STEP 6: Update summary statistics
         let summary_updater = super::SummaryUpdater::new(
             self.bitcoin_client.clone(),
             self.summary_repository.clone(),
@@ -111,7 +120,7 @@ impl BlockProcessor {
             )
             .await?;
 
-        // Update block_status - mark as downloaded and processed
+        // STEP 7: Update block_status
         let confirmations = latest_height.saturating_sub(height) + 1;
         let is_confirmed = confirmations >= 6;
 
@@ -175,7 +184,7 @@ impl BlockProcessor {
         }
 
         // Get latest height for confirmations calculation
-        let latest_height = self
+        let _latest_height = self
             .bitcoin_client
             .get_block_count()
             .await
@@ -301,12 +310,12 @@ impl BlockProcessor {
         }
     }
 
-    /// Process all transactions in a block using parallel processing
-    /// Optimized to avoid redundant RPC calls by using local block data
-    async fn process_transactions(
+    /// Detect charms from all transactions in a block sequentially.
+    /// Returns batch items for transactions, charms, and assets.
+    /// No DB writes happen here — pure detection only.
+    async fn detect_charms_from_block(
         &self,
         block: &bitcoin::Block,
-        _block_hash: &bitcoin::BlockHash,
         height: u64,
         latest_height: u64,
         network_id: &NetworkId,
@@ -321,109 +330,87 @@ impl BlockProcessor {
         let blockchain = "Bitcoin".to_string();
         let network = network_id.name.clone();
 
-        let charm_service = self.charm_service.clone(); // Clone owned service
-
-        // Pre-process transactions to owned data to avoid lifetime issues with async stream
         let tx_data = Self::extract_transaction_data(block);
 
-        // Create iterator of futures for parallel processing
-        // We use owned data to ensure futures are 'static and Send
-        let futures = tx_data
-            .into_iter()
-            .map(|(txid, tx_hex, tx_pos, input_txids)| {
-                let network_clone = network.clone();
-                let blockchain_clone = blockchain.clone();
+        let mut transaction_batch = Vec::new();
+        let mut charm_batch = Vec::new();
+        let mut asset_batch: Vec<AssetBatchItem> = Vec::new();
 
-                let charm_service = charm_service.clone(); // Clone for this task
-
-                async move {
-                    // Detect charm from transaction hex (no RPC call needed)
-                    let detection_result = charm_service
-                        .detect_and_process_charm_from_hex_with_latest(
-                            &txid,
-                            height,
-                            &tx_hex,
-                            tx_pos,
-                            latest_height,
-                            input_txids,
-                        )
-                        .await;
-
-                    match detection_result {
-                        Ok(Some(charm)) => {
-                            let confirmations = latest_height - height + 1;
-                            let is_confirmed = confirmations >= 6;
-
-                            let raw_json = json!({
-                                "hex": tx_hex,
-                                "txid": txid,
-                            });
-
-                            let transaction_item = (
-                                txid.clone(),
-                                height,
-                                tx_pos as i64,
-                                raw_json,
-                                charm.data.clone(),
-                                confirmations as i32,
-                                is_confirmed,
-                                blockchain_clone.clone(),
-                                network_clone.clone(),
-                            );
-
-                            let charm_item = (
-                                txid,
-                                charm.vout,
-                                height,
-                                charm.data.clone(),
-                                charm.asset_type.clone(),
-                                blockchain_clone,
-                                network_clone,
-                                charm.address.clone(),
-                                charm.app_id.clone(),
-                                charm.amount,
-                                charm.tags.clone(),
-                            );
-
-                            Some((transaction_item, charm_item, None))
-                        }
-                        Ok(None) => None,
-                        Err(e) => {
-                            logging::log_error(&format!(
-                                "[{}] Error processing potential charm {}: {}",
-                                network_clone, txid, e
-                            ));
-                            None
-                        }
-                    }
-                }
-            });
-
-        // Determine batch size from environment or default to safe value for small servers
-        let batch_size = std::env::var("INDEXER_BATCH_SIZE")
-            .ok()
-            .and_then(|s| s.parse::<usize>().ok())
-            .unwrap_or(50); // Default 50 is safe for 1GB RAM / 1 vCPU
-
-        // Process transactions in parallel
-        // This uses the async runtime to interleave I/O and CPU tasks efficiently
-        let results: Vec<Option<(TransactionBatchItem, CharmBatchItem, Option<AssetBatchItem>)>> =
-            stream::iter(futures)
-                .buffer_unordered(batch_size)
-                .collect()
+        for (txid, tx_hex, tx_pos, input_txids) in tx_data {
+            // Detect charm (no DB writes)
+            let detection_result = self
+                .charm_service
+                .detect_charm_from_hex_with_context(
+                    &txid,
+                    height,
+                    &tx_hex,
+                    tx_pos,
+                    latest_height,
+                    input_txids,
+                )
                 .await;
 
-        // Collect results into batches
-        let mut transaction_batch = Vec::with_capacity(results.len());
-        let mut charm_batch = Vec::with_capacity(results.len());
-        let mut asset_batch = Vec::new();
+            match detection_result {
+                Ok(Some((charm, asset_requests))) => {
+                    let confirmations = latest_height - height + 1;
+                    let is_confirmed = confirmations >= 6;
 
-        for result in results {
-            if let Some((tx_item, charm_item, asset_item)) = result {
-                transaction_batch.push(tx_item);
-                charm_batch.push(charm_item);
-                if let Some(asset) = asset_item {
-                    asset_batch.push(asset);
+                    let raw_json = json!({
+                        "hex": tx_hex,
+                        "txid": txid,
+                    });
+
+                    transaction_batch.push((
+                        txid.clone(),
+                        height,
+                        tx_pos as i64,
+                        raw_json,
+                        charm.data.clone(),
+                        confirmations as i32,
+                        is_confirmed,
+                        blockchain.clone(),
+                        network.clone(),
+                    ));
+
+                    charm_batch.push((
+                        txid.clone(),
+                        charm.vout,
+                        height,
+                        charm.data.clone(),
+                        charm.asset_type.clone(),
+                        blockchain.clone(),
+                        network.clone(),
+                        charm.address.clone(),
+                        charm.app_id.clone(),
+                        charm.amount,
+                        charm.tags.clone(),
+                    ));
+
+                    // Convert AssetSaveRequest to AssetBatchItem
+                    for asset_req in asset_requests {
+                        asset_batch.push((
+                            asset_req.app_id,
+                            txid.clone(),
+                            charm.vout,
+                            height,
+                            asset_req.asset_type,
+                            asset_req.supply,
+                            asset_req.blockchain,
+                            asset_req.network,
+                            asset_req.name,
+                            asset_req.symbol,
+                            asset_req.description,
+                            asset_req.image_url,
+                            asset_req.decimals,
+                        ));
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    logging::log_error(&format!(
+                        "[{}] Error detecting charm in tx {}: {}",
+                        network, txid, e
+                    ));
                 }
             }
         }

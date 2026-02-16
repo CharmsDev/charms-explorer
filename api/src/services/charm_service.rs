@@ -153,6 +153,7 @@ pub async fn get_all_charms_paginated_by_network(
             ticker,
             description,
             verified: charm.verified,
+            tags: charm.tags,
             spell: None,
         };
 
@@ -253,6 +254,7 @@ pub async fn get_all_charms_paginated(
             ticker,
             description,
             verified: charm.verified,
+            tags: charm.tags,
             spell: None,
         });
     }
@@ -338,6 +340,7 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
             ticker,
             description,
             verified: charm.verified,
+            tags: charm.tags,
             spell: None,
         });
     }
@@ -428,6 +431,7 @@ pub async fn get_charms_by_type_paginated(
             ticker,
             description,
             verified: charm.verified,
+            tags: charm.tags,
             spell: None,
         });
     }
@@ -522,6 +526,7 @@ pub async fn get_charms_by_type(
             ticker,
             description,
             verified: charm.verified,
+            tags: charm.tags,
             spell: None,
         });
     }
@@ -629,6 +634,7 @@ pub async fn get_charm_by_txid(
         ticker,
         description,
         verified: charm.verified,
+        tags: charm.tags,
         spell, // [RJJ-SPELL] Include original spell from transactions
     })
 }
@@ -700,6 +706,7 @@ pub async fn get_charm_by_charmid(
                 ticker: ticker.clone(),
                 description: description.clone(),
                 verified: charm.verified,
+                tags: charm.tags.clone(),
                 spell: None,
             });
         }
@@ -724,6 +731,7 @@ pub async fn get_charm_by_charmid(
         ticker,
         description,
         verified: first_charm.verified,
+        tags: first_charm.tags.clone(),
         spell: None,
     })
 }
@@ -843,6 +851,7 @@ pub async fn get_charms_by_address(
             ticker,
             description,
             verified: charm.verified,
+            tags: charm.tags,
             spell: None,
         });
     }

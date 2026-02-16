@@ -2,12 +2,14 @@
 
 pub mod asset_repository;
 pub mod charm_repository;
+pub mod dex_orders_repository; // [RJJ-DEX]
 pub mod likes_repository;
 pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
 pub mod transaction_repository; // [RJJ-SPELL]
 
 pub use asset_repository::AssetRepository;
 pub use charm_repository::CharmRepository;
+pub use dex_orders_repository::DexOrdersRepository; // [RJJ-DEX]
 pub use likes_repository::LikesRepository;
 pub use stats_holders_repository::StatsHoldersRepository;
 pub use transaction_repository::TransactionRepository; // [RJJ-SPELL]
@@ -19,6 +21,7 @@ use std::sync::Arc;
 pub struct Repositories {
     pub asset_repository: Arc<AssetRepository>,
     pub charm: CharmRepository,
+    pub dex_orders: DexOrdersRepository, // [RJJ-DEX]
     pub likes: LikesRepository,
     pub stats_holders: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
     pub transactions: TransactionRepository,   // [RJJ-SPELL]
@@ -31,9 +34,11 @@ impl Repositories {
         let db_conn2 = conn.clone();
         let db_conn3 = conn.clone();
         let db_conn4 = conn.clone();
+        let db_conn5 = conn.clone();
         Repositories {
             asset_repository: Arc::new(AssetRepository::new(std::sync::Arc::new(conn))),
             charm: CharmRepository::new(db_conn),
+            dex_orders: DexOrdersRepository::new(db_conn5), // [RJJ-DEX]
             likes: LikesRepository::new(db_conn2),
             stats_holders: StatsHoldersRepository::new(db_conn3), // [RJJ-STATS-HOLDERS]
             transactions: TransactionRepository::new(db_conn4),   // [RJJ-SPELL]

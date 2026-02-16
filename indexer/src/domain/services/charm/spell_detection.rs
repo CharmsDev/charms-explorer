@@ -10,7 +10,6 @@ use serde_json::json;
 use crate::domain::errors::CharmError;
 use crate::domain::models::{Charm, Spell};
 use crate::domain::services::address_extractor::AddressExtractor;
-use crate::domain::services::charm_queue_service::CharmQueueService;
 use crate::domain::services::native_charm_parser::NativeCharmParser;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
@@ -20,11 +19,11 @@ use crate::infrastructure::persistence::repositories::{
 /// [RJJ-S01] Handles spell-first charm detection from Bitcoin transactions
 pub struct SpellDetector<'a> {
     bitcoin_client: &'a BitcoinClient,
+    #[allow(dead_code)]
     charm_repository: &'a CharmRepository,
     spell_repository: &'a SpellRepository,
-    #[allow(dead_code)] // Reserved for future metadata extraction
+    #[allow(dead_code)]
     asset_repository: &'a AssetRepository,
-    charm_queue_service: &'a Option<CharmQueueService>,
 }
 
 impl<'a> SpellDetector<'a> {
@@ -33,14 +32,12 @@ impl<'a> SpellDetector<'a> {
         charm_repository: &'a CharmRepository,
         spell_repository: &'a SpellRepository,
         asset_repository: &'a AssetRepository,
-        charm_queue_service: &'a Option<CharmQueueService>,
     ) -> Self {
         Self {
             bitcoin_client,
             charm_repository,
             spell_repository,
             asset_repository,
-            charm_queue_service,
         }
     }
 
@@ -70,7 +67,7 @@ impl<'a> SpellDetector<'a> {
         block_height: u64,
         raw_tx_hex: &str,
         tx_pos: usize,
-        latest_height: u64,
+        _latest_height: u64,
     ) -> Result<(Option<Spell>, Vec<Charm>), CharmError> {
         // Get blockchain and network information
         let blockchain = "Bitcoin".to_string();
@@ -236,73 +233,7 @@ impl<'a> SpellDetector<'a> {
                 amount,
             );
 
-            charms.push(charm.clone());
-
-            // Save charm using queue if available
-            if let Some(ref queue_service) = self.charm_queue_service {
-                // [RJJ-ASSETS] NFT-Token consolidation + metadata extraction
-                // Always create asset initially, consolidation happens in database layer
-                // The database writer will check for parent NFT and skip token creation if needed
-                let metadata = if asset_type == "nft" {
-                    // For NFT, try to extract metadata from charm data
-                    self.extract_nft_metadata(&asset_info)
-                } else {
-                    // For tokens and others, no metadata (will inherit from NFT in DB layer)
-                    (None, None, None, None, None)
-                };
-
-                // TODO: [RJJ-SUPPLY] El supply debe calcularse desde UTXOs UNSPENT:
-                // - Al crear nuevo charm: NO sumar al supply (aún no confirmado)
-                // - Al marcar charm como spent: RESTAR del supply
-                // - Al confirmar nuevo charm: SUMAR al supply
-                // - En transferencias: supply se mantiene (gasta N, crea N)
-
-                // TODO: [RJJ-BURN] Detectar operaciones de burn:
-                // - Burn = gastar UTXO sin crear nueva (o crear con amount=0)
-                // - Al detectar burn: RESTAR del supply
-                // - Posible indicador: output a address OP_RETURN o address especial
-                // - Necesita análisis de outputs de la transacción
-
-                // Create asset request with metadata
-                let asset_request = crate::infrastructure::queue::charm_queue::AssetSaveRequest {
-                    app_id: asset_info.app_id.clone(),
-                    asset_type: asset_type.to_string(),
-                    supply: amount as u64,
-                    blockchain: blockchain.clone(),
-                    network: network.clone(),
-                    name: metadata.0,
-                    symbol: metadata.1,
-                    description: metadata.2,
-                    image_url: metadata.3,
-                    decimals: metadata.4,
-                };
-
-                let asset_requests = vec![asset_request];
-
-                if let Err(e) = queue_service
-                    .save_charm_data(
-                        &charm,
-                        tx_pos as i64,
-                        raw_tx_hex.to_string(),
-                        latest_height,
-                        asset_requests,
-                    )
-                    .await
-                {
-                    crate::utils::logging::log_error(&format!(
-                        "[{}] ❌ Block {}: Failed to queue charm (vout {}) for tx {}: {}",
-                        network, block_height, vout, txid, e
-                    ));
-                }
-            } else {
-                // Direct save without queue
-                if let Err(e) = self.charm_repository.save_charm(&charm).await {
-                    crate::utils::logging::log_error(&format!(
-                        "[{}] ❌ Block {}: Failed to save charm (vout {}) for tx {}: {}",
-                        network, block_height, vout, txid, e
-                    ));
-                }
-            }
+            charms.push(charm);
         }
 
         // Log only if not in silent mode (fast reindex)

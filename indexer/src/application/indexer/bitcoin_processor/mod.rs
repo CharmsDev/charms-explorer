@@ -104,68 +104,86 @@ impl BitcoinProcessor {
     }
 
     /// Process pending blocks from cache (reindex mode)
-    /// Uses cached transactions from DB instead of fetching from Bitcoin node
+    /// Uses cached transactions from DB instead of fetching from Bitcoin node.
+    /// Loops in batches of 10,000 until all pending blocks are processed.
     pub async fn process_pending_blocks_from_cache(&self) -> Result<(), BlockProcessorError> {
-        // Get pending blocks (downloaded but not processed)
-        let pending_blocks = self
-            .block_status_repository
-            .get_pending_blocks(self.network_id(), 10000)
-            .await
-            .map_err(|e| BlockProcessorError::ProcessingError(format!("DB error: {}", e)))?;
+        let mut total_processed: usize = 0;
 
-        if pending_blocks.is_empty() {
-            logging::log_info(&format!(
-                "[{}] ✅ No pending blocks to reindex",
-                self.network_id().name
-            ));
-            return Ok(());
-        }
-
-        logging::log_info(&format!(
-            "[{}] ♻️ Starting reindex of {} pending blocks from cache",
-            self.network_id().name,
-            pending_blocks.len()
-        ));
-
-        for (i, height) in pending_blocks.iter().enumerate() {
-            let block_processor = BlockProcessor::new(
-                self.bitcoin_client.clone(),
-                self.charm_service.clone(),
-                self.transaction_repository.clone(),
-                self.summary_repository.clone(),
-                self.block_status_repository.clone(),
-            );
-
-            if let Err(e) = block_processor
-                .process_block_from_cache(*height as u64, self.network_id())
+        loop {
+            // Get next batch of pending blocks (downloaded but not processed)
+            let pending_blocks = self
+                .block_status_repository
+                .get_pending_blocks(self.network_id(), 10000)
                 .await
-            {
-                logging::log_error(&format!(
-                    "[{}] ❌ Error reindexing block {}: {}",
-                    self.network_id().name,
-                    height,
-                    e
-                ));
+                .map_err(|e| BlockProcessorError::ProcessingError(format!("DB error: {}", e)))?;
+
+            if pending_blocks.is_empty() {
+                if total_processed == 0 {
+                    logging::log_info(&format!(
+                        "[{}] ✅ No pending blocks to reindex",
+                        self.network_id().name
+                    ));
+                } else {
+                    logging::log_info(&format!(
+                        "[{}] ✅ Reindex complete: {} total blocks processed",
+                        self.network_id().name,
+                        total_processed
+                    ));
+                }
+                return Ok(());
             }
 
-            // Log progress every 100 blocks
-            if (i + 1) % 100 == 0 {
-                logging::log_info(&format!(
-                    "[{}] ♻️ Reindex progress: {}/{} blocks",
-                    self.network_id().name,
-                    i + 1,
-                    pending_blocks.len()
-                ));
+            let batch_size = pending_blocks.len();
+            logging::log_info(&format!(
+                "[{}] ♻️ Starting reindex batch of {} pending blocks from cache (total so far: {})",
+                self.network_id().name,
+                batch_size,
+                total_processed
+            ));
+
+            for (i, height) in pending_blocks.iter().enumerate() {
+                let block_processor = BlockProcessor::new(
+                    self.bitcoin_client.clone(),
+                    self.charm_service.clone(),
+                    self.transaction_repository.clone(),
+                    self.summary_repository.clone(),
+                    self.block_status_repository.clone(),
+                );
+
+                if let Err(e) = block_processor
+                    .process_block_from_cache(*height as u64, self.network_id())
+                    .await
+                {
+                    logging::log_error(&format!(
+                        "[{}] ❌ Error reindexing block {}: {}",
+                        self.network_id().name,
+                        height,
+                        e
+                    ));
+                }
+
+                // Log progress every 100 blocks
+                if (i + 1) % 100 == 0 {
+                    logging::log_info(&format!(
+                        "[{}] ♻️ Reindex progress: {}/{} blocks (batch), {} total — block height: {}",
+                        self.network_id().name,
+                        i + 1,
+                        batch_size,
+                        total_processed + i + 1,
+                        height
+                    ));
+                }
             }
+
+            total_processed += batch_size;
+
+            logging::log_info(&format!(
+                "[{}] ✅ Batch complete: {} blocks in this batch, {} total processed",
+                self.network_id().name,
+                batch_size,
+                total_processed
+            ));
         }
-
-        logging::log_info(&format!(
-            "[{}] ✅ Reindex complete: {} blocks processed",
-            self.network_id().name,
-            pending_blocks.len()
-        ));
-
-        Ok(())
     }
 
     pub async fn process_available_blocks(&mut self) -> Result<(), BlockProcessorError> {
@@ -302,7 +320,49 @@ impl BitcoinProcessor {
             }
         }
 
+        // After processing new blocks, confirm any previously unconfirmed blocks
+        // that now have 6+ confirmations
+        self.confirm_pending_blocks(latest_height).await;
+
         Ok(())
+    }
+
+    /// Retroactively confirm blocks that were processed while unconfirmed
+    /// but now have 6+ confirmations (sufficient depth in the chain)
+    async fn confirm_pending_blocks(&self, latest_height: u64) {
+        match self
+            .block_status_repository
+            .get_unconfirmed_blocks(self.network_id())
+            .await
+        {
+            Ok(unconfirmed) => {
+                let mut confirmed_count = 0;
+                for block_height in unconfirmed {
+                    let confirmations = latest_height.saturating_sub(block_height as u64) + 1;
+                    if confirmations >= 6 {
+                        let _ = self
+                            .block_status_repository
+                            .mark_confirmed(block_height, self.network_id())
+                            .await;
+                        confirmed_count += 1;
+                    }
+                }
+                if confirmed_count > 0 {
+                    logging::log_info(&format!(
+                        "[{}] ✅ Confirmed {} previously unconfirmed blocks",
+                        self.network_id().name,
+                        confirmed_count
+                    ));
+                }
+            }
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Failed to check unconfirmed blocks: {}",
+                    self.network_id().name,
+                    e
+                ));
+            }
+        }
     }
 }
 

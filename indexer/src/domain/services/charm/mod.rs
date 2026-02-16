@@ -20,16 +20,15 @@ use std::fmt;
 
 use crate::domain::errors::CharmError;
 use crate::domain::models::Charm;
-use crate::domain::services::charm_queue_service::CharmQueueService;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
     AssetRepository, CharmRepository, DexOrdersRepository, SpellRepository, StatsHoldersRepository,
-}; // [RJJ-S01] Added SpellRepository, [RJJ-STATS-HOLDERS] Added StatsHoldersRepository, [RJJ-DEX] Added DexOrdersRepository
-
+};
 use detection::CharmDetector;
+pub use detection::DetectionResult;
 use persistence::CharmPersistence;
 use spell_detection::SpellDetector;
-use spent_tracking::SpentTracker; // [RJJ-S01]
+use spent_tracking::SpentTracker;
 
 /// Main service for charm detection, processing and storage
 /// [RJJ-S01] Now includes SpellRepository for spell-first architecture
@@ -40,10 +39,9 @@ pub struct CharmService {
     bitcoin_client: BitcoinClient,
     charm_repository: CharmRepository,
     asset_repository: AssetRepository,
-    spell_repository: SpellRepository, // [RJJ-S01] New: stores spells before charms
-    stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS] New: holder statistics
-    dex_orders_repository: DexOrdersRepository, // [RJJ-DEX] New: Cast DEX order tracking
-    charm_queue_service: Option<CharmQueueService>,
+    spell_repository: SpellRepository,
+    stats_holders_repository: StatsHoldersRepository,
+    dex_orders_repository: DexOrdersRepository,
 }
 
 impl fmt::Debug for CharmService {
@@ -56,49 +54,21 @@ impl fmt::Debug for CharmService {
 
 impl CharmService {
     /// Creates a new CharmService with required dependencies
-    /// [RJJ-S01] Now requires SpellRepository
-    /// [RJJ-STATS-HOLDERS] Now requires StatsHoldersRepository
-    /// [RJJ-DEX] Now requires DexOrdersRepository
     pub fn new(
         bitcoin_client: BitcoinClient,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
-        spell_repository: SpellRepository, // [RJJ-S01]
-        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
-        dex_orders_repository: DexOrdersRepository, // [RJJ-DEX]
+        spell_repository: SpellRepository,
+        stats_holders_repository: StatsHoldersRepository,
+        dex_orders_repository: DexOrdersRepository,
     ) -> Self {
         Self {
             bitcoin_client,
             charm_repository,
             asset_repository,
-            spell_repository,         // [RJJ-S01]
-            stats_holders_repository, // [RJJ-STATS-HOLDERS]
-            dex_orders_repository,    // [RJJ-DEX]
-            charm_queue_service: None,
-        }
-    }
-
-    /// Creates a new CharmService with async queue support
-    /// [RJJ-S01] Now requires SpellRepository
-    /// [RJJ-STATS-HOLDERS] Now requires StatsHoldersRepository
-    /// [RJJ-DEX] Now requires DexOrdersRepository
-    pub fn new_with_queue(
-        bitcoin_client: BitcoinClient,
-        charm_repository: CharmRepository,
-        asset_repository: AssetRepository,
-        spell_repository: SpellRepository, // [RJJ-S01]
-        stats_holders_repository: StatsHoldersRepository, // [RJJ-STATS-HOLDERS]
-        dex_orders_repository: DexOrdersRepository, // [RJJ-DEX]
-        charm_queue_service: CharmQueueService,
-    ) -> Self {
-        Self {
-            bitcoin_client,
-            charm_repository,
-            asset_repository,
-            spell_repository,         // [RJJ-S01]
-            stats_holders_repository, // [RJJ-STATS-HOLDERS]
-            dex_orders_repository,    // [RJJ-DEX]
-            charm_queue_service: Some(charm_queue_service),
+            spell_repository,
+            stats_holders_repository,
+            dex_orders_repository,
         }
     }
 
@@ -118,97 +88,32 @@ impl CharmService {
     }
 
     // ==================== Detection Methods ====================
+    // Detection methods return DetectionResult = (Charm, Vec<AssetSaveRequest>)
+    // They do NOT persist anything — the caller handles all persistence.
 
-    /// Detects and processes a potential charm transaction using native parsing
-    pub async fn detect_and_process_charm(
+    /// Detect a charm from a transaction (fetches raw tx from node)
+    pub async fn detect_charm(
         &self,
         txid: &str,
         block_height: u64,
         block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
-    ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_native(txid, block_height, block_hash, 0)
-            .await
-    }
-
-    /// Detects and processes a potential charm transaction with context for better logging
-    pub async fn detect_and_process_charm_with_context(
-        &self,
-        txid: &str,
-        block_height: u64,
-        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
-        tx_pos: usize,
-    ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_native(txid, block_height, block_hash, tx_pos)
-            .await
-    }
-
-    /// Detects and processes a potential charm transaction with pre-fetched raw hex
-    pub async fn detect_and_process_charm_with_raw_hex(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_hex: &str,
-        tx_pos: usize,
-    ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_from_hex_with_latest(
-            txid,
-            block_height,
-            raw_hex,
-            tx_pos,
-            block_height,
-            vec![],
-        )
-        .await
-    }
-
-    /// Detects and processes a potential charm transaction with pre-fetched raw hex and latest height
-    pub async fn detect_and_process_charm_with_raw_hex_and_latest(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_hex: &str,
-        tx_pos: usize,
-        latest_height: u64,
-    ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_from_hex_with_latest(
-            txid,
-            block_height,
-            raw_hex,
-            tx_pos,
-            latest_height,
-            vec![],
-        )
-        .await
-    }
-
-    /// Detects and processes a potential charm transaction using native parsing
-    pub async fn detect_and_process_charm_native(
-        &self,
-        txid: &str,
-        block_height: u64,
-        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
-        tx_pos: usize,
-    ) -> Result<Option<Charm>, CharmError> {
-        let detector = CharmDetector::new(
-            &self.bitcoin_client,
-            &self.charm_repository,
-            &self.charm_queue_service,
-        )
-        .with_dex_orders_repository(&self.dex_orders_repository); // [RJJ-DEX]
+    ) -> Result<Option<DetectionResult>, CharmError> {
+        let detector = CharmDetector::new(&self.bitcoin_client, &self.charm_repository)
+            .with_dex_orders_repository(&self.dex_orders_repository);
         detector
-            .detect_and_process_charm(txid, block_height, block_hash, tx_pos)
+            .detect_and_process_charm(txid, block_height, block_hash, 0)
             .await
     }
 
-    /// Detects and processes a potential charm transaction from pre-fetched raw hex
-    pub async fn detect_and_process_charm_from_hex(
+    /// Detect a charm from pre-fetched raw hex
+    pub async fn detect_charm_from_hex(
         &self,
         txid: &str,
         block_height: u64,
         raw_tx_hex: &str,
         tx_pos: usize,
-    ) -> Result<Option<Charm>, CharmError> {
-        self.detect_and_process_charm_from_hex_with_latest(
+    ) -> Result<Option<DetectionResult>, CharmError> {
+        self.detect_charm_from_hex_with_context(
             txid,
             block_height,
             raw_tx_hex,
@@ -219,8 +124,8 @@ impl CharmService {
         .await
     }
 
-    /// Detects and processes a potential charm transaction from pre-fetched raw hex with latest height
-    pub async fn detect_and_process_charm_from_hex_with_latest(
+    /// Detect a charm from pre-fetched raw hex with latest height and input txids
+    pub async fn detect_charm_from_hex_with_context(
         &self,
         txid: &str,
         block_height: u64,
@@ -228,13 +133,9 @@ impl CharmService {
         tx_pos: usize,
         latest_height: u64,
         input_txids: Vec<String>,
-    ) -> Result<Option<Charm>, CharmError> {
-        let detector = CharmDetector::new(
-            &self.bitcoin_client,
-            &self.charm_repository,
-            &self.charm_queue_service,
-        )
-        .with_dex_orders_repository(&self.dex_orders_repository); // [RJJ-DEX]
+    ) -> Result<Option<DetectionResult>, CharmError> {
+        let detector = CharmDetector::new(&self.bitcoin_client, &self.charm_repository)
+            .with_dex_orders_repository(&self.dex_orders_repository);
         detector
             .detect_from_hex(
                 txid,
@@ -247,10 +148,61 @@ impl CharmService {
             .await
     }
 
-    // ==================== [RJJ-S01] Spell-First Detection Methods ====================
+    // ==================== Legacy Detection Methods (backward compat) ====================
 
-    /// [RJJ-S01] Detects and processes a spell transaction using spell-first architecture
-    /// Returns: (Option<Spell>, Vec<Charm>) - the spell and all charms it contains
+    /// Legacy: detect and process charm (returns only Charm, no assets)
+    pub async fn detect_and_process_charm(
+        &self,
+        txid: &str,
+        block_height: u64,
+        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
+    ) -> Result<Option<Charm>, CharmError> {
+        Ok(self
+            .detect_charm(txid, block_height, block_hash)
+            .await?
+            .map(|(charm, _)| charm))
+    }
+
+    /// Legacy: detect from hex (returns only Charm, no assets)
+    pub async fn detect_and_process_charm_from_hex(
+        &self,
+        txid: &str,
+        block_height: u64,
+        raw_tx_hex: &str,
+        tx_pos: usize,
+    ) -> Result<Option<Charm>, CharmError> {
+        Ok(self
+            .detect_charm_from_hex(txid, block_height, raw_tx_hex, tx_pos)
+            .await?
+            .map(|(charm, _)| charm))
+    }
+
+    /// Legacy: detect from hex with latest height (returns only Charm, no assets)
+    pub async fn detect_and_process_charm_from_hex_with_latest(
+        &self,
+        txid: &str,
+        block_height: u64,
+        raw_tx_hex: &str,
+        tx_pos: usize,
+        latest_height: u64,
+        input_txids: Vec<String>,
+    ) -> Result<Option<Charm>, CharmError> {
+        Ok(self
+            .detect_charm_from_hex_with_context(
+                txid,
+                block_height,
+                raw_tx_hex,
+                tx_pos,
+                latest_height,
+                input_txids,
+            )
+            .await?
+            .map(|(charm, _)| charm))
+    }
+
+    // ==================== Spell-First Detection Methods ====================
+
+    /// Detects a spell transaction using spell-first architecture
     pub async fn detect_and_process_spell(
         &self,
         txid: &str,
@@ -263,14 +215,13 @@ impl CharmService {
             &self.charm_repository,
             &self.spell_repository,
             &self.asset_repository,
-            &self.charm_queue_service,
         );
         detector
             .detect_and_process_spell(txid, block_height, block_hash, tx_pos)
             .await
     }
 
-    /// [RJJ-S01] Detects and processes a spell from pre-fetched raw hex
+    /// Detects a spell from pre-fetched raw hex
     pub async fn detect_and_process_spell_from_hex(
         &self,
         txid: &str,
@@ -284,7 +235,6 @@ impl CharmService {
             &self.charm_repository,
             &self.spell_repository,
             &self.asset_repository,
-            &self.charm_queue_service,
         );
         detector
             .detect_from_hex(txid, block_height, raw_tx_hex, tx_pos, latest_height)

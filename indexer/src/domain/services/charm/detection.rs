@@ -5,30 +5,27 @@ use serde_json::json;
 use crate::domain::errors::CharmError;
 use crate::domain::models::Charm;
 use crate::domain::services::address_extractor::AddressExtractor;
-use crate::domain::services::charm_queue_service::CharmQueueService;
 use crate::domain::services::dex;
 use crate::domain::services::native_charm_parser::NativeCharmParser;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{CharmRepository, DexOrdersRepository};
+use crate::infrastructure::queue::charm_queue::AssetSaveRequest;
+
+/// Result of charm detection: the charm itself plus any asset save requests
+pub type DetectionResult = (Charm, Vec<AssetSaveRequest>);
 
 /// Handles charm detection from Bitcoin transactions
 pub struct CharmDetector<'a> {
     bitcoin_client: &'a BitcoinClient,
     charm_repository: &'a CharmRepository,
-    charm_queue_service: &'a Option<CharmQueueService>,
     dex_orders_repository: Option<&'a DexOrdersRepository>,
 }
 
 impl<'a> CharmDetector<'a> {
-    pub fn new(
-        bitcoin_client: &'a BitcoinClient,
-        charm_repository: &'a CharmRepository,
-        charm_queue_service: &'a Option<CharmQueueService>,
-    ) -> Self {
+    pub fn new(bitcoin_client: &'a BitcoinClient, charm_repository: &'a CharmRepository) -> Self {
         Self {
             bitcoin_client,
             charm_repository,
-            charm_queue_service,
             dex_orders_repository: None,
         }
     }
@@ -39,14 +36,14 @@ impl<'a> CharmDetector<'a> {
         self
     }
 
-    /// Detects and processes a potential charm transaction using native parsing
+    /// Detects a potential charm transaction using native parsing (no persistence)
     pub async fn detect_and_process_charm(
         &self,
         txid: &str,
         block_height: u64,
         block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
         tx_pos: usize,
-    ) -> Result<Option<Charm>, CharmError> {
+    ) -> Result<Option<DetectionResult>, CharmError> {
         // Get raw transaction with block hash if provided
         let raw_tx_hex = self
             .bitcoin_client
@@ -64,16 +61,16 @@ impl<'a> CharmDetector<'a> {
         .await
     }
 
-    /// Detects and processes a potential charm transaction from pre-fetched raw hex
+    /// Detects a potential charm transaction from pre-fetched raw hex (no persistence)
     pub async fn detect_from_hex(
         &self,
         txid: &str,
         block_height: u64,
         raw_tx_hex: &str,
-        tx_pos: usize,
-        latest_height: u64,
+        _tx_pos: usize,
+        _latest_height: u64,
         input_txids: Vec<String>,
-    ) -> Result<Option<Charm>, CharmError> {
+    ) -> Result<Option<DetectionResult>, CharmError> {
         // Get blockchain and network information from the Bitcoin client
         let blockchain = "Bitcoin".to_string();
         let network = self.bitcoin_client.network_id().name.clone();
@@ -262,6 +259,21 @@ impl<'a> CharmDetector<'a> {
             }
         }
 
+        // [RJJ-BEAMING] Detect Beaming transactions (cross-address token transfers)
+        // Beaming txs have beamed_outs in the spell data
+        // TODO: [RJJ-UNBEAM] Detect Unbeam transactions when they exist.
+        //       Unbeam txs will likely have `unbeamed_ins` or similar field in the spell.
+        //       Add tag "unbeam" and log similarly. Check charms-client for the exact field name.
+        if let Some(ref spell) = normalized_spell_opt {
+            if spell.tx.beamed_outs.is_some() {
+                tag_list.push("beaming".to_string());
+                crate::utils::logging::log_info(&format!(
+                    "[{}] 🏷️ Block {}: Beaming transaction detected for tx {}",
+                    network, block_height, txid
+                ));
+            }
+        }
+
         // Detect $BRO token
         if dex::is_bro_token(&app_id) {
             tag_list.push("bro".to_string());
@@ -356,7 +368,7 @@ impl<'a> CharmDetector<'a> {
         // FIXED: Create separate asset records for tokens AND NFTs
         // Supply consolidation happens in the database layer (save.rs)
         // This allows tokens to appear in the Tokens tab while still tracking supply correctly
-        let asset_count = asset_infos.len();
+        let _asset_count = asset_infos.len();
         let asset_requests: Vec<_> = asset_infos
             .into_iter()
             .filter_map(|asset| {
@@ -398,55 +410,8 @@ impl<'a> CharmDetector<'a> {
             })
             .collect();
 
-        // Save the charm to the database (using queue if available, otherwise direct save)
-        if let Some(ref queue_service) = self.charm_queue_service {
-            match queue_service
-                .save_charm_data(
-                    &charm,
-                    tx_pos as i64,
-                    raw_tx_hex.to_string(),
-                    latest_height,
-                    asset_requests,
-                )
-                .await
-            {
-                Ok(_) => Ok(Some(charm)),
-                Err(e) => {
-                    crate::utils::logging::log_error(&format!(
-                        "[{}] ❌ Block {}: Failed to queue charm data for tx {} at position {}: {}",
-                        network, block_height, txid, tx_pos, e
-                    ));
-                    Err(CharmError::ProcessingError(format!(
-                        "Failed to queue charm data: {}",
-                        e
-                    )))
-                }
-            }
-        } else {
-            crate::utils::logging::log_info(&format!(
-                "[{}] 💾 Block {}: Saving charm for tx {} to database (direct)",
-                network, block_height, txid
-            ));
-
-            match self.charm_repository.save_charm(&charm).await {
-                Ok(_) => {
-                    crate::utils::logging::log_info(&format!(
-                        "[{}] ✅ Block {}: Successfully saved charm for tx {} with {} assets",
-                        network, block_height, txid, asset_count
-                    ));
-                    Ok(Some(charm))
-                }
-                Err(e) => {
-                    crate::utils::logging::log_error(&format!(
-                        "[{}] ❌ Block {}: Failed to save native charm for tx {} at position {}: {}",
-                        network, block_height, txid, tx_pos, e
-                    ));
-                    Err(CharmError::ProcessingError(format!(
-                        "Failed to save native charm: {}",
-                        e
-                    )))
-                }
-            }
-        }
+        // Return detected charm and asset data without saving
+        // Persistence is handled by the caller (process_block) for linear, synchronous flow
+        Ok(Some((charm, asset_requests)))
     }
 }
