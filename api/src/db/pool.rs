@@ -15,11 +15,13 @@ pub struct DbPool {
 impl DbPool {
     /// Creates a new database connection pool from API configuration
     pub async fn new(config: &ApiConfig) -> Result<Self, DbError> {
-        // Default connection pool settings
+        // Connection pool settings tuned for PgBouncer on Fly.io
         let max_connections = 10;
-        let min_connections = 2;
+        let min_connections = 1;
         let connect_timeout = 10;
-        let idle_timeout = 300;
+        let idle_timeout = 30; // Recycle idle connections before PgBouncer kills them
+        let acquire_timeout = 5; // Fail fast instead of waiting 10s
+        let max_lifetime = 300; // Force reconnect every 5 min
         let debug_mode = false;
 
         let conn_opts = ConnectOptions::new(config.database_url.clone())
@@ -27,6 +29,8 @@ impl DbPool {
             .min_connections(min_connections)
             .connect_timeout(Duration::from_secs(connect_timeout))
             .idle_timeout(Duration::from_secs(idle_timeout))
+            .acquire_timeout(Duration::from_secs(acquire_timeout))
+            .max_lifetime(Duration::from_secs(max_lifetime))
             .sqlx_logging(debug_mode)
             .to_owned();
 
