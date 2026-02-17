@@ -413,18 +413,18 @@ impl CharmRepository {
             return Ok(());
         }
 
-        // Build WHERE clause with (txid, vout) pairs for precise matching
-        let conditions = txid_vouts
+        // Build VALUES list for efficient IN clause: (txid, vout) IN (VALUES ...)
+        let values = txid_vouts
             .iter()
-            .map(|(txid, vout)| format!("(txid = '{}' AND vout = {})", txid, vout))
+            .map(|(txid, vout)| format!("('{}', {})", txid, vout))
             .collect::<Vec<_>>()
-            .join(" OR ");
+            .join(", ");
 
         let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!(
-                "UPDATE charms SET spent = true WHERE ({}) AND spent = false",
-                conditions
+                "UPDATE charms SET spent = true WHERE (txid, vout) IN (VALUES {}) AND spent = false",
+                values
             ),
         );
 
@@ -445,25 +445,31 @@ impl CharmRepository {
             return Ok(vec![]);
         }
 
-        // Build OR conditions for each (txid, vout) pair
-        let mut conditions = sea_orm::Condition::any();
-        for (txid, vout) in &txid_vouts {
-            conditions = conditions.add(
-                sea_orm::Condition::all()
-                    .add(charms::Column::Txid.eq(txid.clone()))
-                    .add(charms::Column::Vout.eq(*vout)),
-            );
-        }
+        // Build VALUES list for efficient IN clause
+        let values = txid_vouts
+            .iter()
+            .map(|(txid, vout)| format!("('{}', {})", txid, vout))
+            .collect::<Vec<_>>()
+            .join(", ");
 
-        let results = charms::Entity::find()
-            .filter(conditions)
-            .filter(charms::Column::Spent.eq(false))
-            .all(&self.conn)
-            .await?;
+        let stmt = Statement::from_string(
+            DbBackend::Postgres,
+            format!(
+                "SELECT app_id, address, amount FROM charms WHERE (txid, vout) IN (VALUES {}) AND spent = false AND address IS NOT NULL",
+                values
+            ),
+        );
+
+        let results = self.conn.query_all(stmt).await?;
 
         Ok(results
             .into_iter()
-            .filter_map(|c| c.address.map(|addr| (c.app_id, addr, c.amount)))
+            .filter_map(|row| {
+                let app_id: String = row.try_get("", "app_id").ok()?;
+                let address: String = row.try_get("", "address").ok()?;
+                let amount: i64 = row.try_get("", "amount").ok()?;
+                Some((app_id, address, amount))
+            })
             .collect())
     }
 
