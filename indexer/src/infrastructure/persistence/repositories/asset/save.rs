@@ -6,9 +6,9 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, NotSet, QueryFilter,
 use serde_json::Value;
 
 use super::helpers;
-use crate::domain::models::Asset;
 use crate::domain::models::asset_metadata::{AssetMetadata, DEFAULT_DECIMALS};
-use crate::infrastructure::persistence::entities::{assets, prelude::*};
+use crate::domain::models::Asset;
+use crate::infrastructure::persistence::entities::{assets, charms, prelude::*};
 use crate::infrastructure::persistence::error::DbError;
 
 /// [RJJ-SUPPLY] Save or update asset with correct supply logic
@@ -130,6 +130,23 @@ pub async fn save_or_update_asset(
 
             match existing_token {
                 Some(existing) => {
+                    // Idempotency guard: check if this charm (txid+vout) already exists.
+                    // Charms are saved in STEP 3 before assets in STEP 4, so if the charm
+                    // already exists, this block was partially processed and we must NOT
+                    // increment supply again.
+                    let charm_exists = charms::Entity::find()
+                        .filter(charms::Column::Txid.eq(&asset.txid))
+                        .filter(charms::Column::Vout.eq(asset.vout_index))
+                        .one(db)
+                        .await
+                        .map_err(|e| DbError::SeaOrmError(e))?
+                        .is_some();
+
+                    if charm_exists {
+                        // Charm already saved — this is a re-process, skip supply increment
+                        return Ok(());
+                    }
+
                     // Token asset exists, increment supply
                     let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
                     let amount_decimal = Decimal::from(amount);
@@ -191,6 +208,19 @@ pub async fn save_or_update_asset(
 
             match existing_asset {
                 Some(existing) => {
+                    // Idempotency guard: skip supply increment if charm already exists
+                    let charm_exists = charms::Entity::find()
+                        .filter(charms::Column::Txid.eq(&asset.txid))
+                        .filter(charms::Column::Vout.eq(asset.vout_index))
+                        .one(db)
+                        .await
+                        .map_err(|e| DbError::SeaOrmError(e))?
+                        .is_some();
+
+                    if charm_exists {
+                        return Ok(());
+                    }
+
                     let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
                     let amount_decimal = Decimal::from(amount);
                     let new_supply = old_supply + amount_decimal;
