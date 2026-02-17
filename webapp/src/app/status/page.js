@@ -190,13 +190,15 @@ export default function StatusPage() {
     const lastProcessedBlock = indexerStatus.last_processed_block || 0;
 
     // Calculate sync progress based on the latest Bitcoin block
-    const syncProgress =
+    // Use floor so 100% only shows when fully synced (blocksBehind === 0)
+    const rawProgress =
       latestBitcoinBlock > 0 && lastProcessedBlock > 0
-        ? Math.min(
-            100,
-            Math.round((lastProcessedBlock / latestBitcoinBlock) * 100),
-          )
+        ? (lastProcessedBlock / latestBitcoinBlock) * 100
         : 0;
+    const syncProgress =
+      lastProcessedBlock >= latestBitcoinBlock
+        ? 100
+        : Math.min(99.99, Math.floor(rawProgress * 100) / 100);
 
     // Calculate blocks behind based on the latest Bitcoin block
     const blocksBehind =
@@ -275,7 +277,9 @@ export default function StatusPage() {
 
         {/* Mainnet Column */}
         {showMainnet && (
-          <div className={`${showTestnet4 ? "lg:col-span-1" : "lg:col-span-2"}`}>
+          <div
+            className={`${showTestnet4 ? "lg:col-span-1" : "lg:col-span-2"}`}
+          >
             <div className="mb-6">
               <h2 className="text-2xl font-bold bg-gradient-to-r from-orange-400 to-orange-600 bg-clip-text text-transparent">
                 Bitcoin Mainnet Status
