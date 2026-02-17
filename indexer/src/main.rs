@@ -14,8 +14,20 @@ use charms_indexer::config::AppConfig;
 use charms_indexer::infrastructure::persistence::{DbPool, RepositoryFactory};
 use charms_indexer::utils::logging;
 
-#[tokio::main]
-async fn main() {
+fn main() {
+    // Build tokio runtime with 8MB worker thread stack (default 2MB)
+    // Required for deep recursion in charms-data parsing
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .thread_stack_size(8 * 1024 * 1024)
+        .enable_all()
+        .build()
+        .expect("Failed to build tokio runtime");
+
+    runtime.block_on(async_main());
+}
+
+async fn async_main() {
     logging::init_logger();
 
     let config = AppConfig::from_env();
