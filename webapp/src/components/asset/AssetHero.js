@@ -17,7 +17,8 @@ export default function AssetHero({
     decimals, 
     formattedDate,
     onImageError,
-    description
+    description,
+    imageLoading = false
 }) {
     const typeLabel = asset.type === 'nft' ? 'NFT' : asset.type === 'token' ? 'Token' : 'dApp';
     const charmType = classifyCharm(asset);
@@ -86,13 +87,19 @@ export default function AssetHero({
 
                 {/* Right: Image */}
                 <div className="lg:w-80 w-full">
-                    <div className="aspect-square rounded-xl overflow-hidden bg-dark-700 border border-dark-600">
-                        <img
-                            src={displayImage}
-                            alt={asset.name}
-                            className="w-full h-full object-cover"
-                            onError={onImageError}
-                        />
+                    <div className="aspect-square rounded-xl overflow-hidden bg-dark-700 border border-dark-600 relative">
+                        {imageLoading ? (
+                            <div className="w-full h-full flex items-center justify-center">
+                                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+                            </div>
+                        ) : (
+                            <img
+                                src={displayImage}
+                                alt={asset.name}
+                                className="w-full h-full object-cover"
+                                onError={onImageError}
+                            />
+                        )}
                     </div>
                 </div>
             </div>

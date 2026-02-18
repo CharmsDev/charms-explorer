@@ -35,50 +35,49 @@ export default function AssetDetailPage() {
   const [nftMetadata, setNftMetadata] = useState(null);
   const [spellImage, setSpellImage] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [imageLoading, setImageLoading] = useState(true);
   const [imageError, setImageError] = useState(false);
   const [activeTab, setActiveTab] = useState("details");
 
+  // Phase 1: Load basic asset data (fast, ~0.2s via /assets?app_id=) — show the page immediately
   useEffect(() => {
     if (!decodedId) return;
 
     const loadAsset = async () => {
       try {
         setIsLoading(true);
-        const data = await getAssetById(decodedId);
-        setAsset(data);
 
-        const appId = data?.app_id || data?.id || decodedId;
-
-        // Fetch additional data in parallel
+        // Use the fast /assets endpoint (~0.2s) instead of /charms/by-charmid/ (~2.4s)
         const [assetResponse, holders] = await Promise.all([
-          fetchAssetByAppId(appId).catch(() => null),
-          fetchAssetHolders(appId).catch(() => null),
+          fetchAssetByAppId(decodedId).catch(() => null),
+          fetchAssetHolders(decodedId).catch(() => null),
         ]);
 
-        if (assetResponse) setAssetData(assetResponse);
-        if (holders) setHoldersData(holders);
-
-        // Fetch reference NFT metadata (for link to parent NFT)
-        // Both tokens and NFTs: fetch reference NFT for image display
-        const hash = extractHashFromAppId(appId);
-        if (hash) {
-          const refNft = await fetchReferenceNftByHash(hash);
-          if (refNft) {
-            setNftMetadata(refNft);
-            // Use reference NFT image if asset doesn't have its own real image
-            const hasOwnImage =
-              data?.image &&
-              data.image !== "/images/logo.png" &&
-              data.image !== PLACEHOLDER_IMAGE;
-            const hasOwnImageUrl =
-              data?.image_url &&
-              data.image_url !== "/images/logo.png" &&
-              data.image_url !== PLACEHOLDER_IMAGE;
-            if (!hasOwnImage && !hasOwnImageUrl && refNft.image_url) {
-              setSpellImage(refNft.image_url);
-            }
-          }
+        if (assetResponse) {
+          // Map /assets response fields to the format the page expects
+          const mapped = {
+            id: assetResponse.id,
+            app_id: assetResponse.app_id,
+            name: assetResponse.name || "Unnamed Asset",
+            type: assetResponse.asset_type,
+            ticker: assetResponse.symbol,
+            description: assetResponse.description,
+            image: assetResponse.image_url,
+            image_url: assetResponse.image_url,
+            network: assetResponse.network,
+            block_height: assetResponse.block_height,
+            createdAt: assetResponse.created_at,
+            verified: false,
+          };
+          setAsset(mapped);
+          setAssetData(assetResponse);
+        } else {
+          // Fallback to slower /charms/by-charmid/ if /assets has no data
+          const data = await getAssetById(decodedId);
+          setAsset(data);
         }
+
+        if (holders) setHoldersData(holders);
       } catch (error) {
         // Error handled - UI shows empty state
       } finally {
@@ -88,6 +87,43 @@ export default function AssetDetailPage() {
 
     loadAsset();
   }, [decodedId]);
+
+  // Phase 2: Lazy-load reference NFT image (can be slow)
+  useEffect(() => {
+    if (!asset) return;
+
+    const loadImage = async () => {
+      try {
+        setImageLoading(true);
+        const appId = asset?.app_id || asset?.id || decodedId;
+
+        const hash = extractHashFromAppId(appId);
+        if (hash) {
+          const refNft = await fetchReferenceNftByHash(hash).catch(() => null);
+          if (refNft) {
+            setNftMetadata(refNft);
+            const hasOwnImage =
+              asset?.image &&
+              asset.image !== "/images/logo.png" &&
+              asset.image !== PLACEHOLDER_IMAGE;
+            const hasOwnImageUrl =
+              asset?.image_url &&
+              asset.image_url !== "/images/logo.png" &&
+              asset.image_url !== PLACEHOLDER_IMAGE;
+            if (!hasOwnImage && !hasOwnImageUrl && refNft.image_url) {
+              setSpellImage(refNft.image_url);
+            }
+          }
+        }
+      } catch (error) {
+        // Image load failed silently
+      } finally {
+        setImageLoading(false);
+      }
+    };
+
+    loadImage();
+  }, [asset, decodedId]);
 
   // Loading state
   if (isLoading) {
@@ -178,6 +214,7 @@ export default function AssetDetailPage() {
           formattedDate={formattedDate}
           onImageError={() => setImageError(true)}
           description={asset.description || nftMetadata?.description}
+          imageLoading={imageLoading}
         />
 
         {/* Token: Reference NFT Link */}
