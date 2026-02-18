@@ -275,7 +275,7 @@ export default function AssetDetailPage() {
               />
             )}
             {activeTab === "holders" && asset.type === "token" && (
-              <HoldersTab appId={asset.app_id || asset.id} />
+              <HoldersTab appId={asset.app_id || asset.id} decimals={assetData?.decimals ?? 8} />
             )}
           </div>
         </div>

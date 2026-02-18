@@ -45,7 +45,7 @@ export default function AddressPage() {
                         };
                     }
                     grouped[appId].charms.push(charm);
-                    const amount = charm.data?.amount || 0;
+                    const amount = charm.amount || 0;
                     grouped[appId].total_amount += amount;
                     
                     // Collect hashes for image fetching
@@ -231,7 +231,7 @@ export default function AddressPage() {
                                         </thead>
                                         <tbody>
                                             {charms.map((charm, index) => {
-                                                const amount = charm.amount || charm.data?.amount || 0;
+                                                const amount = charm.amount || 0;
                                                 const vout = charm.vout ?? 0;
                                                 return (
                                                     <tr 

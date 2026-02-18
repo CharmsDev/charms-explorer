@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { fetchAssetHolders } from '@/services/apiServices';
 
-export default function HoldersTab({ appId }) {
+export default function HoldersTab({ appId, decimals = 8 }) {
     const [holders, setHolders] = useState([]);
     const [totalHolders, setTotalHolders] = useState(0);
     const [totalSupply, setTotalSupply] = useState(0);
@@ -38,7 +38,7 @@ export default function HoldersTab({ appId }) {
 
     // Format supply with proper decimals
     const formatAmount = (amount) => {
-        const value = amount / 100000000;
+        const value = amount / Math.pow(10, decimals);
         if (value >= 1000000) return (value / 1000000).toFixed(2) + 'M';
         if (value >= 1000) return (value / 1000).toFixed(2) + 'K';
         return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
