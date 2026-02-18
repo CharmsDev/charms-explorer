@@ -207,35 +207,6 @@ export const transformCharmsArray = (charms) => {
     return result;
 };
 
-// Counts charms by type using the detection logic
-export const countCharmsByType = (charms) => {
-    if (!Array.isArray(charms)) return { total: 0, nft: 0, token: 0, dapp: 0 };
-
-    let nftCount = 0;
-    let tokenCount = 0;
-    let dappCount = 0;
-
-    charms.forEach(charm => {
-        const type = detectCharmType(charm);
-        if (type === 'nft') {
-            nftCount++;
-        } else if (type === 'token') {
-            tokenCount++;
-        } else if (type === 'dapp') {
-            dappCount++;
-        }
-    });
-
-    const totalCount = charms.length;
-
-    return {
-        total: totalCount,
-        nft: nftCount,
-        token: tokenCount,
-        dapp: dappCount,
-    };
-};
-
 // Creates a default charm object when no data is available
 export const createDefaultCharm = (id) => {
     return {

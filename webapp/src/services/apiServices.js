@@ -4,7 +4,6 @@
 // New code should import directly from './api/charms', './api/assets', or './api/status'
 
 export {
-    fetchRawCharmsData,
     fetchAssets,
     getCharmsCountByType,
     fetchCharmsByAddress,
@@ -14,11 +13,7 @@ export {
 } from './api/charms';
 
 export {
-    fetchAssetsByType,
-    getAssetById,
-    getAssetCounts,
-    fetchAssetHolders,
-    fetchAssetByAppId
+    fetchAssetHolders
 } from './api/assets';
 
 export {
