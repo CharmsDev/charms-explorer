@@ -38,12 +38,12 @@ function HomeContent() {
             const networkParam = getNetworkParam();
             const apiNetworkParam = networkParam === 'all' ? null : networkParam;
 
-            // Fetch unique asset counts
-            const countsData = await getAssetCounts(apiNetworkParam);
+            // Fetch counts and assets in parallel
+            const [countsData, response] = await Promise.all([
+                getAssetCounts(apiNetworkParam),
+                fetchAssetsByType(type, page, ITEMS_PER_PAGE, sort, apiNetworkParam),
+            ]);
             setCounts(countsData);
-
-            // Fetch unique assets (deduplicated by reference)
-            const response = await fetchAssetsByType(type, page, ITEMS_PER_PAGE, sort, apiNetworkParam);
             setAssets(response.assets || []);
             setTotalPages(response.totalPages || 1);
         } catch (error) {
