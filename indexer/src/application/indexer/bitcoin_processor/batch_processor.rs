@@ -46,6 +46,7 @@ impl BatchProcessor {
     }
 
     /// Save charm batch with retry logic
+    /// Also updates stats_holders with positive amounts for new charms
     pub async fn save_charm_batch(
         &self,
         batch: Vec<CharmBatchItem>,
@@ -56,6 +57,7 @@ impl BatchProcessor {
             return Ok(());
         }
 
+        // First save the charms
         self.execute_batch_save(
             "charm",
             batch.len(),
@@ -64,7 +66,46 @@ impl BatchProcessor {
             || async { self.charm_service.save_batch(batch.clone()).await },
             |e| BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e)),
         )
-        .await
+        .await?;
+
+        // Then update stats_holders with positive amounts for new charms
+        // Extract (app_id, address, amount, block_height) from batch
+        let holder_updates: Vec<(String, String, i64, i32)> = batch
+            .iter()
+            .filter_map(
+                |(_, _, block_height, _, _, _, _, address, app_id, amount, _)| {
+                    // Only process charms with valid address and positive amount
+                    if let Some(addr) = address {
+                        if *amount > 0 && !addr.is_empty() {
+                            // Convert token app_id (t/HASH/VK) to NFT app_id (n/HASH/VK) for consolidation
+                            let nft_app_id = if app_id.starts_with("t/") {
+                                app_id.replacen("t/", "n/", 1)
+                            } else {
+                                app_id.clone()
+                            };
+                            return Some((nft_app_id, addr.clone(), *amount, *block_height as i32));
+                        }
+                    }
+                    None
+                },
+            )
+            .collect();
+
+        if !holder_updates.is_empty() {
+            if let Err(e) = self
+                .charm_service
+                .get_stats_holders_repository()
+                .update_holders_batch(holder_updates)
+                .await
+            {
+                logging::log_warning(&format!(
+                    "[{}] Failed to update stats_holders for new charms at block {}: {}",
+                    network_id.name, height, e
+                ));
+            }
+        }
+
+        Ok(())
     }
 
     /// Save asset batch with retry logic
