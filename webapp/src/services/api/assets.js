@@ -1,9 +1,8 @@
 'use client';
 
 import { ENDPOINTS } from '../apiConfig';
-import { handleApiError, logger } from '../apiUtils';
-import { transformCharmsArray, countCharmsByType, createDefaultCharm } from '../transformers';
-import { fetchRawCharmsData } from './charms';
+import { logger } from '../apiUtils';
+import { transformCharmsArray, createDefaultCharm } from '../transformers';
 
 export const fetchAssetsByType = async (assetType, page = 1, limit = 20, sort = 'newest', network = null) => {
     try {
@@ -86,42 +85,28 @@ export const getAssetById = async (id) => {
         return transformCharmsArray([charm])[0];
     } catch (error) {
         logger.error('getAssetById', error);
-        try {
-            const data = await fetchRawCharmsData();
-            const charm = data.charms.find(charm => charm.charmid === id);
-
-            if (!charm) {
-                return createDefaultCharm(id);
-            }
-
-            return transformCharmsArray([charm])[0];
-        } catch (fallbackError) {
-            throw handleApiError(fallbackError, 'fetch asset details');
-        }
+        return createDefaultCharm(id);
     }
 };
 
-export const getAssetCounts = async () => {
+export const getAssetCounts = async (network = null) => {
     try {
-        const response = await fetch(ENDPOINTS.ASSET_COUNTS);
+        let url = ENDPOINTS.ASSET_COUNTS;
+        if (network && network !== 'all') {
+            url += `?network=${encodeURIComponent(network)}`;
+        }
+        const response = await fetch(url);
 
         if (!response.ok) {
-            logger.warn('getAssetCounts', 'Endpoint not available, falling back');
-            const data = await fetchRawCharmsData();
-            return countCharmsByType(data.charms || []);
+            logger.warn('getAssetCounts', 'Endpoint not available');
+            return { total: 0, nft: 0, token: 0, dapp: 0 };
         }
 
         const counts = await response.json();
         return counts;
     } catch (error) {
         logger.error('getAssetCounts', error);
-        try {
-            const data = await fetchRawCharmsData();
-            return countCharmsByType(data.charms || []);
-        } catch (fallbackError) {
-            logger.error('getAssetCounts.fallback', fallbackError);
-            return { total: 0, nft: 0, token: 0, dapp: 0 };
-        }
+        return { total: 0, nft: 0, token: 0, dapp: 0 };
     }
 };
 
@@ -174,203 +159,3 @@ export const fetchAssetByAppId = async (appId) => {
     }
 };
 
-/**
- * Extract the unique identifier from an app_id
- * For tokens (t/HASH/TXID:VOUT), returns t/HASH (grouping all mints of same token)
- * For NFTs (n/HASH/TXID:VOUT), returns n/HASH
- * For dApps and others, returns the full app_id
- */
-const getUniqueAppIdKey = (appId) => {
-    if (!appId) return null;
-    
-    // For t/ and n/ prefixed IDs, extract the HASH part (before the second /)
-    if (appId.startsWith('t/') || appId.startsWith('n/')) {
-        const parts = appId.split('/');
-        if (parts.length >= 2) {
-            // Return prefix + first hash (t/HASH or n/HASH)
-            return `${parts[0]}/${parts[1]}`;
-        }
-    }
-    
-    return appId;
-};
-
-/**
- * Extract base hash from app_id (without prefix and without txid:vout)
- */
-const getBaseHash = (appId) => {
-    if (!appId) return null;
-    const parts = appId.split('/');
-    if (parts.length >= 2) {
-        return parts[1]; // Return just the HASH part
-    }
-    return null;
-};
-
-/**
- * Fetch unique assets (grouping tokens/NFTs by their reference)
- * This filters out duplicate mints of the same token type
- * Also filters out NFT references that are just metadata for tokens
- */
-export const fetchUniqueAssets = async (assetType = 'all', page = 1, limit = 20, sort = 'newest', network = null) => {
-    try {
-        // Fetch ALL assets to properly deduplicate and filter
-        const fetchLimit = 500;
-        
-        let url = `${ENDPOINTS.ASSETS}?limit=${fetchLimit}`;
-        if (network && network !== 'all') {
-            url += `&network=${network}`;
-        }
-
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-
-        const data = await response.json();
-
-        if (!data.data || !data.data.assets) {
-            return {
-                assets: [],
-                total: 0,
-                page: 1,
-                totalPages: 1
-            };
-        }
-
-        const allAssets = data.data.assets;
-        
-        // Build a set of hashes that have tokens (t/HASH)
-        // These NFTs (n/HASH) are just references, not real NFTs
-        const tokenHashes = new Set();
-        for (const asset of allAssets) {
-            if (asset.app_id?.startsWith('t/')) {
-                const hash = getBaseHash(asset.app_id);
-                if (hash) tokenHashes.add(hash);
-            }
-        }
-        
-        // Deduplicate and filter based on type
-        const seen = new Map();
-        const uniqueAssets = [];
-        
-        for (const asset of allAssets) {
-            const appId = asset.app_id;
-            if (!appId) continue;
-            
-            const key = getUniqueAppIdKey(appId);
-            if (!key || seen.has(key)) continue;
-            
-            // Determine actual type based on app_id prefix
-            let actualType = 'other';
-            if (appId.startsWith('n/')) {
-                // Show ALL NFTs including reference NFTs
-                actualType = 'nft';
-            } else if (appId.startsWith('t/')) {
-                actualType = 'token';
-            } else if (appId.startsWith('b/')) {
-                actualType = 'dapp';
-            }
-            
-            // Filter by requested type
-            if (assetType !== 'all' && actualType !== assetType) {
-                continue;
-            }
-            
-            seen.set(key, true);
-            // Ensure asset has correct type for display
-            uniqueAssets.push({ ...asset, asset_type: actualType });
-        }
-        
-        // Sort
-        if (sort === 'newest') {
-            uniqueAssets.sort((a, b) => (b.block_height || 0) - (a.block_height || 0));
-        } else {
-            uniqueAssets.sort((a, b) => (a.block_height || 0) - (b.block_height || 0));
-        }
-        
-        // Apply pagination
-        const startIndex = (page - 1) * limit;
-        const paginatedAssets = uniqueAssets.slice(startIndex, startIndex + limit);
-        const totalUnique = uniqueAssets.length;
-        
-        return {
-            assets: paginatedAssets,
-            total: totalUnique,
-            page: page,
-            totalPages: Math.ceil(totalUnique / limit)
-        };
-    } catch (error) {
-        logger.error('fetchUniqueAssets', error);
-        throw error;
-    }
-};
-
-/**
- * Get counts of unique assets (not individual charms)
- * Excludes NFT references that are just metadata for tokens
- */
-export const getUniqueAssetCounts = async (network = null) => {
-    try {
-        const fetchLimit = 500;
-        
-        let url = `${ENDPOINTS.ASSETS}?limit=${fetchLimit}`;
-        if (network && network !== 'all') {
-            url += `&network=${network}`;
-        }
-
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            return { total: 0, nft: 0, token: 0, dapp: 0 };
-        }
-
-        const data = await response.json();
-        const allAssets = data.data?.assets || [];
-        
-        // Build set of hashes that have tokens
-        const tokenHashes = new Set();
-        for (const asset of allAssets) {
-            if (asset.app_id?.startsWith('t/')) {
-                const hash = getBaseHash(asset.app_id);
-                if (hash) tokenHashes.add(hash);
-            }
-        }
-        
-        // Count unique by actual type (based on app_id prefix)
-        const seenByType = {
-            nft: new Set(),
-            token: new Set(),
-            dapp: new Set()
-        };
-        
-        for (const asset of allAssets) {
-            const appId = asset.app_id;
-            if (!appId) continue;
-            
-            const key = getUniqueAppIdKey(appId);
-            if (!key) continue;
-            
-            // Determine actual type based on prefix
-            if (appId.startsWith('n/')) {
-                // Count ALL NFTs including reference NFTs
-                seenByType.nft.add(key);
-            } else if (appId.startsWith('t/')) {
-                seenByType.token.add(key);
-            } else if (appId.startsWith('b/')) {
-                seenByType.dapp.add(key);
-            }
-        }
-        
-        return {
-            total: seenByType.nft.size + seenByType.token.size + seenByType.dapp.size,
-            nft: seenByType.nft.size,
-            token: seenByType.token.size,
-            dapp: seenByType.dapp.size
-        };
-    } catch (error) {
-        logger.error('getUniqueAssetCounts', error);
-        return { total: 0, nft: 0, token: 0, dapp: 0 };
-    }
-};

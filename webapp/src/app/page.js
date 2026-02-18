@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import AssetGrid from '../components/AssetGrid';
 import Pagination from '../components/Pagination';
-import { fetchUniqueAssets, getUniqueAssetCounts } from '../services/api';
+import { fetchAssetsByType, getAssetCounts } from '../services/api';
 import { useNetwork } from '../context/NetworkContext';
 
 // Inner component that uses useSearchParams
@@ -39,11 +39,11 @@ function HomeContent() {
             const apiNetworkParam = networkParam === 'all' ? null : networkParam;
 
             // Fetch unique asset counts
-            const countsData = await getUniqueAssetCounts(apiNetworkParam);
+            const countsData = await getAssetCounts(apiNetworkParam);
             setCounts(countsData);
 
             // Fetch unique assets (deduplicated by reference)
-            const response = await fetchUniqueAssets(type, page, ITEMS_PER_PAGE, sort, apiNetworkParam);
+            const response = await fetchAssetsByType(type, page, ITEMS_PER_PAGE, sort, apiNetworkParam);
             setAssets(response.assets || []);
             setTotalPages(response.totalPages || 1);
         } catch (error) {
