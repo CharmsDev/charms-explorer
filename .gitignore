@@ -88,15 +88,15 @@ indexer/.indexer.pid
 /tmp/
 
 # Project-specific directories to ignore
-#**/_rjj/
+**/_rjj/
 /api/deploy
 /indexer/deploy
 /database/target
 /database/deploy
 /indexer/test
-#/indexer/scripts
+/indexer/scripts
 database/.env.production
 /database/scripts
 database/tools/
-#/scripts/
+/scripts/
 /backups/
