@@ -38,28 +38,29 @@ impl AssetService {
         Ok((assets, total))
     }
 
-    /// Get asset counts by type
+    /// Get asset counts by type, optionally filtered by network
     pub async fn get_asset_counts(
         &self,
+        network: Option<&str>,
     ) -> Result<HashMap<String, u64>, Box<dyn std::error::Error + Send + Sync>> {
         let mut counts = HashMap::new();
 
         // Get total count
-        let total = self.asset_repository.count_assets(None, None).await?;
+        let total = self.asset_repository.count_assets(None, network).await?;
         counts.insert("total".to_string(), total);
 
         // Get counts by type
         let nft_count = self
             .asset_repository
-            .count_assets(Some("nft"), None)
+            .count_assets(Some("nft"), network)
             .await?;
         let token_count = self
             .asset_repository
-            .count_assets(Some("token"), None)
+            .count_assets(Some("token"), network)
             .await?;
         let dapp_count = self
             .asset_repository
-            .count_assets(Some("dapp"), None)
+            .count_assets(Some("dapp"), network)
             .await?;
 
         counts.insert("nft".to_string(), nft_count);

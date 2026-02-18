@@ -252,13 +252,23 @@ pub async fn get_assets(
     }
 }
 
+/// Query params for asset counts
+#[derive(Debug, Deserialize)]
+pub struct AssetCountParams {
+    pub network: Option<String>,
+}
+
 /// Get asset counts by type
 pub async fn get_asset_counts(
+    Query(params): Query<AssetCountParams>,
     State(state): State<AppState>,
 ) -> Result<Json<HashMap<String, u64>>, StatusCode> {
     let asset_service = AssetService::new(state.repositories.asset_repository.clone());
 
-    match asset_service.get_asset_counts().await {
+    match asset_service
+        .get_asset_counts(params.network.as_deref())
+        .await
+    {
         Ok(counts) => Ok(Json(counts)),
         Err(e) => {
             tracing::error!("Error fetching asset counts: {:?}", e);
