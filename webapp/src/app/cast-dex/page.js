@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { fetchRawCharmsData } from '@/services/apiServices';
+import { fetchOpenDexOrders } from '@/services/api/dex';
 import { useNetwork } from '@/context/NetworkContext';
-import { classifyCharm, CHARM_TYPES } from '@/services/charmClassifier';
 
 const CAST_APP_URL = process.env.NEXT_PUBLIC_CAST_APP_URL || 'https://cast.charms.dev';
 
@@ -22,56 +21,12 @@ const formatTokenQuantity = (rawQuantity) => {
     });
 };
 
-// Extract DEX operation type from charm data
-const extractDexOperationType = (charm) => {
-    // Check tags first (from indexer)
-    const tags = charm.tags || '';
-    if (tags.includes('create-ask')) return { type: 'Ask', color: 'bg-green-500/20 text-green-400', icon: '📈' };
-    if (tags.includes('create-bid')) return { type: 'Bid', color: 'bg-blue-500/20 text-blue-400', icon: '📉' };
-    if (tags.includes('fulfill-ask')) return { type: 'Fulfill', color: 'bg-purple-500/20 text-purple-400', icon: '✅' };
-    if (tags.includes('fulfill-bid')) return { type: 'Fulfill', color: 'bg-purple-500/20 text-purple-400', icon: '✅' };
-    if (tags.includes('cancel')) return { type: 'Cancel', color: 'bg-red-500/20 text-red-400', icon: '❌' };
-    if (tags.includes('partial-fill')) return { type: 'Partial', color: 'bg-yellow-500/20 text-yellow-400', icon: '⚡' };
-    
-    // Try to detect from spell data
-    const data = charm.data?.native_data || charm.native_data;
-    if (data?.tx?.outs) {
-        const outs = data.tx.outs;
-        for (const out of outs) {
-            // Check each output for order data
-            for (const [key, value] of Object.entries(out)) {
-                if (value && typeof value === 'object' && value.side) {
-                    const side = value.side;
-                    if (side === 'ask') return { type: 'Ask', color: 'bg-green-500/20 text-green-400', icon: '📈' };
-                    if (side === 'bid') return { type: 'Bid', color: 'bg-blue-500/20 text-blue-400', icon: '📉' };
-                }
-            }
-        }
-    }
-    
-    return { type: 'DEX', color: 'bg-purple-500/20 text-purple-400', icon: '🔄' };
-};
-
-// Extract order details from charm data
-const extractOrderDetails = (charm) => {
-    const data = charm.data?.native_data || charm.native_data;
-    if (!data?.tx?.outs) return null;
-    
-    for (const out of data.tx.outs) {
-        for (const [key, value] of Object.entries(out)) {
-            if (value && typeof value === 'object' && value.side) {
-                return {
-                    side: value.side,
-                    amount: value.amount,
-                    quantity: value.quantity,
-                    price: value.price,
-                    maker: value.maker,
-                    asset: value.asset?.token
-                };
-            }
-        }
-    }
-    return null;
+// Get order type display info from API order data
+const getOrderTypeDisplay = (order) => {
+    const side = order.side?.toLowerCase();
+    if (side === 'ask') return { type: 'Ask', color: 'bg-green-500/20 text-green-400', icon: '📈' };
+    if (side === 'bid') return { type: 'Bid', color: 'bg-blue-500/20 text-blue-400', icon: '📉' };
+    return { type: 'Order', color: 'bg-purple-500/20 text-purple-400', icon: '🔄' };
 };
 
 export default function CastDexPage() {
@@ -83,27 +38,17 @@ export default function CastDexPage() {
     const loadCastTransactions = useCallback(async () => {
         try {
             setLoading(true);
-            // Fetch raw charms data to access the full data field
-            const result = await fetchRawCharmsData();
-            const allCharms = result?.data?.charms || result?.charms || [];
-            
             // Get current network filter
             const networkParam = getNetworkParam();
             
-            // Filter only Cast DEX transactions using raw data and network
-            const castCharms = allCharms.filter(charm => {
-                const type = classifyCharm(charm);
-                if (type !== CHARM_TYPES.CHARMS_CAST_DEX) return false;
-                
-                // Apply network filter
-                if (networkParam === 'all') return true;
-                return charm.network === networkParam;
-            });
+            // Fetch DEX orders directly from the dedicated API endpoint
+            const result = await fetchOpenDexOrders(networkParam);
+            const orders = result?.orders || [];
             
-            setTransactions(castCharms);
+            setTransactions(orders);
             setError(null);
         } catch (err) {
-            setError('Failed to load Cast Dex transactions from indexer.');
+            setError('Failed to load Cast Dex orders from indexer.');
         } finally {
             setLoading(false);
         }
@@ -207,20 +152,19 @@ export default function CastDexPage() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {transactions.map((tx, index) => {
-                                    const opType = extractDexOperationType(tx);
-                                    const orderDetails = extractOrderDetails(tx);
+                                {transactions.map((order, index) => {
+                                    const opType = getOrderTypeDisplay(order);
                                     return (
                                         <tr 
-                                            key={`${tx.txid}-${index}`}
+                                            key={`${order.txid}-${index}`}
                                             className="border-b border-dark-700/50 hover:bg-dark-700/30 transition-colors"
                                         >
                                             <td className="px-4 py-3">
                                                 <Link 
-                                                    href={`/tx?txid=${tx.txid}&from=cast-dex`}
+                                                    href={`/tx?txid=${order.txid}&from=cast-dex`}
                                                     className="text-primary-400 hover:text-primary-300 font-mono text-xs break-all"
                                                 >
-                                                    {tx.txid?.slice(0, 16)}...{tx.txid?.slice(-8)}
+                                                    {order.txid?.slice(0, 16)}...{order.txid?.slice(-8)}
                                                 </Link>
                                             </td>
                                             <td className="px-4 py-3">
@@ -230,39 +174,39 @@ export default function CastDexPage() {
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-right text-dark-300 text-sm tabular-nums">
-                                                {formatTokenQuantity(orderDetails?.quantity)}
+                                                {formatTokenQuantity(order.quantity)}
                                             </td>
                                             <td className="px-4 py-3 text-right text-sm tabular-nums">
-                                                {orderDetails?.amount ? (
-                                                    <span className="text-orange-400">{orderDetails.amount.toLocaleString()} <span className="text-dark-500 text-xs">sats</span></span>
+                                                {order.amount ? (
+                                                    <span className="text-orange-400">{order.amount.toLocaleString()} <span className="text-dark-500 text-xs">sats</span></span>
                                                 ) : '-'}
                                             </td>
                                             <td className="px-4 py-3 text-right text-dark-300 text-sm tabular-nums">
-                                                {tx.block_height?.toLocaleString() || '-'}
+                                                {order.block_height?.toLocaleString() || '-'}
                                             </td>
                                             <td className="px-4 py-3 text-center">
                                                 <span className={`inline-block px-2 py-1 rounded text-xs ${
-                                                    tx.network === 'mainnet' 
+                                                    order.network === 'mainnet' 
                                                         ? 'bg-orange-500/20 text-orange-400' 
                                                         : 'bg-blue-500/20 text-blue-400'
                                                 }`}>
-                                                    {tx.network || 'testnet4'}
+                                                    {order.network || 'testnet4'}
                                                 </span>
                                             </td>
                                             <td className="px-4 py-3 text-dark-400 text-sm whitespace-nowrap">
-                                                {formatDate(tx.date_created)}
+                                                {formatDate(order.created_at)}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center justify-center gap-1">
                                                     <Link
-                                                        href={`/tx?txid=${tx.txid}&from=cast-dex`}
+                                                        href={`/tx?txid=${order.txid}&from=cast-dex`}
                                                         className="px-2 py-1 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded text-xs transition-colors"
                                                         title="View in Explorer"
                                                     >
                                                         TX
                                                     </Link>
                                                     <a
-                                                        href={getMempoolUrl(tx.txid, tx.network)}
+                                                        href={getMempoolUrl(order.txid, order.network)}
                                                         target="_blank"
                                                         rel="noopener noreferrer"
                                                         className="px-2 py-1 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded text-xs transition-colors"

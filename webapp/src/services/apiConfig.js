@@ -20,6 +20,12 @@ export const ENDPOINTS = {
     RESET: `${API_BASE_URL}/reset`,
     LIKE_CHARM: `${API_BASE_URL}/charms/like`,
 
+    // DEX endpoints
+    DEX_OPEN_ORDERS: `${API_BASE_URL}/dex/orders/open`,
+    DEX_ORDERS_BY_ASSET: (assetAppId) => `${API_BASE_URL}/dex/orders/by-asset/${encodeURIComponent(assetAppId)}`,
+    DEX_ORDERS_BY_MAKER: (maker) => `${API_BASE_URL}/dex/orders/by-maker/${encodeURIComponent(maker)}`,
+    DEX_ORDER_BY_ID: (orderId) => `${API_BASE_URL}/dex/orders/${encodeURIComponent(orderId)}`,
+
     // Helper function to build paginated endpoints
     buildPaginatedUrl: (baseUrl, page = 1, limit = 12, sort = 'newest') => {
         const pageNum = parseInt(page);
