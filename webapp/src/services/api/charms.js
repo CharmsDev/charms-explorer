@@ -1,46 +1,8 @@
 'use client';
 
 import { ENDPOINTS } from '../apiConfig';
-import { fixJsonResponse, handleApiError, logger } from '../apiUtils';
-import { transformCharmsArray, countCharmsByType, createDefaultCharm } from '../transformers';
-
-export const fetchRawCharmsData = async () => {
-    try {
-        const response = await fetch(ENDPOINTS.CHARMS);
-        const responseText = await response.text();
-
-        try {
-            const data = JSON.parse(responseText);
-
-            if (!response.ok) {
-                logger.warn('fetchRawCharmsData', `API error (${response.status}): ${data.error || 'Unknown error'}`);
-                return { charms: [] };
-            }
-
-            return data;
-        } catch (parseError) {
-            logger.error('fetchRawCharmsData', parseError);
-
-            try {
-                const fixedJson = fixJsonResponse(responseText);
-                const data = JSON.parse(fixedJson);
-
-                if (!response.ok) {
-                    logger.warn('fetchRawCharmsData', `API error (${response.status}): ${data.error || 'Unknown error'}`);
-                    return { charms: [] };
-                }
-
-                return data;
-            } catch (error) {
-                logger.error('fetchRawCharmsData', error);
-                return { charms: [] };
-            }
-        }
-    } catch (error) {
-        logger.error('fetchRawCharmsData', error);
-        return { charms: [] };
-    }
-};
+import { handleApiError, logger } from '../apiUtils';
+import { transformCharmsArray } from '../transformers';
 
 export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network = null) => {
     try {
@@ -111,22 +73,15 @@ export const getCharmsCountByType = async (network = null) => {
         const response = await fetch(url);
 
         if (!response.ok) {
-            logger.warn('getCharmsCountByType', 'Endpoint not available, falling back');
-            const data = await fetchRawCharmsData();
-            return countCharmsByType(data.charms || []);
+            logger.warn('getCharmsCountByType', 'Endpoint not available');
+            return { total: 0, nft: 0, token: 0, dapp: 0 };
         }
 
         const counts = await response.json();
         return counts;
     } catch (error) {
         logger.error('getCharmsCountByType', error);
-        try {
-            const data = await fetchRawCharmsData();
-            return countCharmsByType(data.charms || []);
-        } catch (fallbackError) {
-            logger.error('getCharmsCountByType.fallback', fallbackError);
-            return { total: 0, nft: 0, token: 0, dapp: 0 };
-        }
+        return { total: 0, nft: 0, token: 0, dapp: 0 };
     }
 };
 
