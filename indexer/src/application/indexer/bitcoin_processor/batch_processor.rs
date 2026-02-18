@@ -70,20 +70,32 @@ impl BatchProcessor {
 
         // Then update stats_holders with positive amounts for new charms
         // Extract (app_id, address, amount, block_height) from batch
+        // For tokens (t/): use actual amount as balance delta
+        // For NFTs (n/): use 1 as balance delta (NFT ownership, not the raw amount which is an identifier)
         let holder_updates: Vec<(String, String, i64, i32)> = batch
             .iter()
             .filter_map(
                 |(_, _, block_height, _, _, _, _, address, app_id, amount, _)| {
-                    // Only process charms with valid address and positive amount
                     if let Some(addr) = address {
                         if *amount > 0 && !addr.is_empty() {
-                            // Convert token app_id (t/HASH/VK) to NFT app_id (n/HASH/VK) for consolidation
-                            let nft_app_id = if app_id.starts_with("t/") {
-                                app_id.replacen("t/", "n/", 1)
-                            } else {
-                                app_id.clone()
-                            };
-                            return Some((nft_app_id, addr.clone(), *amount, *block_height as i32));
+                            if app_id.starts_with("t/") {
+                                // Token charm: convert t/ to n/ for consolidation, use actual amount
+                                let nft_app_id = app_id.replacen("t/", "n/", 1);
+                                return Some((
+                                    nft_app_id,
+                                    addr.clone(),
+                                    *amount,
+                                    *block_height as i32,
+                                ));
+                            } else if app_id.starts_with("n/") {
+                                // NFT charm: keep n/ app_id, use 1 as amount (ownership count)
+                                return Some((
+                                    app_id.clone(),
+                                    addr.clone(),
+                                    1_i64,
+                                    *block_height as i32,
+                                ));
+                            }
                         }
                     }
                     None

@@ -6,3 +6,4 @@ pub mod dex_orders_service; // [RJJ-DEX]
 pub mod diagnostic;
 pub mod health;
 pub mod stats_holders_service; // [RJJ-STATS-HOLDERS]
+pub mod wallet_service; // [RJJ-WALLET]

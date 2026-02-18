@@ -378,18 +378,22 @@ impl CharmService {
         }
 
         // 3. Update stats_holders with negative amounts (reduce balances)
-        // [RJJ-TOKEN-METADATA] Convert token app_ids to NFT app_ids for consolidation
+        // For tokens (t/): use -amount as balance delta
+        // For NFTs (n/): use -1 as balance delta (NFT ownership count, not the raw amount)
         if !charm_info.is_empty() {
             let holder_updates: Vec<(String, String, i64, i32)> = charm_info
                 .into_iter()
-                .map(|(app_id, address, amount)| {
-                    // Convert token app_id (t/HASH) to NFT app_id (n/HASH) for consolidation
-                    let nft_app_id = if app_id.starts_with("t/") {
-                        app_id.replacen("t/", "n/", 1)
+                .filter_map(|(app_id, address, amount)| {
+                    if app_id.starts_with("t/") {
+                        // Token: convert t/ to n/ for consolidation, use actual negative amount
+                        let nft_app_id = app_id.replacen("t/", "n/", 1);
+                        Some((nft_app_id, address, -amount, 0))
+                    } else if app_id.starts_with("n/") {
+                        // NFT: keep n/ app_id, use -1 (ownership count)
+                        Some((app_id, address, -1_i64, 0))
                     } else {
-                        app_id
-                    };
-                    (nft_app_id, address, -amount, 0) // Negative amount, block_height not important for spent
+                        None
+                    }
                 })
                 .collect();
 

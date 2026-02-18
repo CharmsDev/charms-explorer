@@ -36,6 +36,9 @@ pub struct ApiConfig {
     pub bitcoin_mainnet_rpc_username: String,
     #[allow(dead_code)] // Reserved for mainnet integration
     pub bitcoin_mainnet_rpc_password: String,
+
+    // QuickNode (mainnet UTXOs/balance)
+    pub bitcoin_mainnet_quicknode_endpoint: String,
 }
 
 impl ApiConfig {
@@ -85,6 +88,9 @@ impl ApiConfig {
         let bitcoin_mainnet_rpc_password =
             env::var("BITCOIN_MAINNET_RPC_PASSWORD").unwrap_or_else(|_| "password".to_string());
 
+        let bitcoin_mainnet_quicknode_endpoint =
+            env::var("BITCOIN_MAINNET_QUICKNODE_ENDPOINT").unwrap_or_else(|_| String::new());
+
         Self {
             host,
             port,
@@ -100,6 +106,7 @@ impl ApiConfig {
             bitcoin_mainnet_rpc_port,
             bitcoin_mainnet_rpc_username,
             bitcoin_mainnet_rpc_password,
+            bitcoin_mainnet_quicknode_endpoint,
         }
     }
 

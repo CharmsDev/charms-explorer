@@ -21,11 +21,13 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    diagnose_database, get_asset_by_id, get_asset_counts, get_asset_holders, get_assets,
-    get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_address,
-    get_charms_by_type, get_charms_count_by_type, get_indexer_status, get_open_orders,
-    get_order_by_id, get_orders_by_asset, get_orders_by_maker, get_reference_nft_by_hash,
-    health_check, like_charm, reset_indexer, unlike_charm, AppState,
+    broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
+    get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
+    get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
+    get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker,
+    get_reference_nft_by_hash, get_wallet_balance, get_wallet_chain_tip, get_wallet_fee_estimate,
+    get_wallet_transaction, get_wallet_utxos, health_check, like_charm, reset_indexer,
+    unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -53,11 +55,45 @@ async fn main() {
         .expect("Failed to connect to database");
     tracing::info!("Connected to database");
 
+    // Initialize shared Bitcoin RPC clients (one per network, reused across all requests)
+    let rpc_mainnet = {
+        let url = format!(
+            "http://{}:{}",
+            config.bitcoin_mainnet_rpc_host, config.bitcoin_mainnet_rpc_port
+        );
+        let auth = bitcoincore_rpc::Auth::UserPass(
+            config.bitcoin_mainnet_rpc_username.clone(),
+            config.bitcoin_mainnet_rpc_password.clone(),
+        );
+        Arc::new(
+            bitcoincore_rpc::Client::new(&url, auth).expect("Failed to create mainnet RPC client"),
+        )
+    };
+    let rpc_testnet4 = {
+        let url = format!(
+            "http://{}:{}",
+            config.bitcoin_testnet4_rpc_host, config.bitcoin_testnet4_rpc_port
+        );
+        let auth = bitcoincore_rpc::Auth::UserPass(
+            config.bitcoin_testnet4_rpc_username.clone(),
+            config.bitcoin_testnet4_rpc_password.clone(),
+        );
+        Arc::new(
+            bitcoincore_rpc::Client::new(&url, auth).expect("Failed to create testnet4 RPC client"),
+        )
+    };
+    tracing::info!("Bitcoin RPC clients initialized (mainnet + testnet4)");
+
     // Initialize application state with repositories and config
     let repositories = db_pool.repositories();
     let app_state = AppState {
         repositories: Arc::new(repositories),
         config: config.clone(),
+        scan_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
+        quicknode_semaphore: Arc::new(tokio::sync::Semaphore::new(32)),
+        http_client: reqwest::Client::new(),
+        rpc_mainnet,
+        rpc_testnet4,
     };
 
     // Configure CORS policy
@@ -106,6 +142,13 @@ async fn main() {
         )
         .route("/dex/orders/by-maker/{maker}", get(get_orders_by_maker))
         .route("/dex/orders/{order_id}", get(get_order_by_id))
+        // Wallet endpoints [RJJ-WALLET]
+        .route("/wallet/utxos/{address}", get(get_wallet_utxos))
+        .route("/wallet/balance/{address}", get(get_wallet_balance))
+        .route("/wallet/tx/{txid}", get(get_wallet_transaction))
+        .route("/wallet/broadcast", post(broadcast_wallet_transaction))
+        .route("/wallet/fee-estimate", get(get_wallet_fee_estimate))
+        .route("/wallet/tip", get(get_wallet_chain_tip))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

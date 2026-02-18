@@ -28,3 +28,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Bitcoin
 bitcoincore-rpc = "0.18.0"
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
+
+# HTTP client (for QuickNode API)
+reqwest = { version = "0.12", features = ["json"] }
