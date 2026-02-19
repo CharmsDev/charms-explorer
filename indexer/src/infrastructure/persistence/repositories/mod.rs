@@ -7,6 +7,7 @@ pub mod spell_repository;
 pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
 pub mod summary_repository;
 pub mod transaction_repository; // [RJJ-DEX]
+pub mod utxo_repository;
 
 pub use asset_repository::AssetRepository;
 pub use block_status_repository::BlockStatusRepository;
@@ -16,6 +17,7 @@ pub use spell_repository::SpellRepository;
 pub use stats_holders_repository::StatsHoldersRepository;
 pub use summary_repository::SummaryRepository;
 pub use transaction_repository::TransactionRepository; // [RJJ-DEX]
+pub use utxo_repository::UtxoRepository;
 
 /// Collection of all repositories
 /// [RJJ-S01] Added spell repository
@@ -38,6 +40,8 @@ pub struct Repositories {
     pub summary: SummaryRepository,
     /// Repository for transaction operations
     pub transaction: TransactionRepository,
+    /// Repository for address UTXO index
+    pub utxo: UtxoRepository,
 }
 
 impl Repositories {
@@ -54,6 +58,7 @@ impl Repositories {
         stats_holders: StatsHoldersRepository,
         summary: SummaryRepository,
         transaction: TransactionRepository,
+        utxo: UtxoRepository,
     ) -> Self {
         Self {
             asset,
@@ -64,6 +69,7 @@ impl Repositories {
             stats_holders,
             summary,
             transaction,
+            utxo,
         }
     }
 }

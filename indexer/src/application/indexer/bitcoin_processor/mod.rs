@@ -19,7 +19,7 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, SummaryRepository, TransactionRepository,
+    BlockStatusRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -32,6 +32,7 @@ pub struct BitcoinProcessor {
     transaction_repository: TransactionRepository,
     summary_repository: SummaryRepository,
     block_status_repository: BlockStatusRepository,
+    utxo_repository: UtxoRepository,
     config: AppConfig,
     current_height: u64,
     genesis_block_height: u64,
@@ -45,6 +46,7 @@ impl BitcoinProcessor {
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
+        utxo_repository: UtxoRepository,
         config: AppConfig,
         genesis_block_height: u64,
     ) -> Self {
@@ -54,6 +56,7 @@ impl BitcoinProcessor {
             transaction_repository,
             summary_repository,
             block_status_repository,
+            utxo_repository,
             current_height: genesis_block_height,
             config,
             genesis_block_height,
@@ -148,6 +151,7 @@ impl BitcoinProcessor {
                     self.transaction_repository.clone(),
                     self.summary_repository.clone(),
                     self.block_status_repository.clone(),
+                    self.utxo_repository.clone(),
                 );
 
                 if let Err(e) = block_processor
@@ -254,6 +258,7 @@ impl BitcoinProcessor {
                 self.transaction_repository.clone(),
                 self.summary_repository.clone(),
                 self.block_status_repository.clone(),
+                self.utxo_repository.clone(),
             );
 
             match block_processor
@@ -402,6 +407,7 @@ impl BlockchainProcessor for BitcoinProcessor {
             self.transaction_repository.clone(),
             self.summary_repository.clone(),
             self.block_status_repository.clone(),
+            self.utxo_repository.clone(),
         );
 
         block_processor

@@ -4,6 +4,7 @@ use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
     AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository, Repositories,
     SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository,
+    UtxoRepository,
 };
 
 /// Factory for creating repositories
@@ -25,7 +26,8 @@ impl RepositoryFactory {
             Self::create_spell_repository(conn.clone()),
             Self::create_stats_holders_repository(conn.clone()),
             Self::create_summary_repository(conn.clone()),
-            Self::create_transaction_repository(conn),
+            Self::create_transaction_repository(conn.clone()),
+            Self::create_utxo_repository(conn),
         )
     }
 
@@ -70,5 +72,10 @@ impl RepositoryFactory {
     /// Create a block_status repository
     pub fn create_block_status_repository(conn: DatabaseConnection) -> BlockStatusRepository {
         BlockStatusRepository::new(conn)
+    }
+
+    /// Create a utxo repository
+    pub fn create_utxo_repository(conn: DatabaseConnection) -> UtxoRepository {
+        UtxoRepository::new(conn)
     }
 }

@@ -25,9 +25,9 @@ use handlers::{
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
     get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
     get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker,
-    get_reference_nft_by_hash, get_wallet_balance, get_wallet_chain_tip, get_wallet_fee_estimate,
-    get_wallet_transaction, get_wallet_utxos, health_check, like_charm, reset_indexer,
-    unlike_charm, AppState,
+    get_reference_nft_by_hash, get_wallet_balance, get_wallet_chain_tip, get_wallet_charm_balances,
+    get_wallet_fee_estimate, get_wallet_transaction, get_wallet_utxos, health_check, like_charm,
+    reset_indexer, unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -149,6 +149,7 @@ async fn main() {
         .route("/wallet/broadcast", post(broadcast_wallet_transaction))
         .route("/wallet/fee-estimate", get(get_wallet_fee_estimate))
         .route("/wallet/tip", get(get_wallet_chain_tip))
+        .route("/wallet/charms/{address}", get(get_wallet_charm_balances))
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);

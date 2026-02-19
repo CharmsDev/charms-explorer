@@ -14,8 +14,9 @@ use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
+use crate::infrastructure::persistence::repositories::utxo_repository::UtxoInsert;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, SummaryRepository, TransactionRepository,
+    BlockStatusRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -33,6 +34,7 @@ pub struct BlockProcessor {
     transaction_repository: TransactionRepository,
     summary_repository: SummaryRepository,
     block_status_repository: BlockStatusRepository,
+    utxo_repository: UtxoRepository,
     retry_handler: RetryHandler,
 }
 
@@ -43,6 +45,7 @@ impl BlockProcessor {
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
+        utxo_repository: UtxoRepository,
     ) -> Self {
         Self {
             bitcoin_client,
@@ -50,6 +53,7 @@ impl BlockProcessor {
             transaction_repository,
             summary_repository,
             block_status_repository,
+            utxo_repository,
             retry_handler: RetryHandler::new(),
         }
     }
@@ -104,6 +108,9 @@ impl BlockProcessor {
 
         // STEP 5: Mark spent charms
         self.mark_spent_charms(&block, network_id).await?;
+
+        // STEP 5.5: Update address UTXO index
+        self.update_utxo_index(&block, height, network_id).await?;
 
         // STEP 6: Update summary statistics
         let summary_updater = super::SummaryUpdater::new(
@@ -460,6 +467,91 @@ impl BlockProcessor {
                 )
                 .await
                 .map_err(BlockProcessorError::DbError)?;
+        }
+
+        Ok(())
+    }
+
+    /// Update the address UTXO index for a block:
+    /// 1. Delete spent UTXOs (inputs)
+    /// 2. Insert new UTXOs (outputs with valid addresses)
+    async fn update_utxo_index(
+        &self,
+        block: &bitcoin::Block,
+        height: u64,
+        network_id: &NetworkId,
+    ) -> Result<(), BlockProcessorError> {
+        let network_str = &network_id.name;
+        let btc_network = match network_str.as_str() {
+            "mainnet" => bitcoin::Network::Bitcoin,
+            "testnet4" => bitcoin::Network::Testnet,
+            _ => bitcoin::Network::Testnet,
+        };
+
+        // 1. Collect spent UTXOs from all inputs
+        let mut spent: Vec<(String, i32)> = Vec::new();
+        for tx in &block.txdata {
+            if tx.is_coin_base() {
+                continue;
+            }
+            for input in &tx.input {
+                if !input.previous_output.is_null() {
+                    spent.push((
+                        input.previous_output.txid.to_string(),
+                        input.previous_output.vout as i32,
+                    ));
+                }
+            }
+        }
+
+        // 2. Collect new UTXOs from all outputs
+        let mut new_utxos: Vec<UtxoInsert> = Vec::new();
+        for tx in &block.txdata {
+            let txid = tx.txid().to_string();
+            for (vout, output) in tx.output.iter().enumerate() {
+                // Skip unspendable outputs (OP_RETURN, etc.)
+                if output.script_pubkey.is_provably_unspendable() {
+                    continue;
+                }
+                // Try to extract address from script_pubkey
+                if let Ok(address) =
+                    bitcoin::Address::from_script(&output.script_pubkey, btc_network)
+                {
+                    new_utxos.push(UtxoInsert {
+                        txid: txid.clone(),
+                        vout: vout as i32,
+                        address: address.to_string(),
+                        value: output.value as i64,
+                        script_pubkey: format!("{:x}", output.script_pubkey),
+                        block_height: height as i32,
+                        network: network_str.clone(),
+                    });
+                }
+            }
+        }
+
+        // 3. Delete spent UTXOs
+        if !spent.is_empty() {
+            if let Err(e) = self
+                .utxo_repository
+                .delete_spent_batch(&spent, network_str)
+                .await
+            {
+                logging::log_warning(&format!(
+                    "[{}] Failed to delete spent UTXOs at block {}: {}",
+                    network_str, height, e
+                ));
+            }
+        }
+
+        // 4. Insert new UTXOs
+        if !new_utxos.is_empty() {
+            if let Err(e) = self.utxo_repository.insert_batch(&new_utxos).await {
+                logging::log_warning(&format!(
+                    "[{}] Failed to insert UTXOs at block {}: {}",
+                    network_str, height, e
+                ));
+            }
         }
 
         Ok(())

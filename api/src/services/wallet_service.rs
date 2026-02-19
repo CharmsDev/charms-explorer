@@ -92,6 +92,57 @@ pub struct ChainTip {
 pub struct WalletService;
 
 impl WalletService {
+    // ==================== Database methods (address_utxos index) ====================
+
+    /// Get UTXOs from our own address_utxos table (populated by indexer)
+    pub async fn get_utxos_db(
+        utxo_repo: &crate::db::repositories::UtxoRepository,
+        address: &str,
+        network: &str,
+        chain_height: Option<u64>,
+    ) -> Result<Vec<Utxo>, String> {
+        let rows = utxo_repo.get_by_address(address, network).await?;
+        let tip = chain_height.unwrap_or(0);
+
+        let utxos = rows
+            .into_iter()
+            .map(|r| {
+                let confirmations = if tip > 0 && r.block_height > 0 {
+                    (tip as i64 - r.block_height as i64 + 1).max(0) as u32
+                } else {
+                    0
+                };
+                Utxo {
+                    txid: r.txid,
+                    vout: r.vout as u32,
+                    value: r.value as u64,
+                    script_pubkey: r.script_pubkey,
+                    confirmations,
+                }
+            })
+            .collect();
+
+        Ok(utxos)
+    }
+
+    /// Get balance from our own address_utxos table
+    pub async fn get_balance_db(
+        utxo_repo: &crate::db::repositories::UtxoRepository,
+        address: &str,
+        network: &str,
+    ) -> Result<AddressBalance, String> {
+        let rows = utxo_repo.get_by_address(address, network).await?;
+        let confirmed: u64 = rows.iter().map(|r| r.value as u64).sum();
+        let utxo_count = rows.len();
+
+        Ok(AddressBalance {
+            address: address.to_string(),
+            confirmed,
+            unconfirmed: 0,
+            utxo_count,
+        })
+    }
+
     // ==================== QuickNode methods (mainnet) ====================
 
     /// Get UTXOs via QuickNode bb_getutxos (indexed, instant response)
@@ -141,6 +192,66 @@ impl WalletService {
             .collect();
 
         Ok(utxos)
+    }
+
+    /// Get chain tip via QuickNode (getblockcount + getbestblockhash)
+    pub async fn get_chain_tip_quicknode(
+        http_client: &reqwest::Client,
+        quicknode_url: &str,
+    ) -> Result<ChainTip, String> {
+        // Get block count
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getblockcount",
+            "params": [],
+            "id": 1
+        });
+
+        let resp = http_client
+            .post(quicknode_url)
+            .json(&body)
+            .send()
+            .await
+            .map_err(|e| format!("QuickNode request failed: {}", e))?;
+
+        let data: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("QuickNode response parse failed: {}", e))?;
+
+        if let Some(err) = data.get("error").filter(|e| !e.is_null()) {
+            return Err(format!("QuickNode error: {}", err));
+        }
+
+        let height = data["result"].as_u64().unwrap_or(0);
+
+        // Get best block hash
+        let body2 = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getbestblockhash",
+            "params": [],
+            "id": 2
+        });
+
+        let resp2 = http_client
+            .post(quicknode_url)
+            .json(&body2)
+            .send()
+            .await
+            .map_err(|e| format!("QuickNode request failed: {}", e))?;
+
+        let data2: Value = resp2
+            .json()
+            .await
+            .map_err(|e| format!("QuickNode response parse failed: {}", e))?;
+
+        let hash = data2["result"].as_str().unwrap_or("").to_string();
+
+        Ok(ChainTip {
+            height,
+            hash,
+            time: None,
+        })
     }
 
     /// Get balance via QuickNode (derived from bb_getutxos)
@@ -194,25 +305,15 @@ impl WalletService {
                     Err(e) => {
                         last_error = format!("{}", e);
                         let is_scan_busy = last_error.contains("Scan already in progress");
-                        let is_conn_error = last_error.contains("temporarily unavailable")
-                            || last_error.contains("Connection refused")
-                            || last_error.contains("transport error");
 
-                        if (is_scan_busy || is_conn_error) && attempt < max_retries - 1 {
-                            if is_scan_busy {
-                                tracing::warn!(
-                                    "scantxoutset: scan in progress (attempt {}/{}), aborting and retrying...",
-                                    attempt + 1, max_retries
-                                );
-                                let _: Result<Value, _> =
-                                    client.call("scantxoutset", &[serde_json::json!("abort")]);
-                            } else {
-                                tracing::warn!(
-                                    "scantxoutset: connection error (attempt {}/{}): {}, retrying...",
-                                    attempt + 1, max_retries, last_error
-                                );
-                            }
-                            // Progressive backoff: 500ms, 1s, 1.5s, 2s
+                        // Only retry on "scan in progress" — connection errors fail fast
+                        if is_scan_busy && attempt < max_retries - 1 {
+                            tracing::warn!(
+                                "scantxoutset: scan in progress (attempt {}/{}), aborting and retrying...",
+                                attempt + 1, max_retries
+                            );
+                            let _: Result<Value, _> =
+                                client.call("scantxoutset", &[serde_json::json!("abort")]);
                             std::thread::sleep(std::time::Duration::from_millis(
                                 500 * (attempt as u64 + 1),
                             ));

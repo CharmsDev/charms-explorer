@@ -1,11 +1,13 @@
 // Wallet API endpoint handlers
-// Phase 1: Direct Bitcoin node access for wallet extension
+// Strategy: RPC node (3s timeout) → QuickNode fallback
 
 use axum::{
     extract::{Path, Query, State},
     Json,
 };
 use serde::Deserialize;
+use std::time::Duration;
+use tokio::time::timeout;
 
 use bitcoincore_rpc::Client;
 use std::sync::Arc;
@@ -14,11 +16,58 @@ use crate::error::{ExplorerError, ExplorerResult};
 use crate::handlers::AppState;
 use crate::services::wallet_service::WalletService;
 
+const RPC_TIMEOUT: Duration = Duration::from_secs(3);
+
 /// Select the shared RPC client for the given network
 fn rpc_client(state: &AppState, network: &str) -> Arc<Client> {
     match network {
         "testnet4" => state.rpc_testnet4.clone(),
         _ => state.rpc_mainnet.clone(),
+    }
+}
+
+/// QuickNode endpoint (empty string = not configured)
+fn quicknode_url(state: &AppState) -> &str {
+    &state.config.bitcoin_mainnet_quicknode_endpoint
+}
+
+/// Try an RPC future with timeout; on failure, try QuickNode fallback
+async fn rpc_with_fallback<T, RpcFut, QnFut>(
+    rpc_future: RpcFut,
+    qn_future: QnFut,
+    qn_url: &str,
+    label: &str,
+) -> Result<T, String>
+where
+    RpcFut: std::future::Future<Output = Result<T, String>>,
+    QnFut: std::future::Future<Output = Result<T, String>>,
+{
+    match timeout(RPC_TIMEOUT, rpc_future).await {
+        Ok(Ok(val)) => Ok(val),
+        Ok(Err(e)) => {
+            if !qn_url.is_empty() {
+                tracing::warn!("{}: RPC failed, falling back to QuickNode: {}", label, e);
+                qn_future.await
+            } else {
+                Err(e)
+            }
+        }
+        Err(_) => {
+            if !qn_url.is_empty() {
+                tracing::warn!(
+                    "{}: RPC timed out ({}s), falling back to QuickNode",
+                    label,
+                    RPC_TIMEOUT.as_secs()
+                );
+                qn_future.await
+            } else {
+                Err(format!(
+                    "{}: RPC timed out after {}s",
+                    label,
+                    RPC_TIMEOUT.as_secs()
+                ))
+            }
+        }
     }
 }
 
@@ -44,38 +93,25 @@ fn default_network() -> String {
     "mainnet".to_string()
 }
 
-/// GET /wallet/utxos/{address} — List unspent outputs for an address
-/// Mainnet: QuickNode (bb_getutxos, indexed, instant)
-/// Testnet4: Node RPC (scantxoutset, small UTXO set)
+/// GET /wallet/utxos/{address}
+/// QuickNode first (indexed, instant) → RPC fallback (scantxoutset is slow)
 pub async fn get_wallet_utxos(
     State(state): State<AppState>,
     Path(address): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let result = if params.network != "testnet4"
-        && !state.config.bitcoin_mainnet_quicknode_endpoint.is_empty()
-    {
-        // Mainnet: use QuickNode (rate-limited)
-        let _permit = state
-            .quicknode_semaphore
-            .acquire()
-            .await
-            .map_err(|e| ExplorerError::InternalError(format!("Semaphore error: {}", e)))?;
-        WalletService::get_utxos_quicknode(
-            &state.http_client,
-            &state.config.bitcoin_mainnet_quicknode_endpoint,
-            &address,
-        )
-        .await
+    let qn = quicknode_url(&state).to_string();
+
+    let result = if !qn.is_empty() {
+        match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
+            Ok(utxos) => Ok(utxos),
+            Err(e) => {
+                tracing::warn!("UTXOs: QuickNode failed, falling back to RPC: {}", e);
+                WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
+            }
+        }
     } else {
-        // Testnet4: use node RPC (scantxoutset)
-        let client = rpc_client(&state, &params.network);
-        let _permit = state
-            .scan_semaphore
-            .acquire()
-            .await
-            .map_err(|e| ExplorerError::InternalError(format!("Semaphore error: {}", e)))?;
-        WalletService::get_utxos(client, &address).await
+        WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
     };
 
     match result {
@@ -91,35 +127,25 @@ pub async fn get_wallet_utxos(
     }
 }
 
-/// GET /wallet/balance/{address} — Get balance for an address
-/// Mainnet: QuickNode | Testnet4: Node RPC
+/// GET /wallet/balance/{address}
+/// QuickNode first (indexed, instant) → RPC fallback
 pub async fn get_wallet_balance(
     State(state): State<AppState>,
     Path(address): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let result = if params.network != "testnet4"
-        && !state.config.bitcoin_mainnet_quicknode_endpoint.is_empty()
-    {
-        let _permit = state
-            .quicknode_semaphore
-            .acquire()
-            .await
-            .map_err(|e| ExplorerError::InternalError(format!("Semaphore error: {}", e)))?;
-        WalletService::get_balance_quicknode(
-            &state.http_client,
-            &state.config.bitcoin_mainnet_quicknode_endpoint,
-            &address,
-        )
-        .await
+    let qn = quicknode_url(&state).to_string();
+
+    let result = if !qn.is_empty() {
+        match WalletService::get_balance_quicknode(&state.http_client, &qn, &address).await {
+            Ok(balance) => Ok(balance),
+            Err(e) => {
+                tracing::warn!("Balance: QuickNode failed, falling back to RPC: {}", e);
+                WalletService::get_balance(rpc_client(&state, &params.network), &address).await
+            }
+        }
     } else {
-        let client = rpc_client(&state, &params.network);
-        let _permit = state
-            .scan_semaphore
-            .acquire()
-            .await
-            .map_err(|e| ExplorerError::InternalError(format!("Semaphore error: {}", e)))?;
-        WalletService::get_balance(client, &address).await
+        WalletService::get_balance(rpc_client(&state, &params.network), &address).await
     };
 
     match result {
@@ -131,7 +157,7 @@ pub async fn get_wallet_balance(
     }
 }
 
-/// GET /wallet/tx/{txid} — Get transaction details
+/// GET /wallet/tx/{txid}
 pub async fn get_wallet_transaction(
     State(state): State<AppState>,
     Path(txid): Path<String>,
@@ -151,7 +177,7 @@ pub async fn get_wallet_transaction(
     }
 }
 
-/// POST /wallet/broadcast — Broadcast a signed transaction
+/// POST /wallet/broadcast
 pub async fn broadcast_wallet_transaction(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
@@ -168,7 +194,7 @@ pub async fn broadcast_wallet_transaction(
     }
 }
 
-/// GET /wallet/fee-estimate?blocks=6 — Get fee rate estimate
+/// GET /wallet/fee-estimate?blocks=6
 pub async fn get_wallet_fee_estimate(
     State(state): State<AppState>,
     Query(params): Query<FeeEstimateQuery>,
@@ -184,14 +210,56 @@ pub async fn get_wallet_fee_estimate(
     }
 }
 
-/// GET /wallet/tip — Get current chain tip (height + hash)
+/// GET /wallet/charms/{address}
+/// Returns confirmed + unconfirmed charm balances from the indexed DB (instant)
+pub async fn get_wallet_charm_balances(
+    State(state): State<AppState>,
+    Path(address): Path<String>,
+    Query(params): Query<NetworkQuery>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = params.network.as_str();
+
+    match state
+        .repositories
+        .charm
+        .get_charm_balances_by_address(&address, network)
+        .await
+    {
+        Ok(balances) => Ok(Json(serde_json::json!({
+            "address": address,
+            "network": network,
+            "balances": balances,
+            "count": balances.len(),
+        }))),
+        Err(e) => {
+            tracing::error!(
+                "Wallet: failed to get charm balances for {}: {:?}",
+                address,
+                e
+            );
+            Err(ExplorerError::InternalError(format!("{:?}", e)))
+        }
+    }
+}
+
+/// GET /wallet/tip
 pub async fn get_wallet_chain_tip(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let client = rpc_client(&state, &params.network);
+    let qn = quicknode_url(&state).to_string();
+    let http = state.http_client.clone();
 
-    match WalletService::get_chain_tip(client).await {
+    let result = rpc_with_fallback(
+        WalletService::get_chain_tip(client),
+        WalletService::get_chain_tip_quicknode(&http, &qn),
+        &qn,
+        "Tip",
+    )
+    .await;
+
+    match result {
         Ok(tip) => Ok(Json(serde_json::json!(tip))),
         Err(e) => {
             tracing::error!("Wallet: failed to get chain tip: {}", e);

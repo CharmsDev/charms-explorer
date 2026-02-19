@@ -4,9 +4,22 @@ use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
 };
 
+use serde::Serialize;
+
 use crate::db::error::DbError;
 use crate::entity::charms;
 use crate::models::PaginationParams;
+
+/// Aggregated charm balance for a single app_id
+#[derive(Debug, Serialize)]
+pub struct CharmBalance {
+    pub app_id: String,
+    pub asset_type: String,
+    pub confirmed_amount: i64,
+    pub unconfirmed_amount: i64,
+    pub confirmed_count: i64,
+    pub unconfirmed_count: i64,
+}
 
 /// Repository for charm database operations
 pub struct CharmRepository {
@@ -166,6 +179,65 @@ impl CharmRepository {
             .all(&self.conn)
             .await
             .map_err(Into::into)
+    }
+
+    /// Get charm balances by address, grouped by app_id
+    /// Returns (app_id, asset_type, confirmed_amount, unconfirmed_amount, confirmed_count, unconfirmed_count)
+    pub async fn get_charm_balances_by_address(
+        &self,
+        address: &str,
+        network: &str,
+    ) -> Result<Vec<CharmBalance>, DbError> {
+        use sea_orm::{DbBackend, FromQueryResult, Statement};
+
+        #[derive(FromQueryResult)]
+        struct Row {
+            app_id: String,
+            asset_type: String,
+            confirmed_amount: Option<rust_decimal::Decimal>,
+            unconfirmed_amount: Option<rust_decimal::Decimal>,
+            confirmed_count: Option<i64>,
+            unconfirmed_count: Option<i64>,
+        }
+
+        let rows = Row::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+            SELECT
+                app_id,
+                asset_type,
+                SUM(CASE WHEN block_height IS NOT NULL AND block_height > 0 THEN amount ELSE 0 END) AS confirmed_amount,
+                SUM(CASE WHEN block_height IS NULL OR block_height = 0 THEN amount ELSE 0 END) AS unconfirmed_amount,
+                COUNT(CASE WHEN block_height IS NOT NULL AND block_height > 0 THEN 1 END) AS confirmed_count,
+                COUNT(CASE WHEN block_height IS NULL OR block_height = 0 THEN 1 END) AS unconfirmed_count
+            FROM charms
+            WHERE address = $1 AND network = $2 AND spent = false
+            GROUP BY app_id, asset_type
+            ORDER BY app_id
+            "#,
+            [address.into(), network.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        Ok(rows
+            .into_iter()
+            .map(|r| CharmBalance {
+                app_id: r.app_id,
+                asset_type: r.asset_type,
+                confirmed_amount: r
+                    .confirmed_amount
+                    .map(|d| d.to_string().parse::<i64>().unwrap_or(0))
+                    .unwrap_or(0),
+                unconfirmed_amount: r
+                    .unconfirmed_amount
+                    .map(|d| d.to_string().parse::<i64>().unwrap_or(0))
+                    .unwrap_or(0),
+                confirmed_count: r.confirmed_count.unwrap_or(0),
+                unconfirmed_count: r.unconfirmed_count.unwrap_or(0),
+            })
+            .collect())
     }
 
     /// [RJJ-SUPPLY] Calculate circulating supply from unspent charms

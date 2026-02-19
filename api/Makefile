@@ -17,7 +17,7 @@ makeDev:
 	@lsof -ti:$(PORT) | xargs kill -9 2>/dev/null || true
 	@echo "Starting API server with hot reload on port $(PORT)..."
 	@echo "Loading environment variables from .env file..."
-	@export $$(cat .env | xargs) && cargo watch -x run
+	@export $$(grep -v '^#' .env | grep -v '^\s*$$' | xargs) && cargo watch -x run
 
 # Alias for makeDev
 dev: makeDev

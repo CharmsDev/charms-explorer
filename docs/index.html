@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Charms Explorer API — Documentation</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #c9d1d9;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+      --purple: #bc8cff;
+      --code-bg: #0d1117;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .container { max-width: 960px; margin: 0 auto; padding: 2rem 1.5rem; }
+    h1 { font-size: 2rem; margin-bottom: 0.5rem; color: #fff; }
+    h1 span { color: var(--accent); }
+    .subtitle { color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem; }
+    
+    /* Navigation */
+    nav { 
+      position: sticky; top: 0; z-index: 10;
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 0.75rem 0;
+      margin: -2rem -1.5rem 2rem; padding-left: 1.5rem; padding-right: 1.5rem;
+    }
+    nav ul { list-style: none; display: flex; gap: 0.25rem; flex-wrap: wrap; }
+    nav a {
+      display: inline-block; padding: 0.4rem 0.8rem; border-radius: 6px;
+      color: var(--text-muted); text-decoration: none; font-size: 0.85rem; font-weight: 500;
+      transition: all 0.15s;
+    }
+    nav a:hover, nav a.active { background: var(--border); color: #fff; }
+    nav a.wallet { border-left: 3px solid var(--green); }
+    nav a.public { border-left: 3px solid var(--accent); }
+    nav a.cast { border-left: 3px solid var(--orange); }
+    nav a.dex { border-left: 3px solid var(--purple); }
+
+    /* Sections */
+    section { margin-bottom: 3rem; }
+    h2 { 
+      font-size: 1.4rem; margin-bottom: 1rem; padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+    h2 .badge {
+      display: inline-block; font-size: 0.7rem; padding: 0.15rem 0.5rem;
+      border-radius: 10px; vertical-align: middle; margin-left: 0.5rem;
+      font-weight: 600; text-transform: uppercase;
+    }
+    .badge-wallet { background: rgba(63,185,80,0.15); color: var(--green); }
+    .badge-public { background: rgba(88,166,255,0.15); color: var(--accent); }
+    .badge-cast { background: rgba(210,153,34,0.15); color: var(--orange); }
+    .badge-dex { background: rgba(188,140,255,0.15); color: var(--purple); }
+
+    /* Endpoint card */
+    .endpoint {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      margin-bottom: 1.25rem; overflow: hidden;
+    }
+    .endpoint-header {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.75rem 1rem; cursor: pointer; user-select: none;
+    }
+    .endpoint-header:hover { background: rgba(255,255,255,0.02); }
+    .method {
+      display: inline-block; font-size: 0.75rem; font-weight: 700;
+      padding: 0.2rem 0.5rem; border-radius: 4px; min-width: 3.5rem; text-align: center;
+    }
+    .method-get { background: rgba(63,185,80,0.15); color: var(--green); }
+    .method-post { background: rgba(210,153,34,0.15); color: var(--orange); }
+    .path { font-family: 'SF Mono', SFMono-Regular, Consolas, monospace; font-size: 0.9rem; color: #fff; }
+    .path-param { color: var(--accent); }
+    .desc { color: var(--text-muted); font-size: 0.8rem; margin-left: auto; }
+    .chevron { color: var(--text-muted); transition: transform 0.2s; font-size: 0.8rem; }
+    .endpoint.open .chevron { transform: rotate(90deg); }
+    
+    .endpoint-body { 
+      display: none; padding: 1rem; border-top: 1px solid var(--border);
+    }
+    .endpoint.open .endpoint-body { display: block; }
+    
+    .label { 
+      font-size: 0.75rem; font-weight: 600; text-transform: uppercase; 
+      color: var(--text-muted); margin-bottom: 0.4rem; letter-spacing: 0.05em;
+    }
+    .params-table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.85rem; }
+    .params-table th { 
+      text-align: left; padding: 0.4rem 0.6rem; color: var(--text-muted); 
+      font-size: 0.75rem; text-transform: uppercase; border-bottom: 1px solid var(--border);
+    }
+    .params-table td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); }
+    .params-table .type { color: var(--purple); font-family: monospace; font-size: 0.8rem; }
+    .params-table .required { color: var(--red); font-size: 0.75rem; }
+    .params-table .optional { color: var(--text-muted); font-size: 0.75rem; }
+    
+    pre {
+      background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.75rem 1rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+    code { font-family: 'SF Mono', SFMono-Regular, Consolas, monospace; }
+    .key { color: var(--accent); }
+    .str { color: var(--green); }
+    .num { color: var(--orange); }
+    .bool { color: var(--purple); }
+    .null { color: var(--text-muted); }
+    .comment { color: var(--text-muted); font-style: italic; }
+
+    .note {
+      background: rgba(210,153,34,0.08); border-left: 3px solid var(--orange);
+      padding: 0.6rem 1rem; border-radius: 0 6px 6px 0; margin-bottom: 1rem;
+      font-size: 0.85rem; color: var(--text-muted);
+    }
+
+    footer { 
+      text-align: center; color: var(--text-muted); font-size: 0.8rem; 
+      padding: 2rem 0; border-top: 1px solid var(--border); margin-top: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1><span>Charms Explorer</span> API</h1>
+    <p class="subtitle">Internal API documentation — Wallet Extension, Public Explorer & Charms Cast</p>
+
+    <nav>
+      <ul>
+        <li><a href="#wallet" class="wallet">Wallet</a></li>
+        <li><a href="#public" class="public">Public</a></li>
+        <li><a href="#cast" class="cast">Cast</a></li>
+        <li><a href="#dex" class="dex">DEX Orders</a></li>
+      </ul>
+    </nav>
+
+    <!-- ==================== WALLET ==================== -->
+    <section id="wallet">
+      <h2>Wallet Endpoints <span class="badge badge-wallet">Wallet Extension</span></h2>
+      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1.25rem;">
+        Used by the Charms Wallet browser extension. All endpoints accept <code>?network=mainnet|testnet4</code> (default: mainnet).
+      </p>
+
+      <!-- GET /wallet/utxos/{address} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/wallet/utxos/<span class="path-param">{address}</span></span>
+          <span class="desc">BTC UTXOs for an address</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Path Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>address</code></td><td class="type">string</td><td class="required">required</td><td>Bitcoin address</td></tr>
+          </table>
+          <p class="label">Query Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>network</code></td><td class="type">string</td><td class="optional">optional</td><td><code>mainnet</code> or <code>testnet4</code></td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"address"</span>: <span class="str">"bc1q..."</span>,
+  <span class="key">"utxos"</span>: [
+    {
+      <span class="key">"txid"</span>: <span class="str">"abc123..."</span>,
+      <span class="key">"vout"</span>: <span class="num">0</span>,
+      <span class="key">"value"</span>: <span class="num">50000</span>,
+      <span class="key">"address"</span>: <span class="str">"bc1q..."</span>,
+      <span class="key">"confirmations"</span>: <span class="num">3</span>,
+      <span class="key">"confirmed"</span>: <span class="bool">true</span>
+    }
+  ],
+  <span class="key">"count"</span>: <span class="num">1</span>
+}</code></pre>
+          <div class="note">Source: QuickNode (primary) &rarr; RPC <code>scantxoutset</code> (fallback). Values in satoshis.</div>
+        </div>
+      </div>
+
+      <!-- GET /wallet/balance/{address} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/wallet/balance/<span class="path-param">{address}</span></span>
+          <span class="desc">BTC balance for an address</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Path Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>address</code></td><td class="type">string</td><td class="required">required</td><td>Bitcoin address</td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"address"</span>: <span class="str">"bc1q..."</span>,
+  <span class="key">"confirmed"</span>: <span class="num">150000</span>,
+  <span class="key">"unconfirmed"</span>: <span class="num">5000</span>,
+  <span class="key">"total"</span>: <span class="num">155000</span>
+}</code></pre>
+          <div class="note">Source: QuickNode (primary) &rarr; RPC (fallback). All values in satoshis.</div>
+        </div>
+      </div>
+
+      <!-- GET /wallet/charms/{address} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/wallet/charms/<span class="path-param">{address}</span></span>
+          <span class="desc">Charm/token balances for an address</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Path Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>address</code></td><td class="type">string</td><td class="required">required</td><td>Bitcoin address</td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"address"</span>: <span class="str">"bc1q..."</span>,
+  <span class="key">"network"</span>: <span class="str">"mainnet"</span>,
+  <span class="key">"balances"</span>: [
+    {
+      <span class="key">"app_id"</span>: <span class="str">"t/3d7fe7e4.../c975d4e0..."</span>,
+      <span class="key">"asset_type"</span>: <span class="str">"token"</span>,
+      <span class="key">"confirmed_amount"</span>: <span class="num">71859500000000</span>,
+      <span class="key">"unconfirmed_amount"</span>: <span class="num">0</span>,
+      <span class="key">"confirmed_count"</span>: <span class="num">858</span>,
+      <span class="key">"unconfirmed_count"</span>: <span class="num">0</span>
+    }
+  ],
+  <span class="key">"count"</span>: <span class="num">1</span>
+}</code></pre>
+          <div class="note">Source: Indexed DB (instant, ~20ms). Returns unspent charms grouped by <code>app_id</code>.</div>
+        </div>
+      </div>
+
+      <!-- GET /wallet/tx/{txid} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/wallet/tx/<span class="path-param">{txid}</span></span>
+          <span class="desc">Get a transaction by ID</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Path Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>txid</code></td><td class="type">string</td><td class="required">required</td><td>Transaction ID (hex)</td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code><span class="comment">// Raw transaction data from Bitcoin RPC (getrawtransaction verbose)</span></code></pre>
+          <div class="note">Source: Bitcoin RPC node.</div>
+        </div>
+      </div>
+
+      <!-- POST /wallet/broadcast -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-post">POST</span>
+          <span class="path">/wallet/broadcast</span>
+          <span class="desc">Broadcast a signed transaction</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Request Body</p>
+<pre><code>{
+  <span class="key">"raw_tx"</span>: <span class="str">"0200000001..."</span>
+}</code></pre>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"txid"</span>: <span class="str">"abc123..."</span>
+}</code></pre>
+          <div class="note">Source: Bitcoin RPC node (<code>sendrawtransaction</code>).</div>
+        </div>
+      </div>
+
+      <!-- GET /wallet/fee-estimate -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/wallet/fee-estimate</span>
+          <span class="desc">Fee rate estimate</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Query Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>blocks</code></td><td class="type">u16</td><td class="optional">optional</td><td>Target confirmation blocks (default: 6)</td></tr>
+            <tr><td><code>network</code></td><td class="type">string</td><td class="optional">optional</td><td><code>mainnet</code> or <code>testnet4</code></td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"feerate"</span>: <span class="num">0.00012</span>,
+  <span class="key">"blocks"</span>: <span class="num">6</span>
+}</code></pre>
+          <div class="note">Source: Bitcoin RPC node (<code>estimatesmartfee</code>). Fee rate in BTC/kB.</div>
+        </div>
+      </div>
+
+      <!-- GET /wallet/tip -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/wallet/tip</span>
+          <span class="desc">Current chain tip</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"hash"</span>: <span class="str">"00000000000000000001..."</span>,
+  <span class="key">"height"</span>: <span class="num">937396</span>,
+  <span class="key">"time"</span>: <span class="num">1771501794</span>
+}</code></pre>
+          <div class="note">Source: RPC (primary) &rarr; QuickNode (fallback).</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== PUBLIC ==================== -->
+    <section id="public">
+      <h2>Public Endpoints <span class="badge badge-public">Explorer</span></h2>
+      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1.25rem;">
+        Public-facing endpoints used by the Charms Explorer webapp.
+      </p>
+
+      <!-- GET /charms -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/charms</span>
+          <span class="desc">List all charms (paginated)</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Query Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>page</code></td><td class="type">u64</td><td class="optional">optional</td><td>Page number (default: 1)</td></tr>
+            <tr><td><code>limit</code></td><td class="type">u64</td><td class="optional">optional</td><td>Items per page (default: 20)</td></tr>
+            <tr><td><code>network</code></td><td class="type">string</td><td class="optional">optional</td><td><code>mainnet</code> or <code>testnet4</code></td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"data"</span>: { <span class="key">"charms"</span>: [...] },
+  <span class="key">"pagination"</span>: { <span class="key">"total"</span>: <span class="num">1234</span>, <span class="key">"page"</span>: <span class="num">1</span>, <span class="key">"limit"</span>: <span class="num">20</span>, <span class="key">"total_pages"</span>: <span class="num">62</span> }
+}</code></pre>
+        </div>
+      </div>
+
+      <!-- GET /charms/txid/{txid} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/charms/txid/<span class="path-param">{txid}</span></span>
+          <span class="desc">Get charm by transaction ID</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"txid"</span>: <span class="str">"abc..."</span>, <span class="key">"vout"</span>: <span class="num">1</span>,
+  <span class="key">"charmid"</span>: <span class="str">"t/abc.../vk"</span>,
+  <span class="key">"block_height"</span>: <span class="num">210000</span>,
+  <span class="key">"asset_type"</span>: <span class="str">"token"</span>,
+  <span class="key">"amount"</span>: <span class="num">1000</span>,
+  <span class="key">"data"</span>: {...},
+  <span class="key">"name"</span>: <span class="str">"BRO"</span>,
+  <span class="key">"verified"</span>: <span class="bool">true</span>
+}</code></pre>
+        </div>
+      </div>
+
+      <!-- GET /charms/id/{charmid} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/charms/id/<span class="path-param">{charmid}</span></span>
+          <span class="desc">Get charm by app ID</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+          <pre><code><span class="comment">// Same shape as /charms/txid/{txid}</span></code></pre>
+        </div>
+      </div>
+
+      <!-- GET /charms/address/{address} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/charms/address/<span class="path-param">{address}</span></span>
+          <span class="desc">Unspent charms by Bitcoin address</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"charms"</span>: [
+    { <span class="key">"txid"</span>: <span class="str">"..."</span>, <span class="key">"vout"</span>: <span class="num">1</span>, <span class="key">"app_id"</span>: <span class="str">"t/..."</span>, <span class="key">"amount"</span>: <span class="num">500</span>, ... }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <!-- GET /charms/type/{type} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/charms/type/<span class="path-param">{type}</span></span>
+          <span class="desc">Charms by asset type (token, nft, dapp)</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+          <pre><code><span class="comment">// Paginated list of charms filtered by asset_type</span></code></pre>
+        </div>
+      </div>
+
+      <!-- GET /assets -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/assets</span>
+          <span class="desc">List unique assets (paginated)</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Query Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>page</code></td><td class="type">u64</td><td class="optional">optional</td><td>Page number</td></tr>
+            <tr><td><code>limit</code></td><td class="type">u64</td><td class="optional">optional</td><td>Items per page</td></tr>
+            <tr><td><code>asset_type</code></td><td class="type">string</td><td class="optional">optional</td><td>Filter: <code>token</code>, <code>nft</code>, <code>dapp</code></td></tr>
+            <tr><td><code>network</code></td><td class="type">string</td><td class="optional">optional</td><td><code>mainnet</code> or <code>testnet4</code></td></tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- GET /assets/{app_id} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/assets/<span class="path-param">{app_id}</span></span>
+          <span class="desc">Get asset details by app ID</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"app_id"</span>: <span class="str">"t/abc.../vk"</span>,
+  <span class="key">"asset_type"</span>: <span class="str">"token"</span>,
+  <span class="key">"name"</span>: <span class="str">"BRO"</span>,
+  <span class="key">"symbol"</span>: <span class="str">"BRO"</span>,
+  <span class="key">"total_supply"</span>: <span class="num">21000000</span>,
+  <span class="key">"holders"</span>: <span class="num">1234</span>
+}</code></pre>
+        </div>
+      </div>
+
+      <!-- GET /assets/{app_id}/holders -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/assets/<span class="path-param">{app_id}</span>/holders</span>
+          <span class="desc">Top holders for an asset</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"holders"</span>: [
+    { <span class="key">"address"</span>: <span class="str">"bc1q..."</span>, <span class="key">"balance"</span>: <span class="num">50000</span> }
+  ],
+  <span class="key">"total"</span>: <span class="num">100</span>
+}</code></pre>
+        </div>
+      </div>
+
+      <!-- GET /status -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/status</span>
+          <span class="desc">Indexer status &amp; stats</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"network"</span>: <span class="str">"mainnet"</span>,
+  <span class="key">"last_processed_block"</span>: <span class="num">937396</span>,
+  <span class="key">"total_charms"</span>: <span class="num">12345</span>,
+  <span class="key">"total_transactions"</span>: <span class="num">5678</span>,
+  <span class="key">"bitcoin_node_status"</span>: <span class="str">"online"</span>
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== CAST ==================== -->
+    <section id="cast">
+      <h2>Cast Endpoints <span class="badge badge-cast">Charms Cast</span></h2>
+      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1.25rem;">
+        Endpoints consumed by the Charms Cast DEX webapp. Uses the same wallet endpoints above plus the DEX order endpoints below.
+      </p>
+
+      <div class="note">
+        Cast uses <code>NEXT_PUBLIC_EXPLORER_API_URL</code> to point to this API.<br>
+        Key flows: <strong>getAggregateCharmBalances</strong> (calls <code>/wallet/charms/{address}</code> per address),
+        <strong>getAggregateUtxos</strong> (calls <code>/wallet/utxos/{address}</code>),
+        <strong>getAggregateOrdersByMaker</strong> (calls <code>/dex/orders/by-maker/{maker}</code>).
+      </div>
+
+      <p style="color:var(--text-muted);font-size:0.85rem;margin-top:1rem;">
+        Cast reuses the <strong>Wallet</strong> and <strong>DEX Orders</strong> endpoints. See those sections for details.
+      </p>
+    </section>
+
+    <!-- ==================== DEX ORDERS ==================== -->
+    <section id="dex">
+      <h2>DEX Order Endpoints <span class="badge badge-dex">DEX</span></h2>
+      <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1.25rem;">
+        Order book and position management for the Charms Cast DEX.
+      </p>
+
+      <!-- GET /dex/orders/open -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/dex/orders/open</span>
+          <span class="desc">All open DEX orders</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Query Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>asset</code></td><td class="type">string</td><td class="optional">optional</td><td>Filter by token app ID</td></tr>
+            <tr><td><code>side</code></td><td class="type">string</td><td class="optional">optional</td><td><code>ask</code> or <code>bid</code></td></tr>
+            <tr><td><code>network</code></td><td class="type">string</td><td class="optional">optional</td><td><code>mainnet</code> or <code>testnet4</code></td></tr>
+          </table>
+          <p class="label">Response</p>
+<pre><code>{
+  <span class="key">"total"</span>: <span class="num">42</span>,
+  <span class="key">"orders"</span>: [
+    {
+      <span class="key">"order_id"</span>: <span class="str">"txid:vout"</span>,
+      <span class="key">"txid"</span>: <span class="str">"abc123..."</span>,
+      <span class="key">"vout"</span>: <span class="num">0</span>,
+      <span class="key">"block_height"</span>: <span class="num">210000</span>,
+      <span class="key">"platform"</span>: <span class="str">"scrolls"</span>,
+      <span class="key">"maker"</span>: <span class="str">"bc1q..."</span>,
+      <span class="key">"side"</span>: <span class="str">"ask"</span>,
+      <span class="key">"exec_type"</span>: <span class="str">"limit"</span>,
+      <span class="key">"price_num"</span>: <span class="num">100</span>,
+      <span class="key">"price_den"</span>: <span class="num">100000000</span>,
+      <span class="key">"price_per_token"</span>: <span class="num">100.0</span>,
+      <span class="key">"amount"</span>: <span class="num">50000</span>,
+      <span class="key">"quantity"</span>: <span class="num">500</span>,
+      <span class="key">"filled_amount"</span>: <span class="num">0</span>,
+      <span class="key">"filled_quantity"</span>: <span class="num">0</span>,
+      <span class="key">"asset_app_id"</span>: <span class="str">"t/abc.../vk"</span>,
+      <span class="key">"scrolls_address"</span>: <span class="str">"bc1q..."</span>,
+      <span class="key">"status"</span>: <span class="str">"open"</span>,
+      <span class="key">"confirmed"</span>: <span class="bool">true</span>,
+      <span class="key">"parent_order_id"</span>: <span class="null">null</span>,
+      <span class="key">"created_at"</span>: <span class="str">"2025-01-15 10:30:00"</span>,
+      <span class="key">"network"</span>: <span class="str">"mainnet"</span>
+    }
+  ]
+}</code></pre>
+        </div>
+      </div>
+
+      <!-- GET /dex/orders/{order_id} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/dex/orders/<span class="path-param">{order_id}</span></span>
+          <span class="desc">Single order by ID</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Path Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>order_id</code></td><td class="type">string</td><td class="required">required</td><td>Order ID (<code>txid:vout</code>)</td></tr>
+          </table>
+          <p class="label">Response</p>
+          <pre><code><span class="comment">// Single order object (same shape as above) or null</span></code></pre>
+        </div>
+      </div>
+
+      <!-- GET /dex/orders/by-asset/{asset_app_id} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/dex/orders/by-asset/<span class="path-param">{asset_app_id}</span></span>
+          <span class="desc">All orders for an asset</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Response</p>
+          <pre><code><span class="comment">// Same shape as /dex/orders/open (all statuses)</span></code></pre>
+        </div>
+      </div>
+
+      <!-- GET /dex/orders/by-maker/{maker} -->
+      <div class="endpoint">
+        <div class="endpoint-header" onclick="this.parentElement.classList.toggle('open')">
+          <span class="method method-get">GET</span>
+          <span class="path">/dex/orders/by-maker/<span class="path-param">{maker}</span></span>
+          <span class="desc">Orders by maker address</span>
+          <span class="chevron">&#9654;</span>
+        </div>
+        <div class="endpoint-body">
+          <p class="label">Query Parameters</p>
+          <table class="params-table">
+            <tr><th>Name</th><th>Type</th><th></th><th>Description</th></tr>
+            <tr><td><code>status</code></td><td class="type">string</td><td class="optional">optional</td><td><code>open</code>, <code>filled</code>, <code>cancelled</code></td></tr>
+          </table>
+          <p class="label">Response</p>
+          <pre><code><span class="comment">// Same shape as /dex/orders/open</span></code></pre>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Charms Explorer API &mdash; Internal Documentation &mdash; Not for public distribution
+    </footer>
+  </div>
+</body>
+</html>

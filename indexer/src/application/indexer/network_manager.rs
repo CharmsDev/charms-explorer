@@ -11,7 +11,7 @@ use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
 use crate::infrastructure::persistence::repositories::{
     AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository, SpellRepository,
-    StatsHoldersRepository, SummaryRepository, TransactionRepository,
+    StatsHoldersRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -45,6 +45,7 @@ impl NetworkManager {
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
+        utxo_repository: UtxoRepository,
     ) -> Result<(), BlockProcessorError> {
         // Initialize Bitcoin processors (synchronous flow, no queue)
         if self.config.indexer.enable_bitcoin_testnet4 {
@@ -58,6 +59,7 @@ impl NetworkManager {
                 transaction_repository.clone(),
                 summary_repository.clone(),
                 block_status_repository.clone(),
+                utxo_repository.clone(),
             )
             .await?;
         }
@@ -73,6 +75,7 @@ impl NetworkManager {
                 transaction_repository.clone(),
                 summary_repository.clone(),
                 block_status_repository.clone(),
+                utxo_repository.clone(),
             )
             .await?;
         }
@@ -94,6 +97,7 @@ impl NetworkManager {
         transaction_repository: TransactionRepository,
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
+        utxo_repository: UtxoRepository,
     ) -> Result<(), BlockProcessorError> {
         let bitcoin_config = match self.config.get_bitcoin_config(network) {
             Some(config) => config,
@@ -150,6 +154,7 @@ impl NetworkManager {
             transaction_repository,
             summary_repository,
             block_status_repository,
+            utxo_repository,
             self.config.clone(),
             bitcoin_config.genesis_block_height,
         );

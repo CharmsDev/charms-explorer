@@ -56,7 +56,7 @@ CREATE TABLE IF NOT EXISTS assets (
     symbol VARCHAR,
     description TEXT,
     image_url VARCHAR,
-    total_supply NUMERIC(30,0),
+    total_supply NUMERIC(30, 0),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS likes (
     charm_id VARCHAR NOT NULL,
     user_id VARCHAR NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(charm_id, user_id)
+    UNIQUE (charm_id, user_id)
 );
 
 -- Create summary table for optimized stats queries
@@ -100,32 +100,47 @@ CREATE TABLE IF NOT EXISTS seaql_migrations (
 
 -- Create indexes for bookmark table
 CREATE INDEX IF NOT EXISTS bookmark_height ON bookmark (height);
+
 CREATE INDEX IF NOT EXISTS bookmark_blockchain_network ON bookmark (blockchain, network);
+
 CREATE INDEX IF NOT EXISTS idx_bookmark_network_height ON bookmark (network, height);
+
 CREATE INDEX IF NOT EXISTS idx_bookmark_network_status ON bookmark (network, status, height);
 
 -- Create indexes for charms table
 CREATE INDEX IF NOT EXISTS charms_block_height ON charms (block_height);
+
 CREATE INDEX IF NOT EXISTS charms_asset_type ON charms (asset_type);
+
 CREATE INDEX IF NOT EXISTS charms_charmid ON charms (charmid);
+
 CREATE INDEX IF NOT EXISTS charms_blockchain_network ON charms (blockchain, network);
+
 CREATE INDEX IF NOT EXISTS idx_charms_network_block_height ON charms (network, block_height);
 
 -- Create indexes for transactions table
 CREATE INDEX IF NOT EXISTS transactions_block_height ON transactions (block_height);
+
 CREATE INDEX IF NOT EXISTS transactions_blockchain_network ON transactions (blockchain, network);
+
 CREATE INDEX IF NOT EXISTS idx_transactions_network_updated ON transactions (network, updated_at);
 
 -- Create indexes for assets table (from migration m20250916_000001_create_assets_table)
 CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_app_id ON assets (app_id);
+
 CREATE INDEX IF NOT EXISTS idx_assets_utxo ON assets (txid, vout_index);
+
 CREATE INDEX IF NOT EXISTS idx_assets_charm_id ON assets (charm_id);
+
 CREATE INDEX IF NOT EXISTS idx_assets_blockchain_network ON assets (blockchain, network);
+
 CREATE INDEX IF NOT EXISTS idx_assets_block_height ON assets (block_height);
+
 CREATE INDEX IF NOT EXISTS idx_assets_asset_type ON assets (asset_type);
 
 -- Create indexes for likes table (from migration m20250619_000001_create_likes_table)
 CREATE INDEX IF NOT EXISTS idx_likes_charm_id ON likes (charm_id);
+
 CREATE INDEX IF NOT EXISTS idx_likes_user_id ON likes (user_id);
 
 -- Create unique index for summary table
@@ -162,10 +177,40 @@ VALUES (
     )
 ON CONFLICT (network) DO NOTHING;
 
+-- Create address_utxos table (wallet UTXO index by address)
+CREATE TABLE IF NOT EXISTS address_utxos (
+    txid VARCHAR(64) NOT NULL,
+    vout INTEGER NOT NULL,
+    network VARCHAR(10) NOT NULL DEFAULT 'mainnet',
+    address VARCHAR(62) NOT NULL,
+    value BIGINT NOT NULL,
+    script_pubkey VARCHAR(140) NOT NULL DEFAULT '',
+    block_height INTEGER NOT NULL,
+    PRIMARY KEY (txid, vout, network)
+);
+
+-- Index for wallet lookups
+CREATE INDEX IF NOT EXISTS idx_address_utxos_address ON address_utxos (address, network);
+
+-- Index for block-level operations (reindex/rollback)
+CREATE INDEX IF NOT EXISTS idx_address_utxos_block ON address_utxos (block_height, network);
+
 -- Mark all migrations as applied
-INSERT INTO seaql_migrations (version) VALUES 
-    ('m20250617_000001_create_complete_schema'),
-    ('m20250618_000001_create_summary_table'),
-    ('m20250619_000001_create_likes_table'),
-    ('m20250916_000001_create_assets_table')
+INSERT INTO
+    seaql_migrations (version)
+VALUES (
+        'm20250617_000001_create_complete_schema'
+    ),
+    (
+        'm20250618_000001_create_summary_table'
+    ),
+    (
+        'm20250619_000001_create_likes_table'
+    ),
+    (
+        'm20250916_000001_create_assets_table'
+    ),
+    (
+        'm20260218_000001_create_address_utxos_table'
+    )
 ON CONFLICT (version) DO NOTHING;
