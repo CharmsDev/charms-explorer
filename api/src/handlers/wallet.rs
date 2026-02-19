@@ -149,7 +149,16 @@ pub async fn get_wallet_balance(
     };
 
     match result {
-        Ok(balance) => Ok(Json(serde_json::json!(balance))),
+        Ok(balance) => {
+            let total = balance.confirmed as i64 + balance.unconfirmed;
+            Ok(Json(serde_json::json!({
+                "address": balance.address,
+                "confirmed": balance.confirmed,
+                "unconfirmed": balance.unconfirmed,
+                "total": total,
+                "utxo_count": balance.utxo_count,
+            })))
+        }
         Err(e) => {
             tracing::error!("Wallet: failed to get balance for {}: {}", address, e);
             Err(ExplorerError::InternalError(e))
@@ -212,6 +221,7 @@ pub async fn get_wallet_fee_estimate(
 
 /// GET /wallet/charms/{address}
 /// Returns confirmed + unconfirmed charm balances from the indexed DB (instant)
+/// Response shape matches Cast's explorerApiProvider.getAggregateCharmBalances()
 pub async fn get_wallet_charm_balances(
     State(state): State<AppState>,
     Path(address): Path<String>,
@@ -219,27 +229,129 @@ pub async fn get_wallet_charm_balances(
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let network = params.network.as_str();
 
-    match state
+    // 1. Get all unspent charms for this address
+    let charms = match state
         .repositories
         .charm
-        .get_charm_balances_by_address(&address, network)
+        .get_unspent_charms_by_address(&address, network)
         .await
     {
-        Ok(balances) => Ok(Json(serde_json::json!({
+        Ok(c) => c,
+        Err(e) => {
+            tracing::error!("Wallet: failed to get charms for {}: {:?}", address, e);
+            return Err(ExplorerError::InternalError(format!("{:?}", e)));
+        }
+    };
+
+    if charms.is_empty() {
+        return Ok(Json(serde_json::json!({
             "address": address,
             "network": network,
-            "balances": balances,
-            "count": balances.len(),
-        }))),
-        Err(e) => {
-            tracing::error!(
-                "Wallet: failed to get charm balances for {}: {:?}",
-                address,
-                e
-            );
-            Err(ExplorerError::InternalError(format!("{:?}", e)))
-        }
+            "balances": [],
+            "count": 0,
+        })));
     }
+
+    // 2. Get sibling app_ids per (txid, vout) — single efficient SQL query
+    let utxo_app_ids = state
+        .repositories
+        .charm
+        .get_sibling_app_ids_for_address(&address, network)
+        .await
+        .unwrap_or_default();
+
+    // 3. Look up BTC values from address_utxos
+    let btc_utxos = state
+        .repositories
+        .utxo
+        .get_by_address(&address, network)
+        .await
+        .unwrap_or_default();
+    let utxo_values: std::collections::HashMap<(String, i32), i64> = btc_utxos
+        .iter()
+        .map(|u| ((u.txid.clone(), u.vout), u.value))
+        .collect();
+
+    // 5. Look up symbols from assets table
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let assets = state
+        .repositories
+        .asset_repository
+        .find_by_app_ids(app_ids.clone())
+        .await
+        .unwrap_or_default();
+    let symbol_map: std::collections::HashMap<String, String> = assets
+        .into_iter()
+        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
+        .collect();
+
+    // 6. Group charms by app_id and build Cast-compatible response
+    let mut balance_map: std::collections::HashMap<
+        String,
+        (String, String, i64, i64, Vec<serde_json::Value>),
+    > = std::collections::HashMap::new();
+    // key -> (asset_type, symbol, confirmed_total, unconfirmed_total, utxos_json)
+
+    for charm in &charms {
+        let confirmed = charm.block_height > 0;
+        let key = (charm.txid.clone(), charm.vout);
+        let all_app_ids = utxo_app_ids
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| vec![charm.app_id.clone()]);
+        let has_order_charm = all_app_ids.iter().any(|id| id.starts_with("b/"));
+        let btc_value = utxo_values.get(&key).copied().unwrap_or(546);
+        let symbol = symbol_map.get(&charm.app_id).cloned().unwrap_or_default();
+
+        let utxo_json = serde_json::json!({
+            "txid": charm.txid,
+            "vout": charm.vout,
+            "value": btc_value,
+            "address": address,
+            "appId": charm.app_id,
+            "amount": charm.amount,
+            "confirmed": confirmed,
+            "blockHeight": charm.block_height,
+            "hasOrderCharm": has_order_charm,
+            "allCharmAppIds": all_app_ids,
+        });
+
+        let entry = balance_map
+            .entry(charm.app_id.clone())
+            .or_insert_with(|| (charm.asset_type.clone(), symbol.clone(), 0, 0, Vec::new()));
+
+        if confirmed {
+            entry.2 += charm.amount;
+        } else {
+            entry.3 += charm.amount;
+        }
+        entry.4.push(utxo_json);
+    }
+
+    // 7. Build final balances array
+    let balances: Vec<serde_json::Value> = balance_map
+        .into_iter()
+        .map(
+            |(app_id, (asset_type, symbol, confirmed, unconfirmed, utxos))| {
+                serde_json::json!({
+                    "appId": app_id,
+                    "assetType": asset_type,
+                    "symbol": symbol,
+                    "confirmed": confirmed,
+                    "unconfirmed": unconfirmed,
+                    "total": confirmed + unconfirmed,
+                    "utxos": utxos,
+                })
+            },
+        )
+        .collect();
+
+    Ok(Json(serde_json::json!({
+        "address": address,
+        "network": network,
+        "balances": balances,
+        "count": balances.len(),
+    })))
 }
 
 /// GET /wallet/tip

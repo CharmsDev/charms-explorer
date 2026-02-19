@@ -2,8 +2,8 @@
 
 // API configuration and endpoints
 
-// Base API URL
-export const API_BASE_URL = process.env.NEXT_PUBLIC_CHARMS_API_URL || 'http://localhost:8000';
+// Base API URL (v1 — versioned API)
+export const API_BASE_URL = process.env.NEXT_PUBLIC_CHARMS_API_URL || 'http://localhost:8000/v1';
 
 // API Endpoints
 export const ENDPOINTS = {

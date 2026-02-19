@@ -240,6 +240,64 @@ impl CharmRepository {
             .collect())
     }
 
+    /// Get all unspent charms for an address (individual rows, not aggregated)
+    pub async fn get_unspent_charms_by_address(
+        &self,
+        address: &str,
+        network: &str,
+    ) -> Result<Vec<charms::Model>, DbError> {
+        charms::Entity::find()
+            .filter(charms::Column::Address.eq(address))
+            .filter(charms::Column::Network.eq(network))
+            .filter(charms::Column::Spent.eq(false))
+            .order_by_desc(charms::Column::BlockHeight)
+            .all(&self.conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    /// Get sibling charm app_ids for UTXOs owned by an address
+    /// Returns (txid, vout) -> Vec<app_id> for all charms sharing those UTXOs
+    /// Uses a single efficient SQL query with a subselect
+    pub async fn get_sibling_app_ids_for_address(
+        &self,
+        address: &str,
+        network: &str,
+    ) -> Result<std::collections::HashMap<(String, i32), Vec<String>>, DbError> {
+        use sea_orm::{DbBackend, FromQueryResult, Statement};
+
+        #[derive(FromQueryResult)]
+        struct Row {
+            txid: String,
+            vout: i32,
+            app_id: String,
+        }
+
+        // Find all charms that share a (txid, vout) with unspent charms owned by this address
+        let rows = Row::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"
+            SELECT c2.txid, c2.vout, c2.app_id
+            FROM charms c2
+            WHERE (c2.txid, c2.vout) IN (
+                SELECT txid, vout FROM charms
+                WHERE address = $1 AND network = $2 AND spent = false
+            )
+            "#,
+            [address.into(), network.into()],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        let mut map: std::collections::HashMap<(String, i32), Vec<String>> =
+            std::collections::HashMap::new();
+        for r in rows {
+            map.entry((r.txid, r.vout)).or_default().push(r.app_id);
+        }
+        Ok(map)
+    }
+
     /// [RJJ-SUPPLY] Calculate circulating supply from unspent charms
     /// This is the single source of truth for token supply
     /// Returns SUM(amount) WHERE app_id LIKE 'prefix%' AND spent = false

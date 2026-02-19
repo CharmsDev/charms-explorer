@@ -112,12 +112,15 @@ async fn main() {
         .expose_headers([header::CONTENT_TYPE, header::CONTENT_LENGTH])
         .max_age(Duration::from_secs(3600));
 
-    // Set up API routes
-    let app = Router::new()
+    // ── API routes (single definition, mounted at /v1/ and / for backward compat) ──
+    let api_routes = Router::new()
+        // Infrastructure
         .route("/health", get(health_check))
         .route("/status", get(get_indexer_status))
         .route("/diagnose", get(diagnose_database))
         .route("/reset", post(reset_indexer))
+        // Charms
+        .route("/charms", get(get_charms))
         .route("/charms/count", get(get_charm_numbers))
         .route("/charms/count-by-type", get(get_charms_count_by_type))
         .route("/charms/by-type", get(get_charms_by_type))
@@ -126,7 +129,8 @@ async fn main() {
         .route("/charms/like", post(like_charm))
         .route("/charms/like", delete(unlike_charm))
         .route("/charms/{txid}", get(get_charm_by_txid))
-        .route("/charms", get(get_charms))
+        // Assets
+        .route("/assets", get(get_assets))
         .route("/assets/count", get(get_asset_counts))
         .route(
             "/assets/reference-nft/{hash}",
@@ -134,7 +138,7 @@ async fn main() {
         )
         .route("/assets/{app_id}/holders", get(get_asset_holders))
         .route("/assets/{asset_id}", get(get_asset_by_id))
-        .route("/assets", get(get_assets))
+        // DEX Orders
         .route("/dex/orders/open", get(get_open_orders))
         .route(
             "/dex/orders/by-asset/{asset_app_id}",
@@ -142,14 +146,19 @@ async fn main() {
         )
         .route("/dex/orders/by-maker/{maker}", get(get_orders_by_maker))
         .route("/dex/orders/{order_id}", get(get_order_by_id))
-        // Wallet endpoints [RJJ-WALLET]
+        // Wallet
         .route("/wallet/utxos/{address}", get(get_wallet_utxos))
         .route("/wallet/balance/{address}", get(get_wallet_balance))
         .route("/wallet/tx/{txid}", get(get_wallet_transaction))
         .route("/wallet/broadcast", post(broadcast_wallet_transaction))
         .route("/wallet/fee-estimate", get(get_wallet_fee_estimate))
         .route("/wallet/tip", get(get_wallet_chain_tip))
-        .route("/wallet/charms/{address}", get(get_wallet_charm_balances))
+        .route("/wallet/charms/{address}", get(get_wallet_charm_balances));
+
+    // Mount under /v1/ (canonical) and / (backward compat for Explorer webapp)
+    let app = Router::new()
+        .nest("/v1", api_routes.clone())
+        .merge(api_routes)
         .layer(cors)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);
