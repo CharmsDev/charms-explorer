@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { fetchOpenDexOrders } from '@/services/api/dex';
 import { useNetwork } from '@/context/NetworkContext';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 
 const CAST_APP_URL = process.env.NEXT_PUBLIC_CAST_APP_URL || 'https://cast.charms.dev';
 
@@ -53,6 +54,30 @@ export default function CastDexPage() {
             setLoading(false);
         }
     }, [getNetworkParam]);
+
+    // Silent refresh: fetch latest orders and prepend any new ones
+    const transactionsRef = useRef(transactions);
+    transactionsRef.current = transactions;
+
+    const silentRefresh = useCallback(async () => {
+        const networkParam = getNetworkParam();
+        const result = await fetchOpenDexOrders(networkParam);
+        const freshOrders = result?.orders || [];
+        if (freshOrders.length === 0) return;
+
+        // Build a Set of existing order keys for fast lookup
+        const existingKeys = new Set(
+            transactionsRef.current.map(o => `${o.txid}:${o.vout}`)
+        );
+        const newOrders = freshOrders.filter(o => !existingKeys.has(`${o.txid}:${o.vout}`));
+
+        if (newOrders.length > 0) {
+            // Prepend new orders at the top
+            setTransactions(prev => [...newOrders, ...prev]);
+        }
+    }, [getNetworkParam]);
+
+    useAutoRefresh(silentRefresh, { enabled: isHydrated && !loading });
 
     useEffect(() => {
         if (isHydrated) {

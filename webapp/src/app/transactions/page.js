@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { fetchAssets } from '@/services/apiServices';
 import { useNetwork } from '@/context/NetworkContext';
+import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 import { 
     classifyTransaction, 
     getTransactionLabel, 
@@ -36,6 +37,33 @@ export default function TransactionsPage() {
             setLoading(false);
         }
     }, [page, getNetworkParam]);
+
+    // Silent refresh: fetch page 1 and prepend any new transactions
+    const transactionsRef = useRef(transactions);
+    transactionsRef.current = transactions;
+
+    const silentRefresh = useCallback(async () => {
+        const networkParam = getNetworkParam();
+        const apiNetworkParam = networkParam === 'all' ? null : networkParam;
+        const result = await fetchAssets(1, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
+        const freshTxs = result.assets || [];
+        if (freshTxs.length === 0) return;
+
+        // Build a Set of existing txids for fast lookup
+        const existingKeys = new Set(
+            transactionsRef.current.map(tx => tx.txid)
+        );
+        const newTxs = freshTxs.filter(tx => !existingKeys.has(tx.txid));
+
+        if (newTxs.length > 0) {
+            // Prepend new transactions at the top; update total count
+            setTransactions(prev => [...newTxs, ...prev]);
+            setTotal(prev => prev + newTxs.length);
+        }
+    }, [getNetworkParam]);
+
+    // Only auto-refresh when viewing page 1 (newest first)
+    useAutoRefresh(silentRefresh, { enabled: isHydrated && !loading && page === 1 });
 
     useEffect(() => {
         if (isHydrated) {
