@@ -19,6 +19,19 @@ export const ENDPOINTS = {
     STATUS: `${API_BASE_URL}/status`,
     LIKE_CHARM: `${API_BASE_URL}/charms/like`,
 
+    // Wallet endpoints
+    // On-demand address monitoring: the first balance request for a new address
+    // seeds its BTC UTXOs from QuickNode and registers it in monitored_addresses.
+    // From that point on, the Indexer keeps the UTXO set up to date in real time.
+    // Charm-holding addresses are auto-registered by the Indexer during block processing.
+    WALLET_UTXOS: (address) => `${API_BASE_URL}/wallet/utxos/${address}`,
+    WALLET_BALANCE: (address) => `${API_BASE_URL}/wallet/balance/${address}`,
+    WALLET_CHARMS: (address) => `${API_BASE_URL}/wallet/charms/${address}`,
+    WALLET_TX: (txid) => `${API_BASE_URL}/wallet/tx/${txid}`,
+    WALLET_BROADCAST: `${API_BASE_URL}/wallet/broadcast`,
+    WALLET_FEE_ESTIMATE: `${API_BASE_URL}/wallet/fee-estimate`,
+    WALLET_TIP: `${API_BASE_URL}/wallet/tip`,
+
     // DEX endpoints
     DEX_OPEN_ORDERS: `${API_BASE_URL}/dex/orders/open`,
     DEX_ORDERS_BY_ASSET: (assetAppId) => `${API_BASE_URL}/dex/orders/by-asset/${encodeURIComponent(assetAppId)}`,

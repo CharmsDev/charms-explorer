@@ -65,6 +65,7 @@ async fn run_production_indexer(
             repositories.summary.clone(),
             repositories.block_status.clone(),
             repositories.utxo.clone(),
+            repositories.monitored_addresses.clone(),
         )
         .await
     {

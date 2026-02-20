@@ -11,7 +11,18 @@ pub struct UtxoRow {
     pub block_height: i32,
 }
 
-/// Repository for querying the address_utxos table (read-only from API side)
+/// A single UTXO to be inserted (used by on-demand seeding)
+pub struct UtxoInsert {
+    pub txid: String,
+    pub vout: i32,
+    pub address: String,
+    pub value: i64,
+    pub script_pubkey: String,
+    pub block_height: i32,
+    pub network: String,
+}
+
+/// Repository for the address_utxos table
 #[derive(Clone)]
 pub struct UtxoRepository {
     conn: DatabaseConnection,
@@ -42,12 +53,50 @@ impl UtxoRepository {
         Ok(rows)
     }
 
+    /// Insert a batch of UTXOs (used by on-demand seeding from QuickNode)
+    pub async fn insert_batch(&self, utxos: &[UtxoInsert]) -> Result<usize, String> {
+        if utxos.is_empty() {
+            return Ok(0);
+        }
+
+        let mut total = 0usize;
+        for chunk in utxos.chunks(500) {
+            let values: Vec<String> = chunk
+                .iter()
+                .map(|u| {
+                    format!(
+                        "('{}', {}, '{}', '{}', {}, '{}', {})",
+                        u.txid.replace('\'', "''"),
+                        u.vout,
+                        u.network.replace('\'', "''"),
+                        u.address.replace('\'', "''"),
+                        u.value,
+                        u.script_pubkey.replace('\'', "''"),
+                        u.block_height,
+                    )
+                })
+                .collect();
+
+            let sql = format!(
+                "INSERT INTO address_utxos (txid, vout, network, address, value, script_pubkey, block_height) \
+                 VALUES {} ON CONFLICT (txid, vout, network) DO NOTHING",
+                values.join(", ")
+            );
+
+            let result = self
+                .conn
+                .execute(Statement::from_string(DbBackend::Postgres, sql))
+                .await
+                .map_err(|e| format!("DB insert failed: {}", e))?;
+
+            total += result.rows_affected() as usize;
+        }
+
+        Ok(total)
+    }
+
     /// Get UTXO count for an address
-    pub async fn count_by_address(
-        &self,
-        address: &str,
-        network: &str,
-    ) -> Result<i64, String> {
+    pub async fn count_by_address(&self, address: &str, network: &str) -> Result<i64, String> {
         let sql = format!(
             "SELECT COUNT(*) as cnt FROM address_utxos WHERE address = '{}' AND network = '{}'",
             address.replace('\'', "''"),

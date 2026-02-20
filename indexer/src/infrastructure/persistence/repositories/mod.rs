@@ -3,6 +3,7 @@ pub mod asset_repository;
 pub mod block_status_repository;
 pub mod charm_repository;
 pub mod dex_orders_repository;
+pub mod monitored_addresses_repository;
 pub mod spell_repository;
 pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
 pub mod summary_repository;
@@ -13,6 +14,7 @@ pub use asset_repository::AssetRepository;
 pub use block_status_repository::BlockStatusRepository;
 pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository;
+pub use monitored_addresses_repository::MonitoredAddressesRepository;
 pub use spell_repository::SpellRepository;
 pub use stats_holders_repository::StatsHoldersRepository;
 pub use summary_repository::SummaryRepository;
@@ -42,6 +44,8 @@ pub struct Repositories {
     pub transaction: TransactionRepository,
     /// Repository for address UTXO index
     pub utxo: UtxoRepository,
+    /// Repository for monitored addresses (on-demand tracking)
+    pub monitored_addresses: MonitoredAddressesRepository,
 }
 
 impl Repositories {
@@ -59,6 +63,7 @@ impl Repositories {
         summary: SummaryRepository,
         transaction: TransactionRepository,
         utxo: UtxoRepository,
+        monitored_addresses: MonitoredAddressesRepository,
     ) -> Self {
         Self {
             asset,
@@ -70,6 +75,7 @@ impl Repositories {
             summary,
             transaction,
             utxo,
+            monitored_addresses,
         }
     }
 }

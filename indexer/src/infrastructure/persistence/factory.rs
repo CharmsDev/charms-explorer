@@ -2,9 +2,9 @@ use sea_orm::DatabaseConnection;
 
 use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository, Repositories,
-    SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository,
-    UtxoRepository,
+    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository,
+    MonitoredAddressesRepository, Repositories, SpellRepository, StatsHoldersRepository,
+    SummaryRepository, TransactionRepository, UtxoRepository,
 };
 
 /// Factory for creating repositories
@@ -27,7 +27,8 @@ impl RepositoryFactory {
             Self::create_stats_holders_repository(conn.clone()),
             Self::create_summary_repository(conn.clone()),
             Self::create_transaction_repository(conn.clone()),
-            Self::create_utxo_repository(conn),
+            Self::create_utxo_repository(conn.clone()),
+            Self::create_monitored_addresses_repository(conn),
         )
     }
 
@@ -77,5 +78,12 @@ impl RepositoryFactory {
     /// Create a utxo repository
     pub fn create_utxo_repository(conn: DatabaseConnection) -> UtxoRepository {
         UtxoRepository::new(conn)
+    }
+
+    /// Create a monitored_addresses repository
+    pub fn create_monitored_addresses_repository(
+        conn: DatabaseConnection,
+    ) -> MonitoredAddressesRepository {
+        MonitoredAddressesRepository::new(conn)
     }
 }

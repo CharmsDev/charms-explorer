@@ -195,6 +195,19 @@ CREATE INDEX IF NOT EXISTS idx_address_utxos_address ON address_utxos (address, 
 -- Index for block-level operations (reindex/rollback)
 CREATE INDEX IF NOT EXISTS idx_address_utxos_block ON address_utxos (block_height, network);
 
+-- Create monitored_addresses table (on-demand address monitoring)
+CREATE TABLE IF NOT EXISTS monitored_addresses (
+    address VARCHAR(62) NOT NULL,
+    network VARCHAR(10) NOT NULL DEFAULT 'mainnet',
+    source VARCHAR(20) NOT NULL DEFAULT 'api',
+    seeded_at TIMESTAMPTZ,
+    seed_height INTEGER,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (address, network)
+);
+
+CREATE INDEX IF NOT EXISTS idx_monitored_addresses_network ON monitored_addresses (network);
+
 -- Mark all migrations as applied
 INSERT INTO
     seaql_migrations (version)
@@ -212,5 +225,8 @@ VALUES (
     ),
     (
         'm20260218_000001_create_address_utxos_table'
+    ),
+    (
+        'm20260220_000001_create_monitored_addresses_table'
     )
 ON CONFLICT (version) DO NOTHING;

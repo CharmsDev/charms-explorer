@@ -165,18 +165,73 @@ const SECTIONS = [
 }`,
         note: 'Values in satoshis. Source: QuickNode (primary) → RPC (fallback).',
       },
+      // ─── Unified Balance Endpoint ──────────────────────────────────
+      // On-demand address monitoring:
+      // The first time a new address is queried, the system seeds its
+      // BTC UTXOs from an external API (QuickNode / Mempool) and
+      // registers it in the monitored_addresses table. From that point
+      // on, the Explorer Indexer keeps its UTXO set up-to-date in
+      // real time as new blocks arrive.
+      //
+      // Addresses that hold Charms are auto-registered by the Indexer
+      // during block processing, so they are always monitored. For
+      // addresses without Charms, monitoring starts on the first
+      // balance request — the initial seed provides a complete UTXO
+      // snapshot, and the Indexer maintains it from there.
       {
         method: 'GET',
         path: '/v1/wallet/balance/{address}',
-        desc: 'BTC balance for an address',
+        desc: 'Unified balance: BTC (available/locked) + Charm balances',
         response: `{
   "address": "bc1q...",
-  "confirmed": 150000,
-  "unconfirmed": 5000,
-  "total": 155000,
-  "utxo_count": 3
+  "network": "mainnet",
+  "monitored": true,
+  "btc": {
+    "confirmed": 150000,
+    "unconfirmed": 0,
+    "total": 150000,
+    "available": 100000,
+    "locked": 50000,
+    "utxos": [
+      {
+        "txid": "abc123...",
+        "vout": 0,
+        "value": 100000,
+        "blockHeight": 937396,
+        "hasCharms": false
+      },
+      {
+        "txid": "def456...",
+        "vout": 1,
+        "value": 50000,
+        "blockHeight": 937390,
+        "hasCharms": true
+      }
+    ]
+  },
+  "charms": {
+    "count": 1,
+    "balances": [
+      {
+        "appId": "t/abc123.../vk",
+        "assetType": "token",
+        "symbol": "BRO",
+        "total": 1000,
+        "utxos": [
+          {
+            "txid": "def456...",
+            "vout": 1,
+            "value": 50000,
+            "amount": 1000,
+            "confirmed": true,
+            "blockHeight": 937390
+          }
+        ]
+      }
+    ]
+  }
 }`,
-        note: 'All values in satoshis.',
+        note: 'All BTC values in satoshis. "available" = BTC in UTXOs without charms (spendable). "locked" = BTC in UTXOs that carry charms (not freely spendable). "monitored" = whether the address was already tracked; false on first request (seeded on the fly from QuickNode). Charm amounts are in token units.',
       },
       {
         method: 'GET',

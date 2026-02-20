@@ -1,5 +1,6 @@
 // Business logic service implementations
 
+pub mod address_monitor_service;
 pub mod asset_service;
 pub mod charm_service;
 pub mod dex_orders_service; // [RJJ-DEX]

@@ -16,7 +16,8 @@ use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::utxo_repository::UtxoInsert;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, SummaryRepository, TransactionRepository, UtxoRepository,
+    BlockStatusRepository, MonitoredAddressesRepository, SummaryRepository, TransactionRepository,
+    UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -35,6 +36,7 @@ pub struct BlockProcessor {
     summary_repository: SummaryRepository,
     block_status_repository: BlockStatusRepository,
     utxo_repository: UtxoRepository,
+    monitored_addresses_repository: MonitoredAddressesRepository,
     retry_handler: RetryHandler,
 }
 
@@ -46,6 +48,7 @@ impl BlockProcessor {
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
+        monitored_addresses_repository: MonitoredAddressesRepository,
     ) -> Self {
         Self {
             bitcoin_client,
@@ -54,6 +57,7 @@ impl BlockProcessor {
             summary_repository,
             block_status_repository,
             utxo_repository,
+            monitored_addresses_repository,
             retry_handler: RetryHandler::new(),
         }
     }
@@ -109,8 +113,13 @@ impl BlockProcessor {
         // STEP 5: Mark spent charms
         self.mark_spent_charms(&block, network_id).await?;
 
-        // STEP 5.5: Update address UTXO index
-        self.update_utxo_index(&block, height, network_id).await?;
+        // STEP 5.5a: Auto-register charm addresses for monitoring
+        self.register_charm_addresses(&charm_batch, network_id)
+            .await;
+
+        // STEP 5.5b: Update UTXO index (only for monitored addresses)
+        self.update_monitored_utxos(&block, height, network_id)
+            .await?;
 
         // STEP 6: Update summary statistics
         let summary_updater = super::SummaryUpdater::new(
@@ -198,6 +207,7 @@ impl BlockProcessor {
             .unwrap_or(height);
 
         let mut charm_count = 0;
+        let mut charm_addresses: Vec<String> = Vec::new();
 
         // Process each cached transaction - reprocess charms
         for tx in &cached_txs {
@@ -214,14 +224,40 @@ impl BlockProcessor {
                 .detect_and_process_charm_from_hex(&tx.txid, height, tx_hex, tx.ordinal as usize)
                 .await
             {
-                Ok(Some(_)) => {
+                Ok(Some(charm)) => {
                     charm_count += 1;
+                    if let Some(addr) = &charm.address {
+                        if !addr.is_empty() {
+                            charm_addresses.push(addr.clone());
+                        }
+                    }
                 }
                 Ok(None) => {}
                 Err(e) => {
                     logging::log_error(&format!(
                         "[{}] Error processing tx {} at height {}: {}",
                         network_id.name, tx.txid, height, e
+                    ));
+                }
+            }
+        }
+
+        // Auto-register charm addresses for monitoring (same as live path)
+        if !charm_addresses.is_empty() {
+            let unique: Vec<String> = charm_addresses
+                .into_iter()
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+            if let Ok(n) = self
+                .monitored_addresses_repository
+                .register_batch(&unique, &network_id.name, "indexer")
+                .await
+            {
+                if n > 0 {
+                    logging::log_info(&format!(
+                        "[{}] 📡 Reindex: registered {} new monitored addresses",
+                        network_id.name, n
                     ));
                 }
             }
@@ -472,23 +508,92 @@ impl BlockProcessor {
         Ok(())
     }
 
-    /// Update the address UTXO index for a block:
-    /// 1. Delete spent UTXOs (inputs)
-    /// 2. Insert new UTXOs (outputs with valid addresses)
-    async fn update_utxo_index(
+    /// Auto-register addresses from detected charms for monitoring.
+    /// Any address that holds a charm becomes a monitored address so that
+    /// the indexer tracks its BTC UTXOs in real time (see `update_monitored_utxos`).
+    ///
+    /// Plain BTC addresses (no charms) are NOT registered here — they enter
+    /// the system on-demand when the API receives the first balance request
+    /// (see `AddressMonitorService::ensure_monitored` on the API side).
+    async fn register_charm_addresses(
+        &self,
+        charm_batch: &[CharmBatchItem],
+        network_id: &NetworkId,
+    ) {
+        let addresses: Vec<String> = charm_batch
+            .iter()
+            .filter_map(|(_, _, _, _, _, _, _, address, _, _, _)| address.clone())
+            .filter(|addr| !addr.is_empty())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        if addresses.is_empty() {
+            return;
+        }
+
+        match self
+            .monitored_addresses_repository
+            .register_batch(&addresses, &network_id.name, "indexer")
+            .await
+        {
+            Ok(new_count) => {
+                if new_count > 0 {
+                    logging::log_info(&format!(
+                        "[{}] 📡 Registered {} new monitored addresses from charms",
+                        network_id.name, new_count
+                    ));
+                }
+            }
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] Failed to register charm addresses: {}",
+                    network_id.name, e
+                ));
+            }
+        }
+    }
+
+    /// Update UTXO index for monitored addresses only.
+    /// 1. Load monitored address set
+    /// 2. Delete spent UTXOs (DB handles no-ops for unmonitored addresses)
+    /// 3. Insert new UTXOs only for monitored addresses
+    async fn update_monitored_utxos(
         &self,
         block: &bitcoin::Block,
         height: u64,
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
         let network_str = &network_id.name;
+
+        // Load monitored addresses for this network
+        let monitored = match self
+            .monitored_addresses_repository
+            .load_set(network_str)
+            .await
+        {
+            Ok(set) => set,
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] Failed to load monitored addresses: {}, skipping UTXO index",
+                    network_str, e
+                ));
+                return Ok(());
+            }
+        };
+
+        if monitored.is_empty() {
+            return Ok(());
+        }
+
         let btc_network = match network_str.as_str() {
             "mainnet" => bitcoin::Network::Bitcoin,
             "testnet4" => bitcoin::Network::Testnet,
             _ => bitcoin::Network::Testnet,
         };
 
-        // 1. Collect spent UTXOs from all inputs
+        // 1. Collect spent UTXOs from inputs
+        // We send all spends to the DB — DELETE is a no-op for rows that don't exist
         let mut spent: Vec<(String, i32)> = Vec::new();
         for tx in &block.txdata {
             if tx.is_coin_base() {
@@ -504,28 +609,29 @@ impl BlockProcessor {
             }
         }
 
-        // 2. Collect new UTXOs from all outputs
+        // 2. Collect new UTXOs — only for monitored addresses
         let mut new_utxos: Vec<UtxoInsert> = Vec::new();
         for tx in &block.txdata {
             let txid = tx.txid().to_string();
             for (vout, output) in tx.output.iter().enumerate() {
-                // Skip unspendable outputs (OP_RETURN, etc.)
                 if output.script_pubkey.is_provably_unspendable() {
                     continue;
                 }
-                // Try to extract address from script_pubkey
                 if let Ok(address) =
                     bitcoin::Address::from_script(&output.script_pubkey, btc_network)
                 {
-                    new_utxos.push(UtxoInsert {
-                        txid: txid.clone(),
-                        vout: vout as i32,
-                        address: address.to_string(),
-                        value: output.value as i64,
-                        script_pubkey: format!("{:x}", output.script_pubkey),
-                        block_height: height as i32,
-                        network: network_str.clone(),
-                    });
+                    let addr_str = address.to_string();
+                    if monitored.contains(&addr_str) {
+                        new_utxos.push(UtxoInsert {
+                            txid: txid.clone(),
+                            vout: vout as i32,
+                            address: addr_str,
+                            value: output.value as i64,
+                            script_pubkey: format!("{:x}", output.script_pubkey),
+                            block_height: height as i32,
+                            network: network_str.clone(),
+                        });
+                    }
                 }
             }
         }
@@ -544,7 +650,7 @@ impl BlockProcessor {
             }
         }
 
-        // 4. Insert new UTXOs
+        // 4. Insert new UTXOs (only monitored)
         if !new_utxos.is_empty() {
             if let Err(e) = self.utxo_repository.insert_batch(&new_utxos).await {
                 logging::log_warning(&format!(

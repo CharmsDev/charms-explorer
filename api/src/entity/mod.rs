@@ -5,6 +5,7 @@ pub mod bookmark;
 pub mod charms;
 pub mod dex_orders; // [RJJ-DEX]
 pub mod likes;
+pub mod monitored_addresses;
 pub mod prelude;
 pub mod stats_holders; // [RJJ-STATS-HOLDERS]
 pub mod summary;

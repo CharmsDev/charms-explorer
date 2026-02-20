@@ -10,8 +10,9 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository, SpellRepository,
-    StatsHoldersRepository, SummaryRepository, TransactionRepository, UtxoRepository,
+    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository,
+    MonitoredAddressesRepository, SpellRepository, StatsHoldersRepository, SummaryRepository,
+    TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -46,6 +47,7 @@ impl NetworkManager {
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
+        monitored_addresses_repository: MonitoredAddressesRepository,
     ) -> Result<(), BlockProcessorError> {
         // Initialize Bitcoin processors (synchronous flow, no queue)
         if self.config.indexer.enable_bitcoin_testnet4 {
@@ -60,6 +62,7 @@ impl NetworkManager {
                 summary_repository.clone(),
                 block_status_repository.clone(),
                 utxo_repository.clone(),
+                monitored_addresses_repository.clone(),
             )
             .await?;
         }
@@ -76,6 +79,7 @@ impl NetworkManager {
                 summary_repository.clone(),
                 block_status_repository.clone(),
                 utxo_repository.clone(),
+                monitored_addresses_repository.clone(),
             )
             .await?;
         }
@@ -98,6 +102,7 @@ impl NetworkManager {
         summary_repository: SummaryRepository,
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
+        monitored_addresses_repository: MonitoredAddressesRepository,
     ) -> Result<(), BlockProcessorError> {
         let bitcoin_config = match self.config.get_bitcoin_config(network) {
             Some(config) => config,
@@ -155,6 +160,7 @@ impl NetworkManager {
             summary_repository,
             block_status_repository,
             utxo_repository,
+            monitored_addresses_repository,
             self.config.clone(),
             bitcoin_config.genesis_block_height,
         );
