@@ -347,13 +347,6 @@ const SECTIONS = [
         desc: 'Database diagnostics',
         response: '// Detailed database health and table stats',
       },
-      {
-        method: 'POST',
-        path: '/v1/reset',
-        desc: 'Reset indexer (admin)',
-        note: 'Destructive operation. Clears indexed data and restarts from genesis.',
-        noteColor: 'red',
-      },
     ],
   },
 ];

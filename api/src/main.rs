@@ -27,7 +27,7 @@ use handlers::{
     get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker,
     get_reference_nft_by_hash, get_wallet_balance, get_wallet_chain_tip, get_wallet_charm_balances,
     get_wallet_fee_estimate, get_wallet_transaction, get_wallet_utxos, health_check, like_charm,
-    reset_indexer, unlike_charm, AppState,
+    unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -118,7 +118,6 @@ async fn main() {
         .route("/health", get(health_check))
         .route("/status", get(get_indexer_status))
         .route("/diagnose", get(diagnose_database))
-        .route("/reset", post(reset_indexer))
         // Charms
         .route("/charms", get(get_charms))
         .route("/charms/count", get(get_charm_numbers))
