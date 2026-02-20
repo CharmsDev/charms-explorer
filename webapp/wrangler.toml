@@ -1,0 +1,18 @@
+# Cloudflare Pages configuration for Charms Explorer webapp
+# All public environment variables are defined here.
+# No secrets needed — all values are public (exposed in browser anyway).
+
+name = "charms-explorer"
+compatibility_date = "2024-09-23"
+pages_build_output_dir = ".next"
+
+[vars]
+# Explorer API (v1 — versioned)
+NEXT_PUBLIC_CHARMS_API_URL = "https://charms-explorer-api.fly.dev/v1"
+
+# QuickNode Bitcoin RPC (Mainnet) — used as failover for tx lookups
+NEXT_PUBLIC_QUICKNODE_BITCOIN_MAINNET_URL = "https://holy-bold-frog.btc.quiknode.pro/d4ec24b63d4947ad883dd79a664d8059b3a8575e/"
+NEXT_PUBLIC_QUICKNODE_BITCOIN_MAINNET_API_KEY = "d4ec24b63d4947ad883dd79a664d8059b3a8575e"
+
+# Node version for build
+NODE_VERSION = "23.11.0"

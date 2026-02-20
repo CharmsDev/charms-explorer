@@ -17,7 +17,6 @@ export const ENDPOINTS = {
     ASSET_HOLDERS: (appId) => `${API_BASE_URL}/assets/${encodeURIComponent(appId)}/holders`, // [RJJ-STATS-HOLDERS]
     REFERENCE_NFT: (hash) => `${API_BASE_URL}/assets/reference-nft/${encodeURIComponent(hash)}`, // [RJJ-REF-NFT]
     STATUS: `${API_BASE_URL}/status`,
-    RESET: `${API_BASE_URL}/reset`,
     LIKE_CHARM: `${API_BASE_URL}/charms/like`,
 
     // DEX endpoints

@@ -18,5 +18,4 @@ export {
 
 export {
     fetchIndexerStatus,
-    resetIndexer
 } from './api/status';
