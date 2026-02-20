@@ -4,7 +4,7 @@
 
 name = "charms-explorer"
 compatibility_date = "2024-09-23"
-pages_build_output_dir = ".next"
+pages_build_output_dir = ".vercel/output/static"
 
 [vars]
 # Explorer API (v1 — versioned)
