@@ -72,7 +72,7 @@ export default function CastDexPage() {
         const newOrders = freshOrders.filter(o => !existingKeys.has(`${o.txid}:${o.vout}`));
 
         if (newOrders.length > 0) {
-            // Prepend new orders at the top
+            console.log(`[Cast DEX] +${newOrders.length} new order(s)`);
             setTransactions(prev => [...newOrders, ...prev]);
         }
     }, [getNetworkParam]);

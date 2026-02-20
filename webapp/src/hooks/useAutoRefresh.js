@@ -22,17 +22,19 @@ import { useEffect, useRef, useCallback } from 'react';
  */
 export function useAutoRefresh(fetchFn, { intervalMs = 10_000, enabled = true } = {}) {
   const fetchRef = useRef(fetchFn);
+  const enabledRef = useRef(enabled);
   const inFlightRef = useRef(false);
 
-  // Always keep the latest fetchFn without restarting the timer
-  useEffect(() => {
-    fetchRef.current = fetchFn;
-  }, [fetchFn]);
+  // Always keep the latest fetchFn and enabled flag without restarting the timer
+  useEffect(() => { fetchRef.current = fetchFn; }, [fetchFn]);
+  useEffect(() => { enabledRef.current = enabled; }, [enabled]);
 
   const tick = useCallback(async () => {
-    if (inFlightRef.current) return; // skip if previous call still running
+    if (!enabledRef.current) return;   // respect enabled flag
+    if (inFlightRef.current) return;   // skip if previous call still running
     inFlightRef.current = true;
     try {
+      console.log('[useAutoRefresh] polling…');
       await fetchRef.current();
     } catch {
       // Silently ignore — the page already shows data from the last good fetch
@@ -41,10 +43,11 @@ export function useAutoRefresh(fetchFn, { intervalMs = 10_000, enabled = true } 
     }
   }, []);
 
+  // Start a single interval on mount, clean up on unmount.
+  // The interval itself checks enabledRef so it doesn't need to restart
+  // when the enabled flag toggles.
   useEffect(() => {
-    if (!enabled) return;
-
     const id = setInterval(tick, intervalMs);
     return () => clearInterval(id);
-  }, [tick, intervalMs, enabled]);
+  }, [tick, intervalMs]);
 }

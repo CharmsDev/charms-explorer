@@ -56,7 +56,7 @@ export default function TransactionsPage() {
         const newTxs = freshTxs.filter(tx => !existingKeys.has(tx.txid));
 
         if (newTxs.length > 0) {
-            // Prepend new transactions at the top; update total count
+            console.log(`[Transactions] +${newTxs.length} new transaction(s)`);
             setTransactions(prev => [...newTxs, ...prev]);
             setTotal(prev => prev + newTxs.length);
         }
