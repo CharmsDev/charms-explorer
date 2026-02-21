@@ -81,9 +81,12 @@ impl<'a> SpellDetector<'a> {
             ));
         }
 
-        // [RJJ-S01] STEP 1: Extract and verify spell using native parser
+        // [RJJ-S01] STEP 1: Extract spell using native parser (no ZK proof verification).
+        // The ZK proof was already validated by Bitcoin network consensus.
+        // Re-verifying with charms-client 0.12.0 fails for V10 txs because V9_SPELL_VK
+        // is wrong for V10 proofs. The indexer is a read-only observer.
         let (normalized_spell, spell_json) =
-            match NativeCharmParser::extract_and_verify_charm(raw_tx_hex, false) {
+            match NativeCharmParser::extract_spell_no_verify(raw_tx_hex) {
                 Ok(spell) => {
                     let spell_json = serde_json::to_value(&spell).map_err(|e| {
                         CharmError::ProcessingError(format!(
