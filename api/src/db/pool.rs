@@ -16,11 +16,11 @@ impl DbPool {
     /// Creates a new database connection pool from API configuration
     pub async fn new(config: &ApiConfig) -> Result<Self, DbError> {
         // Connection pool settings tuned for PgBouncer on Fly.io
-        let max_connections = 10;
-        let min_connections = 1;
+        let max_connections = 25;
+        let min_connections = 2;
         let connect_timeout = 10;
         let idle_timeout = 30; // Recycle idle connections before PgBouncer kills them
-        let acquire_timeout = 5; // Fail fast instead of waiting 10s
+        let acquire_timeout = 10; // Allow more time for parallel wallet requests
         let max_lifetime = 300; // Force reconnect every 5 min
         let debug_mode = false;
 
