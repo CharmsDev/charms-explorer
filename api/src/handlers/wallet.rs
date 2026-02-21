@@ -484,6 +484,193 @@ pub async fn get_wallet_charm_balances(
     })))
 }
 
+/// POST /wallet/charms/batch
+/// Resolves charm balances for multiple addresses in a single request.
+/// Body: { "addresses": ["bc1p...", "bc1p..."], "network": "mainnet" }
+/// Response: { "results": { "bc1p...": { balances, count }, ... } }
+///
+/// This is the high-volume endpoint: 100 users × 10 addresses = 100 requests instead of 1000.
+/// All addresses are resolved concurrently using tokio::join_all with a shared DB pool.
+pub async fn get_wallet_charm_balances_batch(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = body
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mainnet")
+        .to_string();
+
+    let addresses: Vec<String> = body
+        .get("addresses")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .take(50) // hard cap: max 50 addresses per batch
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if addresses.is_empty() {
+        return Ok(Json(serde_json::json!({ "results": {} })));
+    }
+
+    // Resolve all addresses concurrently — each gets its own async task sharing the pool
+    let tasks: Vec<_> = addresses
+        .iter()
+        .map(|addr| {
+            let state = state.clone();
+            let address = addr.clone();
+            let network = network.clone();
+            tokio::spawn(async move {
+                let result = resolve_charm_balances_for_address(&state, &address, &network).await;
+                (address, result)
+            })
+        })
+        .collect();
+
+    let mut results = serde_json::Map::new();
+    for task in tasks {
+        match task.await {
+            Ok((addr, Ok(value))) => {
+                results.insert(addr, value);
+            }
+            Ok((addr, Err(e))) => {
+                tracing::warn!("Batch: failed for {}: {:?}", addr, e);
+                results.insert(
+                    addr,
+                    serde_json::json!({ "balances": [], "count": 0, "error": true }),
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Batch: task join error: {:?}", e);
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "results": results })))
+}
+
+/// Core logic for resolving charm balances for a single address.
+/// Extracted so it can be called from both the single and batch endpoints.
+async fn resolve_charm_balances_for_address(
+    state: &AppState,
+    address: &str,
+    network: &str,
+) -> Result<serde_json::Value, crate::error::ExplorerError> {
+    let charms = state
+        .repositories
+        .charm
+        .get_unspent_charms_by_address(address, network)
+        .await
+        .map_err(|e| crate::error::ExplorerError::InternalError(format!("{:?}", e)))?;
+
+    if charms.is_empty() {
+        return Ok(serde_json::json!({
+            "address": address,
+            "network": network,
+            "balances": [],
+            "count": 0,
+        }));
+    }
+
+    let utxo_app_ids = state
+        .repositories
+        .charm
+        .get_sibling_app_ids_for_address(address, network)
+        .await
+        .unwrap_or_default();
+
+    let btc_utxos = state
+        .repositories
+        .utxo
+        .get_by_address(address, network)
+        .await
+        .unwrap_or_default();
+    let utxo_values: std::collections::HashMap<(String, i32), i64> = btc_utxos
+        .iter()
+        .map(|u| ((u.txid.clone(), u.vout), u.value))
+        .collect();
+
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let assets = state
+        .repositories
+        .asset_repository
+        .find_by_app_ids(app_ids)
+        .await
+        .unwrap_or_default();
+    let symbol_map: std::collections::HashMap<String, String> = assets
+        .into_iter()
+        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
+        .collect();
+
+    let mut balance_map: std::collections::HashMap<
+        String,
+        (String, String, i64, i64, Vec<serde_json::Value>),
+    > = std::collections::HashMap::new();
+
+    for charm in &charms {
+        let confirmed = charm.block_height.map_or(false, |h| h > 0);
+        let key = (charm.txid.clone(), charm.vout);
+        let all_app_ids = utxo_app_ids
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| vec![charm.app_id.clone()]);
+        let has_order_charm = all_app_ids.iter().any(|id| id.starts_with("b/"));
+        let btc_value = utxo_values.get(&key).copied().unwrap_or(546);
+        let symbol = symbol_map.get(&charm.app_id).cloned().unwrap_or_default();
+
+        let utxo_json = serde_json::json!({
+            "txid": charm.txid,
+            "vout": charm.vout,
+            "value": btc_value,
+            "address": address,
+            "appId": charm.app_id,
+            "amount": charm.amount,
+            "confirmed": confirmed,
+            "blockHeight": charm.block_height,
+            "hasOrderCharm": has_order_charm,
+            "allCharmAppIds": all_app_ids,
+        });
+
+        let entry = balance_map
+            .entry(charm.app_id.clone())
+            .or_insert_with(|| (charm.asset_type.clone(), symbol.clone(), 0, 0, Vec::new()));
+
+        if confirmed {
+            entry.2 += charm.amount;
+        } else {
+            entry.3 += charm.amount;
+        }
+        entry.4.push(utxo_json);
+    }
+
+    let balances: Vec<serde_json::Value> = balance_map
+        .into_iter()
+        .map(
+            |(app_id, (asset_type, symbol, confirmed, unconfirmed, utxos))| {
+                serde_json::json!({
+                    "appId": app_id,
+                    "assetType": asset_type,
+                    "symbol": symbol,
+                    "confirmed": confirmed,
+                    "unconfirmed": unconfirmed,
+                    "total": confirmed + unconfirmed,
+                    "utxos": utxos,
+                })
+            },
+        )
+        .collect();
+
+    Ok(serde_json::json!({
+        "address": address,
+        "network": network,
+        "balances": balances,
+        "count": balances.len(),
+    }))
+}
+
 /// GET /wallet/tip
 pub async fn get_wallet_chain_tip(
     State(state): State<AppState>,

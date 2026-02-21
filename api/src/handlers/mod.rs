@@ -30,7 +30,8 @@ pub use stats_holders::get_asset_holders; // [RJJ-STATS-HOLDERS]
 pub use status::get_indexer_status;
 pub use wallet::{
     broadcast_wallet_transaction, get_wallet_balance, get_wallet_chain_tip,
-    get_wallet_charm_balances, get_wallet_fee_estimate, get_wallet_transaction, get_wallet_utxos,
+    get_wallet_charm_balances, get_wallet_charm_balances_batch, get_wallet_fee_estimate,
+    get_wallet_transaction, get_wallet_utxos,
 }; // [RJJ-WALLET]
 
 /// Application state containing repositories and configuration

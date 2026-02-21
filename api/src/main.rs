@@ -12,22 +12,23 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::routing::{delete, get, post, Router};
-use http::{header, Method};
+use axum::routing::{Router, delete, get, post};
+use http::{Method, header};
 use tower_http::cors::{Any, CorsLayer};
+use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
+    AppState, broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
     get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
     get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker,
     get_reference_nft_by_hash, get_wallet_balance, get_wallet_chain_tip, get_wallet_charm_balances,
-    get_wallet_fee_estimate, get_wallet_transaction, get_wallet_utxos, health_check, like_charm,
-    unlike_charm, AppState,
+    get_wallet_charm_balances_batch, get_wallet_fee_estimate, get_wallet_transaction,
+    get_wallet_utxos, health_check, like_charm, unlike_charm,
 };
 
 fn load_env() {
@@ -86,12 +87,23 @@ async fn main() {
 
     // Initialize application state with repositories and config
     let repositories = db_pool.repositories();
+    // HTTP client tuned for high-volume outbound calls (QuickNode, mempool.space)
+    // Connection pool: 100 idle per host, 30s idle timeout, 10s connect timeout
+    let http_client = reqwest::Client::builder()
+        .pool_max_idle_per_host(100)
+        .pool_idle_timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
+        .tcp_keepalive(Duration::from_secs(60))
+        .build()
+        .expect("Failed to build HTTP client");
+
     let app_state = AppState {
         repositories: Arc::new(repositories),
         config: config.clone(),
         scan_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-        quicknode_semaphore: Arc::new(tokio::sync::Semaphore::new(32)),
-        http_client: reqwest::Client::new(),
+        quicknode_semaphore: Arc::new(tokio::sync::Semaphore::new(64)),
+        http_client,
         rpc_mainnet,
         rpc_testnet4,
     };
@@ -152,20 +164,25 @@ async fn main() {
         .route("/wallet/broadcast", post(broadcast_wallet_transaction))
         .route("/wallet/fee-estimate", get(get_wallet_fee_estimate))
         .route("/wallet/tip", get(get_wallet_chain_tip))
-        .route("/wallet/charms/{address}", get(get_wallet_charm_balances));
+        .route("/wallet/charms/{address}", get(get_wallet_charm_balances))
+        .route(
+            "/wallet/charms/batch",
+            post(get_wallet_charm_balances_batch),
+        );
 
     // Mount under /v1/ (canonical) and / (backward compat for Explorer webapp)
     let app = Router::new()
         .nest("/v1", api_routes.clone())
         .merge(api_routes)
-        .layer(cors)
+        .layer(TimeoutLayer::new(Duration::from_secs(30)))
         .layer(TraceLayer::new_for_http())
+        .layer(cors)
         .with_state(app_state);
 
     // Parse server address from config
     let addr: SocketAddr = config.server_addr().parse().expect("Invalid address");
 
-    // Start HTTP server
+    // Start HTTP server with high-concurrency Tokio settings
     tracing::info!("Starting server on {}", addr);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
