@@ -71,18 +71,47 @@ impl CharmRepository {
     }
 
     /// Retrieves all charms paginated by network
+    /// NULLs FIRST so mempool charms (block_height=NULL) appear at the top
     pub async fn get_all_paginated_by_network(
         &self,
         pagination: &PaginationParams,
         network: &str,
     ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        let paginator = charms::Entity::find()
-            .filter(charms::Column::Network.eq(network))
-            .order_by_desc(charms::Column::BlockHeight)
-            .paginate(&self.conn, pagination.limit);
+        use sea_orm::{DbBackend, FromQueryResult, Statement};
 
-        let total = paginator.num_items().await?;
-        let charms = paginator.fetch_page(pagination.page - 1).await?;
+        #[derive(FromQueryResult)]
+        struct CountRow {
+            count: i64,
+        }
+
+        let count_row = CountRow::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT COUNT(*) AS count FROM charms WHERE network = $1",
+            [network.into()],
+        ))
+        .one(&self.conn)
+        .await
+        .map_err(|e| DbError::QueryError(e.to_string()))?;
+        let total = count_row.map(|r| r.count as u64).unwrap_or(0);
+
+        let offset = (pagination.page - 1) * pagination.limit;
+        let charms = charms::Model::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            r#"SELECT txid, vout, block_height, data, date_created, asset_type, blockchain,
+                      network, address, spent, app_id, amount, mempool_detected_at, tags, verified
+               FROM charms
+               WHERE network = $1
+               ORDER BY block_height DESC NULLS FIRST, date_created DESC
+               LIMIT $2 OFFSET $3"#,
+            [
+                network.into(),
+                (pagination.limit as i64).into(),
+                (offset as i64).into(),
+            ],
+        ))
+        .all(&self.conn)
+        .await
+        .map_err(|e| DbError::QueryError(e.to_string()))?;
 
         Ok((charms, total))
     }

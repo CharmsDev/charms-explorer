@@ -41,10 +41,13 @@ export const fetchAssets = async (page = 1, limit = 20, sort = 'newest', network
         const transformedCharms = transformCharmsArray(charms);
 
         const sortedCharms = transformedCharms.sort((a, b) => {
+            // Treat null block_height (mempool) as highest value so it sorts first (newest)
+            const aH = a.block_height ?? Infinity;
+            const bH = b.block_height ?? Infinity;
             if (sort === 'oldest') {
-                return a.block_height - b.block_height;
+                return aH - bH;
             } else {
-                return b.block_height - a.block_height;
+                return bH - aH;
             }
         });
 
