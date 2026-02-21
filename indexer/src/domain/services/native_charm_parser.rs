@@ -100,13 +100,37 @@ impl NativeCharmParser {
             for (app_index, charm_data) in normalized_charms.iter() {
                 // Get the app from the spell's app_public_inputs
                 if let Some((app, _)) = spell.app_public_inputs.iter().nth(*app_index as usize) {
+                    // For DEX orders: the charm data contains asset.token with the actual traded
+                    // token app_id. The app from app_public_inputs at this index is the DEX
+                    // operator (b/...), not the token. Prefer asset.token when present.
+                    let (app_id, asset_type) =
+                        if let Ok(json_val) = charm_data.value::<serde_json::Value>() {
+                            if let Some(token_id) = json_val
+                                .get("asset")
+                                .and_then(|a| a.get("token"))
+                                .and_then(|v| v.as_str())
+                            {
+                                // DEX order: use the token being traded as the asset
+                                let atype = if token_id.starts_with("t/") {
+                                    "token".to_string()
+                                } else if token_id.starts_with("n/") {
+                                    "nft".to_string()
+                                } else {
+                                    "other".to_string()
+                                };
+                                (token_id.to_string(), atype)
+                            } else {
+                                (app.to_string(), determine_asset_type_from_app(app))
+                            }
+                        } else {
+                            (app.to_string(), determine_asset_type_from_app(app))
+                        };
+
                     let asset_info = AssetInfo {
-                        // [RJJ-FIX] app_id is directly from App.to_string(): {tag}/{identity}/{vk}
-                        // NO output_index - that was incorrect
-                        app_id: app.to_string(),
+                        app_id,
                         vout_index: output_index as i32,
                         amount: extract_amount_from_charm_data(charm_data),
-                        asset_type: determine_asset_type_from_app(app),
+                        asset_type,
                     };
                     assets.push(asset_info);
                 }
