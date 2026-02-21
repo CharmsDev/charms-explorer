@@ -26,7 +26,7 @@ use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
 use crate::utils::logging;
 
 /// How often to poll the mempool (seconds)
-const POLL_INTERVAL_SECS: u64 = 10;
+const POLL_INTERVAL_SECS: u64 = 1;
 
 /// How many hours before a mempool entry is considered stale and purged
 const STALE_HOURS: i64 = 24;
