@@ -166,12 +166,13 @@ impl MempoolProcessor {
             .map_err(|e| format!("get_raw_transaction_hex failed: {}", e))?;
 
         // Try to detect a charm spell in this tx (CPU-intensive, run in blocking task)
+        // Use extract_spell_no_verify: real production txs have spell.mock=false, so
+        // extract_and_verify_charm(mock=true) fails because it uses MOCK_GROTH16_VK which
+        // doesn't match the real ZK proof. For mempool we only need spell data —
+        // the block processor re-verifies the full ZK proof when the tx confirms.
         let raw_hex_owned = raw_hex.clone();
         let parse_result = tokio::task::spawn_blocking(move || {
-            // mock=true: skip ZK proof verification for mempool txs.
-            // Mempool txs don't have prev inputs available for full verification.
-            // The block_processor will re-verify with mock=false when the block confirms.
-            NativeCharmParser::extract_and_verify_charm(&raw_hex_owned, true)
+            NativeCharmParser::extract_spell_no_verify(&raw_hex_owned)
         })
         .await
         .map_err(|e| format!("spawn_blocking join error: {}", e))?;
