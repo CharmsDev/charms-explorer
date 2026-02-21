@@ -16,8 +16,8 @@ use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::utxo_repository::UtxoInsert;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, MonitoredAddressesRepository, SummaryRepository, TransactionRepository,
-    UtxoRepository,
+    BlockStatusRepository, MempoolSpendsRepository, MonitoredAddressesRepository,
+    SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -37,6 +37,7 @@ pub struct BlockProcessor {
     block_status_repository: BlockStatusRepository,
     utxo_repository: UtxoRepository,
     monitored_addresses_repository: MonitoredAddressesRepository,
+    mempool_spends_repository: MempoolSpendsRepository,
     retry_handler: RetryHandler,
 }
 
@@ -49,6 +50,7 @@ impl BlockProcessor {
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
         monitored_addresses_repository: MonitoredAddressesRepository,
+        mempool_spends_repository: MempoolSpendsRepository,
     ) -> Self {
         Self {
             bitcoin_client,
@@ -58,6 +60,7 @@ impl BlockProcessor {
             block_status_repository,
             utxo_repository,
             monitored_addresses_repository,
+            mempool_spends_repository,
             retry_handler: RetryHandler::new(),
         }
     }
@@ -78,6 +81,12 @@ impl BlockProcessor {
         // Fetch block from node
         let block_hash = self.get_block_hash(height, network_id).await?;
         let block = self.get_block(&block_hash, network_id).await?;
+
+        // STEP 0: [RJJ-MEMPOOL] Consolidate mempool entries for txs in this block
+        // Promotes charms/orders from block_height=NULL to block_height=confirmed
+        // and removes their mempool_spends records
+        self.consolidate_mempool_for_block(&block, height, network_id)
+            .await;
 
         // STEP 1: Detect charms from all transactions (no DB writes)
         let (transaction_batch, charm_batch, asset_batch) = self
@@ -661,6 +670,106 @@ impl BlockProcessor {
         }
 
         Ok(())
+    }
+
+    /// [RJJ-MEMPOOL] STEP 0: Consolidate mempool entries when their block arrives.
+    ///
+    /// For each tx in the block that was previously detected in mempool
+    /// (block_height IS NULL), this method:
+    /// 1. Updates charms.block_height = confirmed_height
+    /// 2. Updates dex_orders.block_height = confirmed_height
+    /// 3. Removes their entries from mempool_spends
+    ///
+    /// This is idempotent — safe to call even if no mempool entries exist.
+    /// Does NOT update stats_holders (that happens in the normal block flow).
+    async fn consolidate_mempool_for_block(
+        &self,
+        block: &bitcoin::Block,
+        height: u64,
+        network_id: &NetworkId,
+    ) {
+        let network = &network_id.name;
+
+        // Collect all txids in this block
+        let txids: Vec<String> = block
+            .txdata
+            .iter()
+            .map(|tx| tx.txid().to_string())
+            .collect();
+
+        if txids.is_empty() {
+            return;
+        }
+
+        // Build SQL IN list
+        let id_list: Vec<String> = txids
+            .iter()
+            .map(|id| format!("'{}'", id.replace('\'', "''")))
+            .collect();
+        let ids_sql = id_list.join(", ");
+
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+        // 1. Promote mempool charms to confirmed block_height
+        let sql_charms = format!(
+            "UPDATE charms SET block_height = {}, mempool_detected_at = mempool_detected_at \
+             WHERE txid IN ({}) AND network = '{}' AND block_height IS NULL",
+            height, ids_sql, network
+        );
+
+        match self
+            .mempool_spends_repository
+            .get_connection()
+            .execute(Statement::from_string(DbBackend::Postgres, sql_charms))
+            .await
+        {
+            Ok(r) if r.rows_affected() > 0 => {
+                logging::log_info(&format!(
+                    "[{}] ✅ Block {}: Promoted {} mempool charms to confirmed",
+                    network,
+                    height,
+                    r.rows_affected()
+                ));
+            }
+            Ok(_) => {}
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Block {}: Failed to promote mempool charms: {}",
+                    network, height, e
+                ));
+            }
+        }
+
+        // 2. Promote mempool DEX orders to confirmed block_height
+        let sql_orders = format!(
+            "UPDATE dex_orders SET block_height = {}, updated_at = NOW() \
+             WHERE txid IN ({}) AND network = '{}' AND block_height IS NULL",
+            height, ids_sql, network
+        );
+
+        if let Err(e) = self
+            .mempool_spends_repository
+            .get_connection()
+            .execute(Statement::from_string(DbBackend::Postgres, sql_orders))
+            .await
+        {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Block {}: Failed to promote mempool DEX orders: {}",
+                network, height, e
+            ));
+        }
+
+        // 3. Remove mempool_spends for confirmed txs
+        if let Err(e) = self
+            .mempool_spends_repository
+            .remove_confirmed_spends(&txids, network)
+            .await
+        {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Block {}: Failed to remove confirmed mempool_spends: {}",
+                network, height, e
+            ));
+        }
     }
 
     /// Extracts transaction data into an owned vector to avoid lifetime issues

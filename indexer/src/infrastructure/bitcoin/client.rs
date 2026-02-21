@@ -6,14 +6,14 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use crate::config::{AppConfig, BitcoinConfig, NetworkId, NetworkType};
-use crate::infrastructure::bitcoin::error::BitcoinClientError;
 use crate::infrastructure::bitcoin::SimpleBitcoinClient;
+use crate::infrastructure::bitcoin::error::BitcoinClientError;
 use crate::utils::logging;
 
 /// Provides access to Bitcoin Core RPC API
 #[derive(Debug, Clone)]
 pub struct BitcoinClient {
-    client: Option<Arc<Client>>, // Legacy single client
+    client: Option<Arc<Client>>,                // Legacy single client
     simple_client: Option<SimpleBitcoinClient>, // New simple client
     network_id: NetworkId,
 }
@@ -99,7 +99,9 @@ impl BitcoinClient {
                 Err(e) => Err(e.into()),
             }
         } else {
-            Err(BitcoinClientError::ConnectionError("No client available".to_string()))
+            Err(BitcoinClientError::ConnectionError(
+                "No client available".to_string(),
+            ))
         }
     }
 
@@ -108,14 +110,17 @@ impl BitcoinClient {
         if let Some(simple_client) = &self.simple_client {
             let bitcoin_hash = simple_client.get_block_hash(height).await?;
             // Convert from bitcoin::BlockHash to bitcoincore_rpc::bitcoin::BlockHash
-            bitcoincore_rpc::bitcoin::BlockHash::from_str(&bitcoin_hash.to_string())
-                .map_err(|e| BitcoinClientError::Other(format!("Failed to convert block hash: {}", e)))
+            bitcoincore_rpc::bitcoin::BlockHash::from_str(&bitcoin_hash.to_string()).map_err(|e| {
+                BitcoinClientError::Other(format!("Failed to convert block hash: {}", e))
+            })
         } else if let Some(client) = &self.client {
             client
                 .get_block_hash(height)
                 .map_err(|e| BitcoinClientError::RpcError(e))
         } else {
-            Err(BitcoinClientError::ConnectionError("No client available".to_string()))
+            Err(BitcoinClientError::ConnectionError(
+                "No client available".to_string(),
+            ))
         }
     }
 
@@ -126,14 +131,17 @@ impl BitcoinClient {
             let block_count = simple_client.get_block_count().await?;
             let bitcoin_hash = simple_client.get_block_hash(block_count).await?;
             // Convert from bitcoin::BlockHash to bitcoincore_rpc::bitcoin::BlockHash
-            bitcoincore_rpc::bitcoin::BlockHash::from_str(&bitcoin_hash.to_string())
-                .map_err(|e| BitcoinClientError::Other(format!("Failed to convert best block hash: {}", e)))
+            bitcoincore_rpc::bitcoin::BlockHash::from_str(&bitcoin_hash.to_string()).map_err(|e| {
+                BitcoinClientError::Other(format!("Failed to convert best block hash: {}", e))
+            })
         } else if let Some(client) = &self.client {
             client
                 .get_best_block_hash()
                 .map_err(|e| BitcoinClientError::RpcError(e))
         } else {
-            Err(BitcoinClientError::ConnectionError("No client available".to_string()))
+            Err(BitcoinClientError::ConnectionError(
+                "No client available".to_string(),
+            ))
         }
     }
 
@@ -144,7 +152,9 @@ impl BitcoinClient {
         } else if let Some(client) = &self.client {
             client.get_block(hash).map_err(|e| e.into())
         } else {
-            Err(BitcoinClientError::ConnectionError("No client available".to_string()))
+            Err(BitcoinClientError::ConnectionError(
+                "No client available".to_string(),
+            ))
         }
     }
 
@@ -156,7 +166,7 @@ impl BitcoinClient {
             Some("BitcoinCore".to_string())
         }
     }
-    
+
     /// Heuristic to determine if we're likely using a local Bitcoin node
     pub fn is_using_local_node(&self) -> bool {
         if let Some(simple_client) = &self.simple_client {
@@ -176,6 +186,34 @@ impl BitcoinClient {
         }
     }
 
+    /// Returns the underlying RPC client Arc for direct RPC calls (e.g. getrawmempool)
+    /// Only available when using the legacy single-client mode (not SimpleBitcoinClient)
+    pub fn get_rpc_client(&self) -> Option<std::sync::Arc<bitcoincore_rpc::Client>> {
+        self.client.clone()
+    }
+
+    /// Fetch all txids currently in the mempool via getrawmempool RPC.
+    /// Returns an empty vec if the client doesn't support it (e.g. external providers).
+    pub async fn get_raw_mempool(&self) -> Result<Vec<String>, BitcoinClientError> {
+        if let Some(client) = &self.client {
+            let client = client.clone();
+            tokio::task::spawn_blocking(move || {
+                use bitcoincore_rpc::RpcApi;
+                client
+                    .get_raw_mempool()
+                    .map(|txids| txids.iter().map(|t| t.to_string()).collect::<Vec<_>>())
+                    .map_err(|e| BitcoinClientError::RpcError(e))
+            })
+            .await
+            .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))?
+        } else {
+            // SimpleBitcoinClient (external provider) — mempool polling not supported
+            Err(BitcoinClientError::Other(
+                "getrawmempool not available for external providers".to_string(),
+            ))
+        }
+    }
+
     /// Returns raw transaction hex, using block_hash for nodes without txindex
     pub async fn get_raw_transaction_hex(
         &self,
@@ -189,12 +227,14 @@ impl BitcoinClient {
                 return Err(BitcoinClientError::Other(format!(
                     "Invalid transaction ID: {}",
                     e
-                )))
+                )));
             }
         };
 
         if let Some(simple_client) = &self.simple_client {
-            simple_client.get_raw_transaction_hex(txid, block_hash).await
+            simple_client
+                .get_raw_transaction_hex(txid, block_hash)
+                .await
         } else if let Some(client) = &self.client {
             match client.get_raw_transaction(&txid_parsed, block_hash) {
                 Ok(tx) => {
@@ -205,7 +245,9 @@ impl BitcoinClient {
                 Err(e) => Err(BitcoinClientError::RpcError(e)),
             }
         } else {
-            Err(BitcoinClientError::ConnectionError("No client available".to_string()))
+            Err(BitcoinClientError::ConnectionError(
+                "No client available".to_string(),
+            ))
         }
     }
 }

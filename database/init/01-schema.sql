@@ -185,7 +185,7 @@ CREATE TABLE IF NOT EXISTS address_utxos (
     address VARCHAR(62) NOT NULL,
     value BIGINT NOT NULL,
     script_pubkey VARCHAR(140) NOT NULL DEFAULT '',
-    block_height INTEGER NOT NULL,
+    block_height INTEGER,
     PRIMARY KEY (txid, vout, network)
 );
 
@@ -208,6 +208,24 @@ CREATE TABLE IF NOT EXISTS monitored_addresses (
 
 CREATE INDEX IF NOT EXISTS idx_monitored_addresses_network ON monitored_addresses (network);
 
+-- Create mempool_spends table (tracks UTXOs being spent by unconfirmed mempool txs)
+CREATE TABLE IF NOT EXISTS mempool_spends (
+    spending_txid VARCHAR(64) NOT NULL,
+    spent_txid VARCHAR(64) NOT NULL,
+    spent_vout INTEGER NOT NULL,
+    network VARCHAR(10) NOT NULL DEFAULT 'mainnet',
+    detected_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (
+        spent_txid,
+        spent_vout,
+        network
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_mempool_spends_spending ON mempool_spends (spending_txid, network);
+
+CREATE INDEX IF NOT EXISTS idx_mempool_spends_detected ON mempool_spends (detected_at);
+
 -- Mark all migrations as applied
 INSERT INTO
     seaql_migrations (version)
@@ -228,5 +246,8 @@ VALUES (
     ),
     (
         'm20260220_000001_create_monitored_addresses_table'
+    ),
+    (
+        'm20260221_000001_mempool_indexing'
     )
 ON CONFLICT (version) DO NOTHING;

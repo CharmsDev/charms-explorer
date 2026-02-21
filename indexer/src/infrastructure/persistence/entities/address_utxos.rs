@@ -15,7 +15,8 @@ pub struct Model {
     pub value: i64,
     #[sea_orm(column_type = "Text")]
     pub script_pubkey: String,
-    pub block_height: i32,
+    #[sea_orm(nullable)]
+    pub block_height: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

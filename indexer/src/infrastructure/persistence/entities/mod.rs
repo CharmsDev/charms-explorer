@@ -8,6 +8,7 @@ pub mod block_status;
 pub mod bookmark;
 pub mod charms;
 pub mod dex_orders;
+pub mod mempool_spends; // [RJJ-MEMPOOL] Tracks UTXOs spent by unconfirmed txs
 pub mod monitored_addresses;
 pub mod spells; // [RJJ-S01] New spells entity
 pub mod stats_holders; // [RJJ-STATS-HOLDERS]

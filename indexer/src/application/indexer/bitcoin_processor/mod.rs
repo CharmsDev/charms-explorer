@@ -19,8 +19,8 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, MonitoredAddressesRepository, SummaryRepository, TransactionRepository,
-    UtxoRepository,
+    BlockStatusRepository, MempoolSpendsRepository, MonitoredAddressesRepository,
+    SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -35,6 +35,7 @@ pub struct BitcoinProcessor {
     block_status_repository: BlockStatusRepository,
     utxo_repository: UtxoRepository,
     monitored_addresses_repository: MonitoredAddressesRepository,
+    mempool_spends_repository: MempoolSpendsRepository,
     config: AppConfig,
     current_height: u64,
     genesis_block_height: u64,
@@ -50,6 +51,7 @@ impl BitcoinProcessor {
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
         monitored_addresses_repository: MonitoredAddressesRepository,
+        mempool_spends_repository: MempoolSpendsRepository,
         config: AppConfig,
         genesis_block_height: u64,
     ) -> Self {
@@ -61,6 +63,7 @@ impl BitcoinProcessor {
             block_status_repository,
             utxo_repository,
             monitored_addresses_repository,
+            mempool_spends_repository,
             current_height: genesis_block_height,
             config,
             genesis_block_height,
@@ -157,6 +160,7 @@ impl BitcoinProcessor {
                     self.block_status_repository.clone(),
                     self.utxo_repository.clone(),
                     self.monitored_addresses_repository.clone(),
+                    self.mempool_spends_repository.clone(),
                 );
 
                 if let Err(e) = block_processor
@@ -265,6 +269,7 @@ impl BitcoinProcessor {
                 self.block_status_repository.clone(),
                 self.utxo_repository.clone(),
                 self.monitored_addresses_repository.clone(),
+                self.mempool_spends_repository.clone(),
             );
 
             match block_processor
@@ -415,6 +420,7 @@ impl BlockchainProcessor for BitcoinProcessor {
             self.block_status_repository.clone(),
             self.utxo_repository.clone(),
             self.monitored_addresses_repository.clone(),
+            self.mempool_spends_repository.clone(),
         );
 
         block_processor

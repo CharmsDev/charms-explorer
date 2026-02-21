@@ -4,6 +4,7 @@ use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
 use crate::application::indexer::bitcoin_processor::BitcoinProcessor;
+use crate::application::indexer::mempool_processor::MempoolProcessor;
 use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
@@ -11,8 +12,8 @@ use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
 use crate::infrastructure::persistence::repositories::{
     AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository,
-    MonitoredAddressesRepository, SpellRepository, StatsHoldersRepository, SummaryRepository,
-    TransactionRepository, UtxoRepository,
+    MempoolSpendsRepository, MonitoredAddressesRepository, SpellRepository, StatsHoldersRepository,
+    SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -48,6 +49,7 @@ impl NetworkManager {
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
         monitored_addresses_repository: MonitoredAddressesRepository,
+        mempool_spends_repository: MempoolSpendsRepository,
     ) -> Result<(), BlockProcessorError> {
         // Initialize Bitcoin processors (synchronous flow, no queue)
         if self.config.indexer.enable_bitcoin_testnet4 {
@@ -63,6 +65,7 @@ impl NetworkManager {
                 block_status_repository.clone(),
                 utxo_repository.clone(),
                 monitored_addresses_repository.clone(),
+                mempool_spends_repository.clone(),
             )
             .await?;
         }
@@ -80,6 +83,7 @@ impl NetworkManager {
                 block_status_repository.clone(),
                 utxo_repository.clone(),
                 monitored_addresses_repository.clone(),
+                mempool_spends_repository.clone(),
             )
             .await?;
         }
@@ -103,6 +107,7 @@ impl NetworkManager {
         block_status_repository: BlockStatusRepository,
         utxo_repository: UtxoRepository,
         monitored_addresses_repository: MonitoredAddressesRepository,
+        mempool_spends_repository: MempoolSpendsRepository,
     ) -> Result<(), BlockProcessorError> {
         let bitcoin_config = match self.config.get_bitcoin_config(network) {
             Some(config) => config,
@@ -161,6 +166,7 @@ impl NetworkManager {
             block_status_repository,
             utxo_repository,
             monitored_addresses_repository,
+            mempool_spends_repository.clone(),
             self.config.clone(),
             bitcoin_config.genesis_block_height,
         );
@@ -171,6 +177,33 @@ impl NetworkManager {
             network_key.clone(),
             Arc::new(Mutex::new(Box::new(processor))),
         );
+
+        // [RJJ-MEMPOOL] Spawn MempoolProcessor as a parallel background task
+        // Uses a direct RPC BitcoinClient (not SimpleBitcoinClient) for getrawmempool support
+        match BitcoinClient::new(bitcoin_config) {
+            Ok(mempool_client) => {
+                let db_conn = mempool_spends_repository.get_connection();
+                let mempool_proc = MempoolProcessor::new(
+                    mempool_client,
+                    db_conn,
+                    mempool_spends_repository,
+                    network_id.clone(),
+                );
+                tokio::spawn(async move {
+                    mempool_proc.run().await;
+                });
+                logging::log_info(&format!(
+                    "[{}] 🔍 MempoolProcessor spawned as background task",
+                    network_id.name
+                ));
+            }
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Could not create mempool RPC client, mempool indexing disabled: {}",
+                    network, e
+                ));
+            }
+        }
 
         Ok(())
     }
