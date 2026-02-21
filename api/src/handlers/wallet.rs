@@ -2,8 +2,8 @@
 // Strategy: RPC node (3s timeout) → QuickNode fallback
 
 use axum::{
-    extract::{Path, Query, State},
     Json,
+    extract::{Path, Query, State},
 };
 use serde::Deserialize;
 use std::time::Duration;
@@ -250,7 +250,7 @@ pub async fn get_wallet_balance(
             "vout": charm.vout,
             "value": btc_value,
             "amount": charm.amount,
-            "confirmed": charm.block_height > 0,
+            "confirmed": charm.block_height.map_or(false, |h| h > 0),
             "blockHeight": charm.block_height,
         });
 
@@ -423,7 +423,7 @@ pub async fn get_wallet_charm_balances(
     // key -> (asset_type, symbol, confirmed_total, unconfirmed_total, utxos_json)
 
     for charm in &charms {
-        let confirmed = charm.block_height > 0;
+        let confirmed = charm.block_height.map_or(false, |h| h > 0);
         let key = (charm.txid.clone(), charm.vout);
         let all_app_ids = utxo_app_ids
             .get(&key)

@@ -74,7 +74,7 @@ pub struct CharmData {
     pub txid: String,
     pub vout: i32, // [RJJ-ADDRESS] Output index for UTXO identification
     pub charmid: String,
-    pub block_height: i32,
+    pub block_height: Option<i32>,
     pub data: serde_json::Value,
     pub date_created: String,
     pub asset_type: String,

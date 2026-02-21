@@ -12,7 +12,8 @@ pub struct Model {
     pub txid: String,
     #[sea_orm(primary_key)]
     pub vout: i32,
-    pub block_height: i32,
+    #[sea_orm(nullable)]
+    pub block_height: Option<i32>,
     pub data: Value,
     pub date_created: NaiveDateTime,
     #[sea_orm(column_type = "Text")]
