@@ -126,28 +126,31 @@ pub struct AssetInfo {
     pub asset_type: String,
 }
 
-/// Extract amount from charm data
+/// Extract amount from charm data.
+///
+/// Charm data can be:
+/// - A plain u64/i64 (simple token transfer: the amount IS the value)
+/// - A complex struct (DEX order, NFT, etc.) with an `amount` field
+///
+/// For complex structs, serialize to JSON and extract the `amount` field.
+/// Never fall back to raw bytes — that produces garbage numbers.
 fn extract_amount_from_charm_data(charm_data: &charms_data::Data) -> u64 {
-    // Try to extract amount from charm data as u64
-    // This is a simplified implementation - can be enhanced based on actual data structure
+    // Case 1: plain integer (simple token transfer)
     if let Ok(amount) = charm_data.value::<u64>() {
-        // Cap at i64::MAX to prevent overflow when storing in database
-        amount.min(i64::MAX as u64)
-    } else if let Ok(amount) = charm_data.value::<i64>() {
-        amount.max(0) as u64
-    } else {
-        // Try to extract from bytes representation
-        let bytes = charm_data.bytes();
-        if bytes.len() >= 8 {
-            let raw_amount = u64::from_le_bytes([
-                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
-            ]);
-            // Cap at i64::MAX to prevent overflow when storing in database
-            raw_amount.min(i64::MAX as u64)
-        } else {
-            0
+        return amount.min(i64::MAX as u64);
+    }
+    if let Ok(amount) = charm_data.value::<i64>() {
+        return amount.max(0) as u64;
+    }
+
+    // Case 2: complex struct (DEX order, etc.) — deserialize to JSON and look for `amount`
+    if let Ok(json_val) = charm_data.value::<serde_json::Value>() {
+        if let Some(amount) = json_val.get("amount").and_then(|v| v.as_u64()) {
+            return amount.min(i64::MAX as u64);
         }
     }
+
+    0
 }
 
 /// Determine the asset type based on app information
