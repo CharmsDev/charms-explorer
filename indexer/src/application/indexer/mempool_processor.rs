@@ -32,8 +32,9 @@ const POLL_INTERVAL_SECS: u64 = 1;
 const STALE_HOURS: i64 = 24;
 
 /// Maximum number of mempool txids to process per poll cycle
-/// (avoids overwhelming the node with getrawtransaction calls)
-const MAX_TXS_PER_CYCLE: usize = 500;
+/// At 1s poll interval, 100 getrawtransaction calls/cycle is safe for the node.
+/// New txids accumulate slowly; unseen ones are processed in subsequent cycles.
+const MAX_TXS_PER_CYCLE: usize = 100;
 
 /// Mempool processor — runs as a background task alongside the block processor
 pub struct MempoolProcessor {

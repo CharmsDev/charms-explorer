@@ -164,11 +164,11 @@ async fn main() {
         .route("/wallet/broadcast", post(broadcast_wallet_transaction))
         .route("/wallet/fee-estimate", get(get_wallet_fee_estimate))
         .route("/wallet/tip", get(get_wallet_chain_tip))
-        .route("/wallet/charms/{address}", get(get_wallet_charm_balances))
         .route(
             "/wallet/charms/batch",
             post(get_wallet_charm_balances_batch),
-        );
+        )
+        .route("/wallet/charms/{address}", get(get_wallet_charm_balances));
 
     // Mount under /v1/ (canonical) and / (backward compat for Explorer webapp)
     let app = Router::new()
