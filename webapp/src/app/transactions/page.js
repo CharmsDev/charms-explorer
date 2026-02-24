@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { fetchAssets } from '@/services/apiServices';
+import { fetchTransactions } from '@/services/apiServices';
 import { useNetwork } from '@/context/NetworkContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
 import { 
@@ -26,8 +26,8 @@ export default function TransactionsPage() {
             setLoading(true);
             const networkParam = getNetworkParam();
             const apiNetworkParam = networkParam === 'all' ? null : networkParam;
-            const result = await fetchAssets(page, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
-            setTransactions(result.assets || []);
+            const result = await fetchTransactions(page, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
+            setTransactions(result.transactions || []);
             setTotal(result.total || 0);
             setTotalPages(result.totalPages || 1);
             setError(null);
@@ -45,8 +45,8 @@ export default function TransactionsPage() {
     const silentRefresh = useCallback(async () => {
         const networkParam = getNetworkParam();
         const apiNetworkParam = networkParam === 'all' ? null : networkParam;
-        const result = await fetchAssets(1, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
-        const freshTxs = result.assets || [];
+        const result = await fetchTransactions(1, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
+        const freshTxs = result.transactions || [];
         if (freshTxs.length === 0) return;
 
         // Build a Set of existing txids for fast lookup
@@ -132,7 +132,7 @@ export default function TransactionsPage() {
                                     <tr className="border-b border-dark-700">
                                         <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">TXID</th>
                                         <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Type</th>
-                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Asset</th>
+                                        <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Status</th>
                                         <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Block</th>
                                         <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Network</th>
                                         <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium whitespace-nowrap">Date</th>
@@ -160,13 +160,8 @@ export default function TransactionsPage() {
                                                         {getTransactionLabel(txType)}
                                                     </span>
                                                 </td>
-                                                <td className="px-4 py-3">
-                                                    <Link 
-                                                        href={`/asset/${tx.id}`}
-                                                        className="text-white hover:text-primary-300 text-sm whitespace-nowrap"
-                                                    >
-                                                        {tx.name || `Charm ${tx.app_id?.substring(0, 8) || ''}` || '-'}
-                                                    </Link>
+                                                <td className="px-4 py-3 text-dark-300 text-sm whitespace-nowrap">
+                                                    {tx.status || '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-dark-300 text-sm whitespace-nowrap">
                                                     {tx.block_height?.toLocaleString() || '-'}
@@ -181,7 +176,7 @@ export default function TransactionsPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-dark-400 text-sm whitespace-nowrap">
-                                                    {formatDate(tx.date_created)}
+                                                    {formatDate(tx.updated_at)}
                                                 </td>
                                             </tr>
                                         );

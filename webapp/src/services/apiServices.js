@@ -19,3 +19,7 @@ export {
 export {
     fetchIndexerStatus,
 } from './api/status';
+
+export {
+    fetchTransactions,
+} from './api/transactions';

@@ -167,3 +167,45 @@ pub struct PaginatedResponse<T> {
     pub data: T,
     pub pagination: PaginationMeta,
 }
+
+/// Query parameters for GET /transactions endpoint
+#[derive(Debug, Deserialize, Default)]
+pub struct GetTransactionsQuery {
+    #[serde(flatten)]
+    pub pagination: PaginationParams,
+    pub network: Option<String>,
+}
+
+/// Response structure for GET /transactions endpoint
+#[derive(Debug, Serialize)]
+pub struct TransactionsResponse {
+    pub transactions: Vec<TransactionData>,
+}
+
+/// Transaction data structure for API responses
+#[derive(Debug, Serialize)]
+pub struct TransactionData {
+    pub txid: String,
+    pub block_height: i32,
+    pub status: String,
+    pub confirmations: i32,
+    pub blockchain: String,
+    pub network: String,
+    pub updated_at: String,
+    pub charm: serde_json::Value,
+}
+
+impl From<crate::entity::transactions::Model> for TransactionData {
+    fn from(tx: crate::entity::transactions::Model) -> Self {
+        TransactionData {
+            txid: tx.txid,
+            block_height: tx.block_height,
+            status: tx.status,
+            confirmations: tx.confirmations,
+            blockchain: tx.blockchain,
+            network: tx.network,
+            updated_at: tx.updated_at.format("%Y-%m-%dT%H:%M:%S").to_string(),
+            charm: tx.charm,
+        }
+    }
+}
