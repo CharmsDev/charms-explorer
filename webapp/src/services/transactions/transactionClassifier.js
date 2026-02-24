@@ -291,7 +291,7 @@ const classificationRules = [
         return true;
       }
       // Check for b/ in data
-      const data = tx.data?.native_data || tx.native_data || tx.data;
+      const data = tx.data?.native_data || tx.charm?.native_data || tx.native_data || tx.data || tx.charm;
       if (data) {
         const appInputs = data?.app_public_inputs;
         if (appInputs) {
@@ -379,7 +379,7 @@ const classificationRules = [
       const tags = tx.tags || "";
       if (tags.includes("beaming")) return true;
       // Check spell data for beamed_outs
-      const data = tx.data?.native_data || tx.native_data || tx.data;
+      const data = tx.data?.native_data || tx.charm?.native_data || tx.native_data || tx.data || tx.charm;
       if (data?.tx?.beamed_outs || data?.beamed_outs) return true;
       return false;
     },
@@ -418,7 +418,8 @@ const classificationRules = [
     priority: 50,
     test: (tx, spellData) => {
       return (
-        spellData?.detected === true || spellData?.has_native_data === true
+        spellData?.detected === true || spellData?.has_native_data === true ||
+        tx.charm?.detected === true || tx.charm?.has_native_data === true
       );
     },
     type: TRANSACTION_TYPES.SPELL,
@@ -448,7 +449,7 @@ const sortedRules = [...classificationRules].sort(
  * Extract spell data from transaction
  */
 export function extractSpellData(tx) {
-  const data = tx.data?.native_data || tx.native_data || tx.data;
+  const data = tx.data?.native_data || tx.charm?.native_data || tx.native_data || tx.data || tx.charm;
   if (!data) return null;
 
   // Extract order details from DEX transactions
