@@ -1,7 +1,12 @@
 // Charm database operations implementation
+// All queries use SeaORM ORM — no raw SQL.
 
+use std::collections::HashMap;
+
+use sea_orm::sea_query::{Expr, NullOrdering, Order};
 use sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect,
 };
 
 use serde::Serialize;
@@ -77,73 +82,81 @@ impl CharmRepository {
         pagination: &PaginationParams,
         network: &str,
     ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        use sea_orm::{DbBackend, FromQueryResult, Statement};
-
-        #[derive(FromQueryResult)]
-        struct CountRow {
-            count: i64,
-        }
-
-        let count_row = CountRow::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            "SELECT COUNT(*) AS count FROM charms WHERE network = $1",
-            [network.into()],
-        ))
-        .one(&self.conn)
-        .await
-        .map_err(|e| DbError::QueryError(e.to_string()))?;
-        let total = count_row.map(|r| r.count as u64).unwrap_or(0);
+        let total = charms::Entity::find()
+            .filter(charms::Column::Network.eq(network))
+            .count(&self.conn)
+            .await? as u64;
 
         let offset = (pagination.page - 1) * pagination.limit;
-        let charms = charms::Model::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"SELECT txid, vout, block_height, data, date_created, asset_type, blockchain,
-                      network, address, spent, app_id, amount, mempool_detected_at, tags, verified
-               FROM charms
-               WHERE network = $1
-               ORDER BY block_height DESC NULLS FIRST, date_created DESC
-               LIMIT $2 OFFSET $3"#,
-            [
-                network.into(),
-                (pagination.limit as i64).into(),
-                (offset as i64).into(),
-            ],
-        ))
-        .all(&self.conn)
-        .await
-        .map_err(|e| DbError::QueryError(e.to_string()))?;
+        let mut query = charms::Entity::find().filter(charms::Column::Network.eq(network));
+        QuerySelect::query(&mut query)
+            .order_by_with_nulls(
+                charms::Column::BlockHeight,
+                Order::Desc,
+                NullOrdering::First,
+            )
+            .order_by(charms::Column::DateCreated, Order::Desc);
+        let charms = query
+            .limit(pagination.limit)
+            .offset(offset)
+            .all(&self.conn)
+            .await?;
 
         Ok((charms, total))
     }
 
-    /// Retrieves all charms paginated
+    /// Retrieves all charms paginated (all networks)
+    /// NULLs FIRST so mempool charms (block_height=NULL) appear at the top
     pub async fn get_all_paginated(
         &self,
         pagination: &PaginationParams,
     ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        let paginator = charms::Entity::find()
-            .order_by_desc(charms::Column::BlockHeight)
-            .paginate(&self.conn, pagination.limit);
+        let total = charms::Entity::find().count(&self.conn).await? as u64;
 
-        let total = paginator.num_items().await?;
-        let charms = paginator.fetch_page(pagination.page - 1).await?;
+        let offset = (pagination.page - 1) * pagination.limit;
+        let mut query = charms::Entity::find();
+        QuerySelect::query(&mut query)
+            .order_by_with_nulls(
+                charms::Column::BlockHeight,
+                Order::Desc,
+                NullOrdering::First,
+            )
+            .order_by(charms::Column::DateCreated, Order::Desc);
+        let charms = query
+            .limit(pagination.limit)
+            .offset(offset)
+            .all(&self.conn)
+            .await?;
 
         Ok((charms, total))
     }
 
     /// Finds charms by asset type with pagination
+    /// NULLs FIRST so mempool charms (block_height=NULL) appear at the top
     pub async fn find_by_asset_type_paginated(
         &self,
         asset_type: &str,
         pagination: &PaginationParams,
     ) -> Result<(Vec<charms::Model>, u64), DbError> {
-        let paginator = charms::Entity::find()
+        let total = charms::Entity::find()
             .filter(charms::Column::AssetType.eq(asset_type))
-            .order_by_desc(charms::Column::BlockHeight)
-            .paginate(&self.conn, pagination.limit);
+            .count(&self.conn)
+            .await? as u64;
 
-        let total = paginator.num_items().await?;
-        let charms = paginator.fetch_page(pagination.page - 1).await?;
+        let offset = (pagination.page - 1) * pagination.limit;
+        let mut query = charms::Entity::find().filter(charms::Column::AssetType.eq(asset_type));
+        QuerySelect::query(&mut query)
+            .order_by_with_nulls(
+                charms::Column::BlockHeight,
+                Order::Desc,
+                NullOrdering::First,
+            )
+            .order_by(charms::Column::DateCreated, Order::Desc);
+        let charms = query
+            .limit(pagination.limit)
+            .offset(offset)
+            .all(&self.conn)
+            .await?;
 
         Ok((charms, total))
     }
@@ -194,7 +207,6 @@ impl CharmRepository {
     #[allow(dead_code)] // Reserved for future use
     pub async fn count_all(&self) -> Result<i64, DbError> {
         let count = charms::Entity::find().count(&self.conn).await?;
-
         Ok(count as i64)
     }
 
@@ -211,13 +223,13 @@ impl CharmRepository {
     }
 
     /// Get charm balances by address, grouped by app_id
-    /// Returns (app_id, asset_type, confirmed_amount, unconfirmed_amount, confirmed_count, unconfirmed_count)
+    /// Uses SeaORM column_as + group_by for aggregation
     pub async fn get_charm_balances_by_address(
         &self,
         address: &str,
         network: &str,
     ) -> Result<Vec<CharmBalance>, DbError> {
-        use sea_orm::{DbBackend, FromQueryResult, Statement};
+        use sea_orm::FromQueryResult;
 
         #[derive(FromQueryResult)]
         struct Row {
@@ -229,26 +241,35 @@ impl CharmRepository {
             unconfirmed_count: Option<i64>,
         }
 
-        let rows = Row::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"
-            SELECT
-                app_id,
-                asset_type,
-                SUM(CASE WHEN block_height IS NOT NULL AND block_height > 0 THEN amount ELSE 0 END) AS confirmed_amount,
-                SUM(CASE WHEN block_height IS NULL OR block_height = 0 THEN amount ELSE 0 END) AS unconfirmed_amount,
-                COUNT(CASE WHEN block_height IS NOT NULL AND block_height > 0 THEN 1 END) AS confirmed_count,
-                COUNT(CASE WHEN block_height IS NULL OR block_height = 0 THEN 1 END) AS unconfirmed_count
-            FROM charms
-            WHERE address = $1 AND network = $2 AND spent = false
-            GROUP BY app_id, asset_type
-            ORDER BY app_id
-            "#,
-            [address.into(), network.into()],
-        ))
-        .all(&self.conn)
-        .await
-        .map_err(|e| DbError::QueryError(e.to_string()))?;
+        let rows = charms::Entity::find()
+            .select_only()
+            .column(charms::Column::AppId)
+            .column(charms::Column::AssetType)
+            .column_as(
+                Expr::cust("SUM(CASE WHEN block_height IS NOT NULL AND block_height > 0 THEN amount ELSE 0 END)"),
+                "confirmed_amount",
+            )
+            .column_as(
+                Expr::cust("SUM(CASE WHEN block_height IS NULL OR block_height = 0 THEN amount ELSE 0 END)"),
+                "unconfirmed_amount",
+            )
+            .column_as(
+                Expr::cust("COUNT(CASE WHEN block_height IS NOT NULL AND block_height > 0 THEN 1 END)"),
+                "confirmed_count",
+            )
+            .column_as(
+                Expr::cust("COUNT(CASE WHEN block_height IS NULL OR block_height = 0 THEN 1 END)"),
+                "unconfirmed_count",
+            )
+            .filter(charms::Column::Address.eq(address))
+            .filter(charms::Column::Network.eq(network))
+            .filter(charms::Column::Spent.eq(false))
+            .group_by(charms::Column::AppId)
+            .group_by(charms::Column::AssetType)
+            .order_by_asc(charms::Column::AppId)
+            .into_model::<Row>()
+            .all(&self.conn)
+            .await?;
 
         Ok(rows
             .into_iter()
@@ -287,68 +308,67 @@ impl CharmRepository {
 
     /// Get sibling charm app_ids for UTXOs owned by an address
     /// Returns (txid, vout) -> Vec<app_id> for all charms sharing those UTXOs
-    /// Uses a single efficient SQL query with a subselect
+    /// Two-step ORM approach: first get owned UTXOs, then find siblings
     pub async fn get_sibling_app_ids_for_address(
         &self,
         address: &str,
         network: &str,
-    ) -> Result<std::collections::HashMap<(String, i32), Vec<String>>, DbError> {
-        use sea_orm::{DbBackend, FromQueryResult, Statement};
+    ) -> Result<HashMap<(String, i32), Vec<String>>, DbError> {
+        // Step 1: Get all (txid, vout) pairs for unspent charms owned by this address
+        let owned = charms::Entity::find()
+            .filter(charms::Column::Address.eq(address))
+            .filter(charms::Column::Network.eq(network))
+            .filter(charms::Column::Spent.eq(false))
+            .all(&self.conn)
+            .await?;
 
-        #[derive(FromQueryResult)]
-        struct Row {
-            txid: String,
-            vout: i32,
-            app_id: String,
+        if owned.is_empty() {
+            return Ok(HashMap::new());
         }
 
-        // Find all charms that share a (txid, vout) with unspent charms owned by this address
-        let rows = Row::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"
-            SELECT c2.txid, c2.vout, c2.app_id
-            FROM charms c2
-            WHERE (c2.txid, c2.vout) IN (
-                SELECT txid, vout FROM charms
-                WHERE address = $1 AND network = $2 AND spent = false
-            )
-            "#,
-            [address.into(), network.into()],
-        ))
-        .all(&self.conn)
-        .await
-        .map_err(|e| DbError::QueryError(e.to_string()))?;
+        // Collect unique (txid, vout) pairs
+        let keys: Vec<(String, i32)> = owned.iter().map(|c| (c.txid.clone(), c.vout)).collect();
+        let txids: Vec<String> = keys.iter().map(|(t, _)| t.clone()).collect();
 
-        let mut map: std::collections::HashMap<(String, i32), Vec<String>> =
-            std::collections::HashMap::new();
-        for r in rows {
-            map.entry((r.txid, r.vout)).or_default().push(r.app_id);
+        // Step 2: Get all charms sharing those txids (then filter by vout in memory)
+        let siblings = charms::Entity::find()
+            .filter(charms::Column::Txid.is_in(txids))
+            .all(&self.conn)
+            .await?;
+
+        let key_set: std::collections::HashSet<(String, i32)> = keys.into_iter().collect();
+        let mut map: HashMap<(String, i32), Vec<String>> = HashMap::new();
+        for c in siblings {
+            let key = (c.txid.clone(), c.vout);
+            if key_set.contains(&key) {
+                map.entry(key).or_default().push(c.app_id);
+            }
         }
         Ok(map)
     }
 
     /// [RJJ-SUPPLY] Calculate circulating supply from unspent charms
-    /// This is the single source of truth for token supply
     /// Returns SUM(amount) WHERE app_id LIKE 'prefix%' AND spent = false
     pub async fn get_circulating_supply_by_app_id_prefix(
         &self,
         app_id_prefix: &str,
     ) -> Result<Option<i64>, DbError> {
-        use sea_orm::{DbBackend, FromQueryResult, Statement};
+        use sea_orm::FromQueryResult;
 
         #[derive(FromQueryResult)]
         struct SupplyResult {
             total: Option<rust_decimal::Decimal>,
         }
 
-        let result = SupplyResult::find_by_statement(Statement::from_sql_and_values(
-            DbBackend::Postgres,
-            r#"SELECT SUM(amount) as total FROM charms WHERE app_id LIKE $1 AND spent = false"#,
-            [format!("{}%", app_id_prefix).into()],
-        ))
-        .one(&self.conn)
-        .await
-        .map_err(|e| DbError::QueryError(e.to_string()))?;
+        let pattern = format!("{}%", app_id_prefix);
+        let result = charms::Entity::find()
+            .select_only()
+            .column_as(Expr::cust("SUM(amount)"), "total")
+            .filter(charms::Column::AppId.starts_with(&pattern[..pattern.len() - 1]))
+            .filter(charms::Column::Spent.eq(false))
+            .into_model::<SupplyResult>()
+            .one(&self.conn)
+            .await?;
 
         Ok(result.and_then(|r| r.total.map(|d| d.to_string().parse::<i64>().unwrap_or(0))))
     }

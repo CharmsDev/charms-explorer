@@ -1,5 +1,6 @@
 //! Entity module for database models
 
+pub mod address_utxos;
 pub mod assets;
 pub mod bookmark;
 pub mod charms;

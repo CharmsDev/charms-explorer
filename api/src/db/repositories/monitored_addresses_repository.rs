@@ -1,4 +1,13 @@
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+// Monitored addresses database operations implementation
+// Uses SeaORM ORM for CRUD. Advisory lock functions use ConnectionTrait
+// since pg_try_advisory_lock has no ORM equivalent.
+
+use sea_orm::{
+    ActiveValue::Set, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
+    QueryFilter, Statement,
+};
+
+use crate::entity::monitored_addresses;
 
 /// Repository for monitored_addresses table (API side).
 /// Handles checking, registering, and seeding addresses for on-demand monitoring.
@@ -14,15 +23,10 @@ impl MonitoredAddressesRepository {
 
     /// Check if an address is already monitored.
     pub async fn is_monitored(&self, address: &str, network: &str) -> Result<bool, String> {
-        let sql = format!(
-            "SELECT 1 FROM monitored_addresses WHERE address = '{}' AND network = '{}' LIMIT 1",
-            address.replace('\'', "''"),
-            network.replace('\'', "''"),
-        );
-
-        let result = self
-            .conn
-            .query_one(Statement::from_string(DbBackend::Postgres, sql))
+        let result = monitored_addresses::Entity::find()
+            .filter(monitored_addresses::Column::Address.eq(address))
+            .filter(monitored_addresses::Column::Network.eq(network))
+            .one(&self.conn)
             .await
             .map_err(|e| format!("DB query failed: {}", e))?;
 
@@ -31,35 +35,49 @@ impl MonitoredAddressesRepository {
 
     /// Register an address for monitoring with seed data.
     /// Sets seeded_at and seed_height to indicate the address has been initialized.
+    /// Uses on_conflict to upsert.
     pub async fn register_seeded(
         &self,
         address: &str,
         network: &str,
         seed_height: i32,
     ) -> Result<bool, String> {
-        let sql = format!(
-            "INSERT INTO monitored_addresses (address, network, source, seeded_at, seed_height, created_at) \
-             VALUES ('{}', '{}', 'api', NOW(), {}, NOW()) \
-             ON CONFLICT (address, network) DO UPDATE SET seeded_at = NOW(), seed_height = {}",
-            address.replace('\'', "''"),
-            network.replace('\'', "''"),
-            seed_height,
-            seed_height,
-        );
+        let now = chrono::Utc::now();
+        let model = monitored_addresses::ActiveModel {
+            address: Set(address.to_string()),
+            network: Set(network.to_string()),
+            source: Set("api".to_string()),
+            seeded_at: Set(Some(now)),
+            seed_height: Set(Some(seed_height)),
+            created_at: Set(now),
+        };
 
-        let result = self
-            .conn
-            .execute(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map_err(|e| format!("DB insert failed: {}", e))?;
+        let result = monitored_addresses::Entity::insert(model)
+            .on_conflict(
+                sea_orm::sea_query::OnConflict::columns([
+                    monitored_addresses::Column::Address,
+                    monitored_addresses::Column::Network,
+                ])
+                .update_columns([
+                    monitored_addresses::Column::SeededAt,
+                    monitored_addresses::Column::SeedHeight,
+                ])
+                .to_owned(),
+            )
+            .exec(&self.conn)
+            .await;
 
-        Ok(result.rows_affected() > 0)
+        match result {
+            Ok(_) => Ok(true),
+            Err(sea_orm::DbErr::RecordNotInserted) => Ok(false),
+            Err(e) => Err(format!("DB insert failed: {}", e)),
+        }
     }
 
     /// Acquire an advisory lock for seeding an address (prevents race conditions).
     /// Returns true if lock was acquired, false if another process holds it.
+    /// Note: pg_try_advisory_lock has no ORM equivalent — uses ConnectionTrait.
     pub async fn try_advisory_lock(&self, address: &str, network: &str) -> Result<bool, String> {
-        // Use a hash of address+network as the lock key
         let lock_key = Self::advisory_lock_key(address, network);
         let sql = format!("SELECT pg_try_advisory_lock({})", lock_key);
 
@@ -81,11 +99,8 @@ impl MonitoredAddressesRepository {
     }
 
     /// Release an advisory lock after seeding.
-    pub async fn release_advisory_lock(
-        &self,
-        address: &str,
-        network: &str,
-    ) -> Result<(), String> {
+    /// Note: pg_advisory_unlock has no ORM equivalent — uses ConnectionTrait.
+    pub async fn release_advisory_lock(&self, address: &str, network: &str) -> Result<(), String> {
         let lock_key = Self::advisory_lock_key(address, network);
         let sql = format!("SELECT pg_advisory_unlock({})", lock_key);
 
