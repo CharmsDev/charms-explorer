@@ -21,5 +21,6 @@ export {
 } from './api/status';
 
 export {
+    fetchTransactionByTxid,
     fetchTransactions,
 } from './api/transactions';

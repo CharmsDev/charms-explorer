@@ -26,9 +26,10 @@ use handlers::{
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
     get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
     get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker,
-    get_reference_nft_by_hash, get_transactions, get_wallet_balance, get_wallet_chain_tip,
-    get_wallet_charm_balances, get_wallet_charm_balances_batch, get_wallet_fee_estimate,
-    get_wallet_transaction, get_wallet_utxos, health_check, like_charm, unlike_charm, AppState,
+    get_reference_nft_by_hash, get_transaction_by_txid, get_transactions, get_wallet_balance,
+    get_wallet_chain_tip, get_wallet_charm_balances, get_wallet_charm_balances_batch,
+    get_wallet_fee_estimate, get_wallet_transaction, get_wallet_utxos, health_check, like_charm,
+    unlike_charm, AppState,
 };
 
 fn load_env() {
@@ -151,6 +152,7 @@ async fn main() {
         .route("/assets/{asset_id}", get(get_asset_by_id))
         // Transactions
         .route("/transactions", get(get_transactions))
+        .route("/transactions/{txid}", get(get_transaction_by_txid))
         // DEX Orders
         .route("/dex/orders/open", get(get_open_orders))
         .route(

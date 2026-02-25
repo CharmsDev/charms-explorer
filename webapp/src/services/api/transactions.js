@@ -3,6 +3,22 @@
 import { ENDPOINTS } from '../apiConfig';
 import { logger } from '../apiUtils';
 
+export const fetchTransactionByTxid = async (txid) => {
+    try {
+        const url = ENDPOINTS.TRANSACTION_BY_TXID(txid);
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+    } catch (error) {
+        logger.error('fetchTransactionByTxid', error);
+        throw error;
+    }
+};
+
 export const fetchTransactions = async (page = 1, limit = 50, sort = 'newest', network = null) => {
     try {
         let url = `${ENDPOINTS.TRANSACTIONS}`;

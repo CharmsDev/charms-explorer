@@ -16,6 +16,7 @@ export const ENDPOINTS = {
     `${API_BASE_URL}/charms/by-address/${address}`, // [RJJ-ADDRESS-SEARCH]
   CHARMS_COUNT_BY_TYPE: `${API_BASE_URL}/charms/count-by-type`,
   TRANSACTIONS: `${API_BASE_URL}/transactions`,
+  TRANSACTION_BY_TXID: (txid) => `${API_BASE_URL}/transactions/${txid}`,
   ASSETS: `${API_BASE_URL}/assets`,
   ASSET_COUNTS: `${API_BASE_URL}/assets/count`,
   ASSET_HOLDERS: (appId) =>

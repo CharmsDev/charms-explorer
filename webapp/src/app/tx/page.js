@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { getCharmByTxId } from '@/services/apiServices';
+import { getCharmByTxId, fetchTransactionByTxid } from '@/services/apiServices';
 import { getTransaction, isQuickNodeAvailable } from '@/services/quicknodeService';
 import { 
     analyzeTransaction, 
@@ -67,7 +67,33 @@ function TransactionPageContent() {
 
             try {
                 setLoading(true);
-                
+
+                // When coming from transactions list, try /v1/transactions/:txid first
+                if (from === 'transactions') {
+                    try {
+                        const txData = await fetchTransactionByTxid(txid);
+                        // Map transaction API response to charm-like shape for display
+                        setCharm({
+                            txid: txData.txid,
+                            block_height: txData.block_height,
+                            status: txData.status,
+                            confirmations: txData.confirmations,
+                            blockchain: txData.blockchain,
+                            network: txData.network,
+                            date_created: txData.updated_at,
+                            data: txData.charm?.native_data || txData.charm,
+                            charm: txData.charm,
+                            asset_type: txData.charm?.type || 'spell',
+                            isTransactionView: true,
+                        });
+                        setError(null);
+                        setLoading(false);
+                        return;
+                    } catch (txErr) {
+                        // Fall through to charm/bitcoin lookup
+                    }
+                }
+
                 // Try to get charm data first
                 try {
                     const data = await getCharmByTxId(txid);

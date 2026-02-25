@@ -29,7 +29,7 @@ pub use diagnostic::diagnose_database;
 pub use health::health_check;
 pub use stats_holders::get_asset_holders; // [RJJ-STATS-HOLDERS]
 pub use status::get_indexer_status;
-pub use transactions::get_transactions;
+pub use transactions::{get_transaction_by_txid, get_transactions};
 pub use wallet::{
     broadcast_wallet_transaction, get_wallet_balance, get_wallet_chain_tip,
     get_wallet_charm_balances, get_wallet_charm_balances_batch, get_wallet_fee_estimate,
