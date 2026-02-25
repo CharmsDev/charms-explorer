@@ -677,8 +677,9 @@ impl BlockProcessor {
     /// For each tx in the block that was previously detected in mempool
     /// (block_height IS NULL), this method:
     /// 1. Updates charms.block_height = confirmed_height
-    /// 2. Updates dex_orders.block_height = confirmed_height
-    /// 3. Removes their entries from mempool_spends
+    /// 2. Updates transactions status='confirmed', block_height = confirmed_height
+    /// 3. Updates dex_orders.block_height = confirmed_height
+    /// 4. Removes their entries from mempool_spends
     ///
     /// This is idempotent — safe to call even if no mempool entries exist.
     /// Does NOT update stats_holders (that happens in the normal block flow).
@@ -740,7 +741,37 @@ impl BlockProcessor {
             }
         }
 
-        // 2. Promote mempool DEX orders to confirmed block_height
+        // 2. Promote mempool transactions to confirmed
+        let sql_txs = format!(
+            "UPDATE transactions SET block_height = {}, status = 'confirmed', updated_at = NOW() \
+             WHERE txid IN ({}) AND network = '{}' AND (block_height IS NULL OR status = 'pending')",
+            height, ids_sql, network
+        );
+
+        match self
+            .mempool_spends_repository
+            .get_connection()
+            .execute(Statement::from_string(DbBackend::Postgres, sql_txs))
+            .await
+        {
+            Ok(r) if r.rows_affected() > 0 => {
+                logging::log_info(&format!(
+                    "[{}] ✅ Block {}: Promoted {} mempool transactions to confirmed",
+                    network,
+                    height,
+                    r.rows_affected()
+                ));
+            }
+            Ok(_) => {}
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Block {}: Failed to promote mempool transactions: {}",
+                    network, height, e
+                ));
+            }
+        }
+
+        // 3. Promote mempool DEX orders to confirmed block_height (step renumbered)
         let sql_orders = format!(
             "UPDATE dex_orders SET block_height = {}, updated_at = NOW() \
              WHERE txid IN ({}) AND network = '{}' AND block_height IS NULL",

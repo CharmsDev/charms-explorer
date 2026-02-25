@@ -142,7 +142,9 @@ impl TransactionRepository {
         Ok((transactions, num_pages))
     }
 
-    /// Save multiple transactions in a batch
+    /// Save multiple transactions in a batch.
+    /// Uses ON CONFLICT DO UPDATE to promote pending/mempool transactions to
+    /// confirmed status when the block processor re-encounters them.
     pub async fn save_batch(
         &self,
         transactions: Vec<(
@@ -157,15 +159,18 @@ impl TransactionRepository {
             String,
         )>,
     ) -> Result<(), DbError> {
-        // Skip individual existence checks - let database handle duplicates
         if transactions.is_empty() {
             return Ok(());
         }
 
-        // Create active models for all transactions
+        use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
         let now = chrono::Utc::now().naive_utc();
-        let models: Vec<transactions::ActiveModel> = transactions
-            .into_iter()
+        let now_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
+
+        // Build VALUES list for raw SQL INSERT ... ON CONFLICT DO UPDATE
+        let values: Vec<String> = transactions
+            .iter()
             .map(
                 |(
                     txid,
@@ -178,48 +183,50 @@ impl TransactionRepository {
                     blockchain,
                     network,
                 )| {
-                    let status = if is_confirmed {
-                        "confirmed".to_string()
+                    let status = if *is_confirmed {
+                        "confirmed"
                     } else {
-                        "pending".to_string()
+                        "pending"
                     };
+                    let raw_str = serde_json::to_string(raw).unwrap_or_else(|_| "{}".to_string());
+                    let charm_str =
+                        serde_json::to_string(charm).unwrap_or_else(|_| "{}".to_string());
 
-                    transactions::ActiveModel {
-                        txid: Set(txid),
-                        block_height: Set(Some(block_height as i32)),
-                        ordinal: Set(ordinal),
-                        raw: Set(raw),
-                        charm: Set(charm),
-                        updated_at: Set(now),
-                        status: Set(status),
-                        confirmations: Set(confirmations),
-                        blockchain: Set(blockchain),
-                        network: Set(network),
-                        mempool_detected_at: Set(None),
-                    }
+                    format!(
+                        "('{}', {}, {}, '{}'::jsonb, '{}'::jsonb, '{}', '{}', {}, '{}', '{}')",
+                        txid.replace('\'', "''"),
+                        block_height,
+                        ordinal,
+                        raw_str.replace('\'', "''"),
+                        charm_str.replace('\'', "''"),
+                        now_str,
+                        status,
+                        confirmations,
+                        blockchain.replace('\'', "''"),
+                        network.replace('\'', "''"),
+                    )
                 },
             )
             .collect();
 
-        // Try to insert all transactions, handle duplicate key violations gracefully
-        match transactions::Entity::insert_many(models)
-            .exec(&self.conn)
+        let sql = format!(
+            "INSERT INTO transactions (txid, block_height, ordinal, raw, charm, updated_at, status, confirmations, blockchain, network) \
+             VALUES {} \
+             ON CONFLICT (txid) DO UPDATE SET \
+               block_height = COALESCE(EXCLUDED.block_height, transactions.block_height), \
+               status = CASE WHEN EXCLUDED.status = 'confirmed' THEN 'confirmed' ELSE transactions.status END, \
+               confirmations = GREATEST(EXCLUDED.confirmations, transactions.confirmations), \
+               updated_at = EXCLUDED.updated_at, \
+               charm = CASE WHEN EXCLUDED.charm != '{{}}'::jsonb THEN EXCLUDED.charm ELSE transactions.charm END, \
+               raw = CASE WHEN EXCLUDED.raw != '{{}}'::jsonb THEN EXCLUDED.raw ELSE transactions.raw END",
+            values.join(", ")
+        );
+
+        self.conn
+            .execute(Statement::from_string(DbBackend::Postgres, sql))
             .await
-        {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                // Check if the error is a duplicate key violation
-                if e.to_string()
-                    .contains("duplicate key value violates unique constraint")
-                {
-                    // Some transactions already exist, this is not an error
-                    Ok(())
-                } else {
-                    // If it's not a duplicate key error, propagate the original error
-                    Err(e.into())
-                }
-            }
-        }
+            .map(|_| ())
+            .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
     /// Convert a database entity to a domain model
