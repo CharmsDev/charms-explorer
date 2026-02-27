@@ -214,7 +214,7 @@ impl TransactionRepository {
              VALUES {} \
              ON CONFLICT (txid) DO UPDATE SET \
                block_height = COALESCE(EXCLUDED.block_height, transactions.block_height), \
-               status = CASE WHEN EXCLUDED.status = 'confirmed' THEN 'confirmed' ELSE transactions.status END, \
+               status = CASE WHEN EXCLUDED.block_height IS NOT NULL THEN 'confirmed' ELSE transactions.status END, \
                confirmations = GREATEST(EXCLUDED.confirmations, transactions.confirmations), \
                updated_at = EXCLUDED.updated_at, \
                charm = CASE WHEN EXCLUDED.charm != '{{}}'::jsonb THEN EXCLUDED.charm ELSE transactions.charm END, \

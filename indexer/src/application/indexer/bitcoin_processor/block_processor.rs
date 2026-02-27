@@ -405,7 +405,7 @@ impl BlockProcessor {
             match detection_result {
                 Ok(Some((charm, asset_requests))) => {
                     let confirmations = latest_height - height + 1;
-                    let is_confirmed = confirmations >= 6;
+                    let is_confirmed = true; // Any tx in a block is confirmed; confirmations is just metadata
 
                     let raw_json = json!({
                         "hex": tx_hex,

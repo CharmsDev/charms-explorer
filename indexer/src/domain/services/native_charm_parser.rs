@@ -369,4 +369,27 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_extract_spell_97dc8dd9_from_file() {
+        // Reads hex from /tmp/spell_tx.hex (run: curl mempool.space/api/tx/97dc8dd9.../hex > /tmp/spell_tx.hex)
+        let tx_hex = std::fs::read_to_string("/tmp/spell_tx.hex")
+            .expect("/tmp/spell_tx.hex not found — run: curl -s https://mempool.space/api/tx/97dc8dd9d239a86efc0d7bf6154eb960001973d10d417b1f2bbb806771b2c26d/hex > /tmp/spell_tx.hex");
+        let tx_hex = tx_hex.trim();
+        println!("TX hex length: {}", tx_hex.len());
+        let result = NativeCharmParser::extract_spell_no_verify(tx_hex);
+        match &result {
+            Ok(spell) => println!(
+                "OK: version={}, outs={}",
+                spell.version,
+                spell.tx.outs.len()
+            ),
+            Err(e) => println!("ERROR: {}", e),
+        }
+        assert!(
+            result.is_ok(),
+            "extract_spell_no_verify failed for tx 97dc8dd9: {:?}",
+            result.err()
+        );
+    }
 }

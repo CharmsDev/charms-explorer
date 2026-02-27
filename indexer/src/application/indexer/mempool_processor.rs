@@ -98,13 +98,23 @@ impl MempoolProcessor {
             return Ok(());
         }
 
-        // 2. Filter out already-seen txids
-        let mut seen = self.seen_txids.lock().await;
-        let new_txids: Vec<String> = mempool_txids
-            .into_iter()
-            .filter(|txid| !seen.contains(txid))
-            .take(MAX_TXS_PER_CYCLE)
-            .collect();
+        // 2. Diff against seen set — acquire lock, collect new txids, release immediately.
+        //    We mark them seen NOW (before processing) to avoid retry storms if processing
+        //    is slow, but we release the lock before any RPC/DB work so we don't hold it
+        //    for 10+ seconds and block the purge_stale path.
+        let new_txids: Vec<String> = {
+            let mut seen = self.seen_txids.lock().await;
+            let new: Vec<String> = mempool_txids
+                .into_iter()
+                .filter(|txid| !seen.contains(txid))
+                .take(MAX_TXS_PER_CYCLE)
+                .collect();
+            // Mark all as seen before releasing the lock
+            for txid in &new {
+                seen.insert(txid.clone());
+            }
+            new
+        }; // lock released here
 
         if new_txids.is_empty() {
             return Ok(());
@@ -120,11 +130,8 @@ impl MempoolProcessor {
         let mut charm_count = 0usize;
         let mut order_count = 0usize;
 
-        // 3. Process each new txid
+        // 3. Process each new txid — lock is NOT held here
         for txid in &new_txids {
-            // Mark as seen immediately (even if processing fails, avoid retry storm)
-            seen.insert(txid.clone());
-
             match self.process_mempool_tx(txid).await {
                 Ok(Some(detected)) => {
                     charm_count += 1;
@@ -179,7 +186,16 @@ impl MempoolProcessor {
 
         let spell = match parse_result {
             Ok(s) => s,
-            Err(_) => return Ok(None), // Not a charm tx
+            Err(e) => {
+                // Log only if the tx looks like it could be a charm (has OP_RETURN)
+                if raw_hex.contains("6a057370656c6c") {
+                    logging::log_info(&format!(
+                        "[{}] ⚠️ Mempool: TX {} has spell OP_RETURN but parse failed: {}",
+                        self.network_id.name, txid, e
+                    ));
+                }
+                return Ok(None);
+            }
         };
 
         let network = self.network_id.name.clone();
