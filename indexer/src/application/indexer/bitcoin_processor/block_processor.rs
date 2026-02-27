@@ -13,6 +13,8 @@ use serde_json::json;
 use crate::config::NetworkId;
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
+use crate::domain::services::dex;
+use crate::domain::services::tx_analyzer;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::utxo_repository::UtxoInsert;
 use crate::infrastructure::persistence::repositories::{
@@ -63,6 +65,13 @@ impl BlockProcessor {
             mempool_spends_repository,
             retry_handler: RetryHandler::new(),
         }
+    }
+
+    /// Get DEX orders repository from charm service
+    fn get_dex_orders_repository(
+        &self,
+    ) -> Option<&crate::infrastructure::persistence::repositories::DexOrdersRepository> {
+        Some(self.charm_service.get_dex_orders_repository())
     }
 
     /// Process a single block with linear synchronous flow:
@@ -218,7 +227,10 @@ impl BlockProcessor {
         let mut charm_count = 0;
         let mut charm_addresses: Vec<String> = Vec::new();
 
-        // Process each cached transaction - reprocess charms
+        // Process each cached transaction - reprocess charms using TxAnalyzer
+        let network = network_id.name.clone();
+        let blockchain = "Bitcoin".to_string();
+
         for tx in &cached_txs {
             // Extract hex from raw JSON
             let tx_hex = tx.raw.get("hex").and_then(|v| v.as_str()).unwrap_or("");
@@ -227,27 +239,41 @@ impl BlockProcessor {
                 continue;
             }
 
-            // Use the charm service to detect charm
-            match self
+            // Analyze tx using shared TxAnalyzer
+            let analyzed = match tx_analyzer::analyze_tx(&tx.txid, tx_hex, &network) {
+                Some(a) => a,
+                None => continue,
+            };
+
+            charm_count += 1;
+            if let Some(addr) = &analyzed.address {
+                if !addr.is_empty() {
+                    charm_addresses.push(addr.clone());
+                }
+            }
+
+            // Save charm via batch save (single-item batch for reindex)
+            if let Err(e) = self
                 .charm_service
-                .detect_and_process_charm_from_hex(&tx.txid, height, tx_hex, tx.ordinal as usize)
+                .save_batch(vec![(
+                    tx.txid.clone(),
+                    0i32,
+                    height,
+                    analyzed.charm_json.clone(),
+                    analyzed.asset_type.clone(),
+                    blockchain.clone(),
+                    network.clone(),
+                    analyzed.address.clone(),
+                    analyzed.app_id.clone(),
+                    analyzed.amount,
+                    analyzed.tags.clone(),
+                )])
                 .await
             {
-                Ok(Some(charm)) => {
-                    charm_count += 1;
-                    if let Some(addr) = &charm.address {
-                        if !addr.is_empty() {
-                            charm_addresses.push(addr.clone());
-                        }
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    logging::log_error(&format!(
-                        "[{}] Error processing tx {} at height {}: {}",
-                        network_id.name, tx.txid, height, e
-                    ));
-                }
+                logging::log_error(&format!(
+                    "[{}] Error saving charm for tx {} at height {}: {}",
+                    network_id.name, tx.txid, height, e
+                ));
             }
         }
 
@@ -365,6 +391,8 @@ impl BlockProcessor {
     /// Detect charms from all transactions in a block sequentially.
     /// Returns batch items for transactions, charms, and assets.
     /// No DB writes happen here — pure detection only.
+    /// Uses the shared TxAnalyzer for parsing, then adds block-specific
+    /// logic (supply calculation, metadata extraction, DEX order saving).
     async fn detect_charms_from_block(
         &self,
         block: &bitcoin::Block,
@@ -389,85 +417,230 @@ impl BlockProcessor {
         let mut asset_batch: Vec<AssetBatchItem> = Vec::new();
 
         for (txid, tx_hex, tx_pos, input_txids) in tx_data {
-            // Detect charm (no DB writes)
-            let detection_result = self
-                .charm_service
-                .detect_charm_from_hex_with_context(
-                    &txid,
-                    height,
-                    &tx_hex,
-                    tx_pos,
-                    latest_height,
-                    input_txids,
-                )
-                .await;
+            // Analyze tx using shared TxAnalyzer (no DB writes)
+            let analyzed = match tx_analyzer::analyze_tx(&txid, &tx_hex, &network) {
+                Some(a) => a,
+                None => continue, // Not a charm tx
+            };
 
-            match detection_result {
-                Ok(Some((charm, asset_requests))) => {
-                    let confirmations = latest_height - height + 1;
-                    let is_confirmed = true; // Any tx in a block is confirmed; confirmations is just metadata
+            let confirmations = latest_height - height + 1;
 
-                    let raw_json = json!({
-                        "hex": tx_hex,
-                        "txid": txid,
-                    });
+            // Log DEX + tags
+            if let Some(ref dex_res) = analyzed.dex_result {
+                logging::log_info(&format!(
+                    "[{}] \u{1F3F7}\u{FE0F} Block {}: Charms Cast DEX detected for tx {}: {:?}",
+                    network, height, txid, dex_res.operation
+                ));
 
-                    transaction_batch.push((
-                        txid.clone(),
-                        height,
-                        tx_pos as i64,
-                        raw_json,
-                        charm.data.clone(),
-                        confirmations as i32,
-                        is_confirmed,
-                        blockchain.clone(),
-                        network.clone(),
-                    ));
-
-                    charm_batch.push((
-                        txid.clone(),
-                        charm.vout,
-                        height,
-                        charm.data.clone(),
-                        charm.asset_type.clone(),
-                        blockchain.clone(),
-                        network.clone(),
-                        charm.address.clone(),
-                        charm.app_id.clone(),
-                        charm.amount,
-                        charm.tags.clone(),
-                    ));
-
-                    // Convert AssetSaveRequest to AssetBatchItem
-                    for asset_req in asset_requests {
-                        asset_batch.push((
-                            asset_req.app_id,
-                            txid.clone(),
-                            charm.vout,
-                            height,
-                            asset_req.asset_type,
-                            asset_req.supply,
-                            asset_req.blockchain,
-                            asset_req.network,
-                            asset_req.name,
-                            asset_req.symbol,
-                            asset_req.description,
-                            asset_req.image_url,
-                            asset_req.decimals,
-                        ));
+                // Save DEX order to database
+                if let Some(ref order) = dex_res.order {
+                    if let Some(ref dex_repo) = self.get_dex_orders_repository() {
+                        match dex_repo
+                            .save_order(
+                                &txid,
+                                0,
+                                Some(height),
+                                order,
+                                &dex_res.operation,
+                                "charms-cast",
+                                &blockchain,
+                                &network,
+                            )
+                            .await
+                        {
+                            Ok(_) => {
+                                logging::log_info(&format!(
+                                    "[{}] \u{1F4BE} Block {}: Saved DEX order for tx {}: {:?} {:?}",
+                                    network, height, txid, order.side, dex_res.operation
+                                ));
+                            }
+                            Err(e) => {
+                                logging::log_error(&format!(
+                                    "[{}] \u{274C} Block {}: Failed to save DEX order for tx {}: {}",
+                                    network, height, txid, e
+                                ));
+                            }
+                        }
                     }
                 }
-                Ok(None) => {}
-                Err(e) => {
-                    logging::log_error(&format!(
-                        "[{}] Error detecting charm in tx {}: {}",
-                        network, txid, e
-                    ));
-                }
+            }
+
+            if analyzed.is_beaming {
+                logging::log_info(&format!(
+                    "[{}] \u{1F3F7}\u{FE0F} Block {}: Beaming transaction detected for tx {}",
+                    network, height, txid
+                ));
+            }
+
+            if dex::is_bro_token(&analyzed.app_id) {
+                logging::log_info(&format!(
+                    "[{}] \u{1F3F7}\u{FE0F} Block {}: $BRO token detected for tx {}",
+                    network, height, txid
+                ));
+            }
+
+            let raw_json = json!({
+                "hex": tx_hex,
+                "txid": txid,
+            });
+
+            transaction_batch.push((
+                txid.clone(),
+                height,
+                tx_pos as i64,
+                raw_json,
+                analyzed.charm_json.clone(),
+                confirmations as i32,
+                true, // Any tx in a block is confirmed
+                blockchain.clone(),
+                network.clone(),
+            ));
+
+            charm_batch.push((
+                txid.clone(),
+                0i32, // vout — Charms are always in output 0 per protocol
+                height,
+                analyzed.charm_json.clone(),
+                analyzed.asset_type.clone(),
+                blockchain.clone(),
+                network.clone(),
+                analyzed.address.clone(),
+                analyzed.app_id.clone(),
+                analyzed.amount,
+                analyzed.tags.clone(),
+            ));
+
+            // Block-specific: calculate net supply change per app_id (mint vs transfer)
+            let asset_requests = self
+                .build_asset_requests(&analyzed, &input_txids, height, &blockchain, &network)
+                .await;
+
+            for asset_req in asset_requests {
+                asset_batch.push(asset_req);
             }
         }
 
         Ok((transaction_batch, charm_batch, asset_batch))
+    }
+
+    /// Build asset save requests from an analyzed tx.
+    /// Calculates net supply change (mint vs transfer) by comparing input/output amounts.
+    /// Extracts NFT metadata from charm_json.
+    async fn build_asset_requests(
+        &self,
+        analyzed: &tx_analyzer::AnalyzedTx,
+        input_txids: &[String],
+        height: u64,
+        blockchain: &str,
+        network: &str,
+    ) -> Vec<AssetBatchItem> {
+        use std::collections::HashMap;
+
+        // Query input amounts from database for net supply calc
+        let input_amounts = if !input_txids.is_empty() {
+            self.charm_service
+                .get_charm_repository()
+                .get_amounts_by_txids(input_txids)
+                .await
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        // Group outputs by app_id (normalized to n/) and calculate net change
+        let mut net_changes: HashMap<String, i64> = HashMap::new();
+        for asset in &analyzed.asset_infos {
+            let nft_app_id = if asset.asset_type == "token" {
+                asset.app_id.replacen("t/", "n/", 1)
+            } else {
+                asset.app_id.clone()
+            };
+            *net_changes.entry(nft_app_id).or_insert(0) += asset.amount as i64;
+        }
+
+        // Subtract input amounts
+        for (_txid, app_id, amount) in &input_amounts {
+            let nft_app_id = if app_id.starts_with("t/") {
+                app_id.replacen("t/", "n/", 1)
+            } else {
+                app_id.clone()
+            };
+            *net_changes.entry(nft_app_id).or_insert(0) -= *amount as i64;
+        }
+
+        // Extract NFT metadata from charm_json
+        let metadata = if analyzed.asset_type == "nft" {
+            analyzed
+                .charm_json
+                .get("native_data")
+                .and_then(|nd| nd.get("tx"))
+                .and_then(|tx| tx.get("outs"))
+                .and_then(|outs| outs.get(0))
+                .and_then(|out0| out0.get("0"))
+                .cloned()
+        } else {
+            None
+        };
+
+        let (name, symbol, description, image_url, decimals) = if let Some(ref meta) = metadata {
+            (
+                meta.get("name").and_then(|v| v.as_str()).map(String::from),
+                meta.get("ticker")
+                    .or_else(|| meta.get("symbol"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                meta.get("description")
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                meta.get("image")
+                    .or_else(|| meta.get("url"))
+                    .or_else(|| meta.get("image_url"))
+                    .and_then(|v| v.as_str())
+                    .map(String::from),
+                meta.get("decimals")
+                    .and_then(|v| v.as_u64())
+                    .map(|d| d as u8),
+            )
+        } else {
+            (None, None, None, None, None)
+        };
+
+        // Build asset batch items
+        analyzed
+            .asset_infos
+            .iter()
+            .filter_map(|asset| {
+                let nft_app_id = if asset.asset_type == "token" {
+                    asset.app_id.replacen("t/", "n/", 1)
+                } else {
+                    asset.app_id.clone()
+                };
+
+                let net_change = net_changes.get(&nft_app_id).copied().unwrap_or(0);
+                if net_change == 0 {
+                    return None; // Transfer, not mint
+                }
+
+                let supply = net_change.max(0) as u64;
+                let is_nft = asset.asset_type == "nft";
+
+                Some((
+                    asset.app_id.clone(),
+                    analyzed.txid.clone(),
+                    0i32, // vout
+                    height,
+                    asset.asset_type.clone(),
+                    supply,
+                    blockchain.to_string(),
+                    network.to_string(),
+                    if is_nft { name.clone() } else { None },
+                    if is_nft { symbol.clone() } else { None },
+                    if is_nft { description.clone() } else { None },
+                    if is_nft { image_url.clone() } else { None },
+                    if is_nft { decimals } else { None },
+                ))
+            })
+            .collect()
     }
 
     /// Mark charms as spent by analyzing transaction inputs in the block

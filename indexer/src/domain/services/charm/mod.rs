@@ -1,42 +1,25 @@
-///! Charm service - Main entry point for charm-related operations
+///! Charm service - persistence and spent-tracking for charms.
 ///!
-///! This module provides a unified interface for charm detection, persistence, and tracking.
-///! It delegates to specialized sub-modules for better code organization:
-///!
-///! - `detection`: Charm detection from Bitcoin transactions
+///! Detection is handled by `domain::services::tx_analyzer` (shared by all code paths).
+///! This module provides:
 ///! - `persistence`: Batch save operations for charms and assets
 ///! - `spent_tracking`: Marking charms as spent when UTXOs are consumed
-///!
-///! [RJJ-S01] Updated to support spell-first architecture:
-///! 1. Save spell (output 0) first
-///! 2. Parse spell to extract multiple charms
-///! 3. Save each charm with correct vout (1, 2, 3...)
-mod detection;
 mod persistence;
-pub mod spell_detection; // [BATCH MODE] Made public for direct parsing access
-mod spent_tracking; // [RJJ-S01] New spell-first detection
+mod spent_tracking;
 
 use std::fmt;
 
 use crate::domain::errors::CharmError;
-use crate::domain::models::Charm;
-use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
     AssetRepository, CharmRepository, DexOrdersRepository, SpellRepository, StatsHoldersRepository,
 };
-use detection::CharmDetector;
-pub use detection::DetectionResult;
 use persistence::CharmPersistence;
-use spell_detection::SpellDetector;
 use spent_tracking::SpentTracker;
 
-/// Main service for charm detection, processing and storage
-/// [RJJ-S01] Now includes SpellRepository for spell-first architecture
-/// [RJJ-STATS-HOLDERS] Now includes StatsHoldersRepository for holder statistics
-/// [RJJ-DEX] Now includes DexOrdersRepository for Cast DEX order tracking
+/// Main service for charm persistence, spent tracking, and repository access.
+/// Detection is handled by `tx_analyzer::analyze_tx`.
 #[derive(Clone)]
 pub struct CharmService {
-    bitcoin_client: BitcoinClient,
     charm_repository: CharmRepository,
     asset_repository: AssetRepository,
     spell_repository: SpellRepository,
@@ -46,16 +29,13 @@ pub struct CharmService {
 
 impl fmt::Debug for CharmService {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("CharmService")
-            .field("bitcoin_client", &self.bitcoin_client)
-            .finish_non_exhaustive()
+        f.debug_struct("CharmService").finish_non_exhaustive()
     }
 }
 
 impl CharmService {
     /// Creates a new CharmService with required dependencies
     pub fn new(
-        bitcoin_client: BitcoinClient,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
         spell_repository: SpellRepository,
@@ -63,7 +43,6 @@ impl CharmService {
         dex_orders_repository: DexOrdersRepository,
     ) -> Self {
         Self {
-            bitcoin_client,
             charm_repository,
             asset_repository,
             spell_repository,
@@ -79,166 +58,22 @@ impl CharmService {
         &self.stats_holders_repository
     }
 
+    /// Get reference to charm repository (for supply calculations in block processor)
+    pub fn get_charm_repository(&self) -> &CharmRepository {
+        &self.charm_repository
+    }
+
+    /// Get reference to dex_orders repository (for saving DEX orders in block processor)
+    pub fn get_dex_orders_repository(&self) -> &DexOrdersRepository {
+        &self.dex_orders_repository
+    }
+
     /// Get list of block heights that already have charms processed
     pub async fn get_processed_block_heights(&self, network: &str) -> Result<Vec<u64>, CharmError> {
         self.charm_repository
             .get_distinct_block_heights(network)
             .await
             .map_err(|e| CharmError::DetectionError(e.to_string()))
-    }
-
-    // ==================== Detection Methods ====================
-    // Detection methods return DetectionResult = (Charm, Vec<AssetSaveRequest>)
-    // They do NOT persist anything — the caller handles all persistence.
-
-    /// Detect a charm from a transaction (fetches raw tx from node)
-    pub async fn detect_charm(
-        &self,
-        txid: &str,
-        block_height: u64,
-        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
-    ) -> Result<Option<DetectionResult>, CharmError> {
-        let detector = CharmDetector::new(&self.bitcoin_client, &self.charm_repository)
-            .with_dex_orders_repository(&self.dex_orders_repository);
-        detector
-            .detect_and_process_charm(txid, block_height, block_hash, 0)
-            .await
-    }
-
-    /// Detect a charm from pre-fetched raw hex
-    pub async fn detect_charm_from_hex(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_tx_hex: &str,
-        tx_pos: usize,
-    ) -> Result<Option<DetectionResult>, CharmError> {
-        self.detect_charm_from_hex_with_context(
-            txid,
-            block_height,
-            raw_tx_hex,
-            tx_pos,
-            block_height,
-            vec![],
-        )
-        .await
-    }
-
-    /// Detect a charm from pre-fetched raw hex with latest height and input txids
-    pub async fn detect_charm_from_hex_with_context(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_tx_hex: &str,
-        tx_pos: usize,
-        latest_height: u64,
-        input_txids: Vec<String>,
-    ) -> Result<Option<DetectionResult>, CharmError> {
-        let detector = CharmDetector::new(&self.bitcoin_client, &self.charm_repository)
-            .with_dex_orders_repository(&self.dex_orders_repository);
-        detector
-            .detect_from_hex(
-                txid,
-                block_height,
-                raw_tx_hex,
-                tx_pos,
-                latest_height,
-                input_txids,
-            )
-            .await
-    }
-
-    // ==================== Legacy Detection Methods (backward compat) ====================
-
-    /// Legacy: detect and process charm (returns only Charm, no assets)
-    pub async fn detect_and_process_charm(
-        &self,
-        txid: &str,
-        block_height: u64,
-        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
-    ) -> Result<Option<Charm>, CharmError> {
-        Ok(self
-            .detect_charm(txid, block_height, block_hash)
-            .await?
-            .map(|(charm, _)| charm))
-    }
-
-    /// Legacy: detect from hex (returns only Charm, no assets)
-    pub async fn detect_and_process_charm_from_hex(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_tx_hex: &str,
-        tx_pos: usize,
-    ) -> Result<Option<Charm>, CharmError> {
-        Ok(self
-            .detect_charm_from_hex(txid, block_height, raw_tx_hex, tx_pos)
-            .await?
-            .map(|(charm, _)| charm))
-    }
-
-    /// Legacy: detect from hex with latest height (returns only Charm, no assets)
-    pub async fn detect_and_process_charm_from_hex_with_latest(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_tx_hex: &str,
-        tx_pos: usize,
-        latest_height: u64,
-        input_txids: Vec<String>,
-    ) -> Result<Option<Charm>, CharmError> {
-        Ok(self
-            .detect_charm_from_hex_with_context(
-                txid,
-                block_height,
-                raw_tx_hex,
-                tx_pos,
-                latest_height,
-                input_txids,
-            )
-            .await?
-            .map(|(charm, _)| charm))
-    }
-
-    // ==================== Spell-First Detection Methods ====================
-
-    /// Detects a spell transaction using spell-first architecture
-    pub async fn detect_and_process_spell(
-        &self,
-        txid: &str,
-        block_height: u64,
-        block_hash: Option<&bitcoincore_rpc::bitcoin::BlockHash>,
-        tx_pos: usize,
-    ) -> Result<(Option<crate::domain::models::Spell>, Vec<Charm>), CharmError> {
-        let detector = SpellDetector::new(
-            &self.bitcoin_client,
-            &self.charm_repository,
-            &self.spell_repository,
-            &self.asset_repository,
-        );
-        detector
-            .detect_and_process_spell(txid, block_height, block_hash, tx_pos)
-            .await
-    }
-
-    /// Detects a spell from pre-fetched raw hex
-    pub async fn detect_and_process_spell_from_hex(
-        &self,
-        txid: &str,
-        block_height: u64,
-        raw_tx_hex: &str,
-        tx_pos: usize,
-        latest_height: u64,
-    ) -> Result<(Option<crate::domain::models::Spell>, Vec<Charm>), CharmError> {
-        let detector = SpellDetector::new(
-            &self.bitcoin_client,
-            &self.charm_repository,
-            &self.spell_repository,
-            &self.asset_repository,
-        );
-        detector
-            .detect_from_hex(txid, block_height, raw_tx_hex, tx_pos, latest_height)
-            .await
     }
 
     // ==================== Persistence Methods ====================

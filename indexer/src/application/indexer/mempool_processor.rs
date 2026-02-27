@@ -3,6 +3,9 @@
 //! Polls Bitcoin Core's mempool every N seconds, detects charm transactions,
 //! and saves them with block_height=NULL and mempool_detected_at=NOW().
 //!
+//! Detection is delegated to `tx_analyzer::analyze_tx` (shared with block processor).
+//! This module only handles: fetching, persistence, and stale-entry purging.
+//!
 //! Design guarantees:
 //! - NO stats_holders updates (only confirmed blocks update balances)
 //! - NO asset supply updates (only confirmed blocks update supply)
@@ -17,9 +20,8 @@ use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 use tokio::sync::Mutex;
 
 use crate::config::NetworkId;
-use crate::domain::services::address_extractor::AddressExtractor;
 use crate::domain::services::dex;
-use crate::domain::services::native_charm_parser::NativeCharmParser;
+use crate::domain::services::tx_analyzer;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::entities::{charms, dex_orders};
 use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
@@ -165,116 +167,59 @@ impl MempoolProcessor {
         &self,
         txid: &str,
     ) -> Result<Option<MempoolDetectionResult>, String> {
-        // Fetch raw tx hex from node (mempool tx, no block_hash needed)
         let raw_hex = self
             .bitcoin_client
             .get_raw_transaction_hex(txid, None)
             .await
             .map_err(|e| format!("get_raw_transaction_hex failed: {}", e))?;
 
-        // Try to detect a charm spell in this tx (CPU-intensive, run in blocking task)
-        // Use extract_spell_no_verify: real production txs have spell.mock=false, so
-        // extract_and_verify_charm(mock=true) fails because it uses MOCK_GROTH16_VK which
-        // doesn't match the real ZK proof. For mempool we only need spell data —
-        // the block processor re-verifies the full ZK proof when the tx confirms.
-        let raw_hex_owned = raw_hex.clone();
-        let parse_result = tokio::task::spawn_blocking(move || {
-            NativeCharmParser::extract_spell_no_verify(&raw_hex_owned)
+        // Analyze tx using shared TxAnalyzer (CPU-intensive, run in blocking task)
+        let txid_owned = txid.to_string();
+        let raw_hex_clone = raw_hex.clone();
+        let network = self.network_id.name.clone();
+        let analyzed = tokio::task::spawn_blocking(move || {
+            tx_analyzer::analyze_tx(&txid_owned, &raw_hex_clone, &network)
         })
         .await
         .map_err(|e| format!("spawn_blocking join error: {}", e))?;
 
-        let spell = match parse_result {
-            Ok(s) => s,
-            Err(e) => {
-                // Log only if the tx looks like it could be a charm (has OP_RETURN)
-                if raw_hex.contains("6a057370656c6c") {
-                    logging::log_info(&format!(
-                        "[{}] ⚠️ Mempool: TX {} has spell OP_RETURN but parse failed: {}",
-                        self.network_id.name, txid, e
-                    ));
-                }
-                return Ok(None);
-            }
+        let analyzed = match analyzed {
+            Some(a) => a,
+            None => return Ok(None), // Not a charm tx
         };
 
         let network = self.network_id.name.clone();
         let blockchain = "Bitcoin".to_string();
         let now = Utc::now().naive_utc();
+        let has_dex_order = analyzed
+            .dex_result
+            .as_ref()
+            .map_or(false, |d| d.order.is_some());
 
-        // Serialize spell to JSON for storage
-        let charm_json = serde_json::json!({
-            "type": "spell",
-            "detected": true,
-            "has_native_data": true,
-            "native_data": serde_json::to_value(&spell).unwrap_or_default(),
-            "version": "native_parser"
-        });
-
-        // Extract asset info
-        let asset_infos = NativeCharmParser::extract_asset_info(&spell);
-        let (app_id, asset_type, amount) = if let Some(first) = asset_infos.first() {
-            let atype = if first.app_id.starts_with("t/") {
-                "token"
-            } else if first.app_id.starts_with("n/") {
-                "nft"
-            } else if first.app_id.starts_with("B/") {
-                "dapp"
-            } else {
-                "other"
-            };
-            (first.app_id.clone(), atype.to_string(), first.amount as i64)
-        } else {
-            ("other".to_string(), "spell".to_string(), 0i64)
-        };
-
-        // Extract holder address
-        let address = AddressExtractor::extract_charm_holder_address(&raw_hex, &network)
-            .ok()
-            .flatten();
-
-        // Detect DEX operation
-        let dex_result = dex::detect_dex_operation(&charm_json);
-        let mut tags: Vec<String> = Vec::new();
-        let mut has_dex_order = false;
-
-        if let Some(ref result) = dex_result {
-            tags.push("charms-cast".to_string());
-            tags.push(result.operation.to_tag().to_string());
-            has_dex_order = result.order.is_some();
-
+        // Log DEX detection
+        if let Some(ref dex) = analyzed.dex_result {
             logging::log_info(&format!(
                 "[{}] 🏷️ Mempool: Charms Cast DEX detected for tx {}: {:?}",
-                network, txid, result.operation
+                network, txid, dex.operation
             ));
         }
-
-        if dex::is_bro_token(&app_id) {
-            tags.push("bro".to_string());
-        }
-
-        let tags_str = if tags.is_empty() {
-            None
-        } else {
-            Some(tags.join(","))
-        };
 
         // Save charm with block_height=NULL (mempool)
         let charm_model = charms::ActiveModel {
             txid: Set(txid.to_string()),
             vout: Set(0i32),
-            block_height: Set(None), // NULL = mempool, not yet confirmed
-            data: Set(charm_json.clone()),
+            block_height: Set(None),
+            data: Set(analyzed.charm_json.clone()),
             date_created: Set(now),
-            asset_type: Set(asset_type.clone()),
+            asset_type: Set(analyzed.asset_type.clone()),
             blockchain: Set(blockchain.clone()),
             network: Set(network.clone()),
-            address: Set(address.clone()),
+            address: Set(analyzed.address.clone()),
             spent: Set(false),
-            app_id: Set(app_id.clone()),
-            amount: Set(amount),
+            app_id: Set(analyzed.app_id.clone()),
+            amount: Set(analyzed.amount),
             mempool_detected_at: Set(Some(now)),
-            tags: Set(tags_str.clone()),
+            tags: Set(analyzed.tags.clone()),
             verified: Set(true),
         };
 
@@ -282,87 +227,18 @@ impl MempoolProcessor {
             Ok(_) => {
                 logging::log_info(&format!(
                     "[{}] 💾 Mempool charm saved: {} ({})",
-                    network, txid, asset_type
+                    network, txid, analyzed.asset_type
                 ));
             }
-            Err(e) if e.to_string().contains("duplicate key") => {
-                // Already indexed (from a previous cycle or block) — OK
-            }
+            Err(e) if e.to_string().contains("duplicate key") => {}
             Err(e) => {
                 return Err(format!("Failed to save mempool charm: {}", e));
             }
         }
 
         // Save DEX order with block_height=NULL
-        if let Some(ref dex) = dex_result {
-            if let Some(ref order) = dex.order {
-                let order_id = format!("{}:0", txid);
-                let now_dt = Utc::now().naive_utc();
-
-                let status = match dex.operation {
-                    dex::DexOperation::CreateAskOrder | dex::DexOperation::CreateBidOrder => "open",
-                    dex::DexOperation::PartialFill => "partial",
-                    dex::DexOperation::FulfillAsk | dex::DexOperation::FulfillBid => "filled",
-                    dex::DexOperation::CancelOrder => "cancelled",
-                };
-
-                use crate::domain::services::dex::{ExecType, OrderSide};
-                let side_str = match order.side {
-                    OrderSide::Ask => "ask",
-                    OrderSide::Bid => "bid",
-                };
-                let exec_type_str = match &order.exec_type {
-                    ExecType::AllOrNone => "all_or_none",
-                    ExecType::Partial { .. } => "partial",
-                };
-                let parent_order_id = if let ExecType::Partial { from } = &order.exec_type {
-                    from.clone()
-                } else {
-                    None
-                };
-
-                let order_model = dex_orders::ActiveModel {
-                    order_id: Set(order_id),
-                    txid: Set(txid.to_string()),
-                    vout: Set(0i32),
-                    block_height: Set(None), // NULL = mempool
-                    platform: Set("charms-cast".to_string()),
-                    maker: Set(order.maker.clone()),
-                    side: Set(side_str.to_string()),
-                    exec_type: Set(exec_type_str.to_string()),
-                    price_num: Set(order.price.0 as i64),
-                    price_den: Set(order.price.1 as i64),
-                    amount: Set(order.amount as i64),
-                    quantity: Set(order.quantity as i64),
-                    filled_amount: Set(0),
-                    filled_quantity: Set(0),
-                    asset_app_id: Set(order.asset_app_id.clone()),
-                    scrolls_address: Set(order.scrolls_address.clone()),
-                    status: Set(status.to_string()),
-                    parent_order_id: Set(parent_order_id),
-                    created_at: Set(now_dt),
-                    updated_at: Set(now_dt),
-                    blockchain: Set(blockchain.clone()),
-                    network: Set(network.clone()),
-                };
-
-                match order_model.insert(&self.db).await {
-                    Ok(_) => {
-                        logging::log_info(&format!(
-                            "[{}] 💾 Mempool DEX order saved: {} ({:?})",
-                            network, txid, dex.operation
-                        ));
-                    }
-                    Err(e) if e.to_string().contains("duplicate key") => {}
-                    Err(e) => {
-                        logging::log_warning(&format!(
-                            "[{}] ⚠️ Failed to save mempool DEX order {}: {}",
-                            network, txid, e
-                        ));
-                    }
-                }
-            }
-        }
+        self.save_mempool_dex_order(txid, &analyzed, &blockchain, &network)
+            .await;
 
         // Record mempool spends (inputs being consumed by this tx)
         let spends = self.extract_mempool_spends(&raw_hex, txid);
@@ -380,6 +256,90 @@ impl MempoolProcessor {
         }
 
         Ok(Some(MempoolDetectionResult { has_dex_order }))
+    }
+
+    /// Save a DEX order detected in a mempool transaction
+    async fn save_mempool_dex_order(
+        &self,
+        txid: &str,
+        analyzed: &tx_analyzer::AnalyzedTx,
+        blockchain: &str,
+        network: &str,
+    ) {
+        let dex_result = match &analyzed.dex_result {
+            Some(d) => d,
+            None => return,
+        };
+        let order = match &dex_result.order {
+            Some(o) => o,
+            None => return,
+        };
+
+        let order_id = format!("{}:0", txid);
+        let now_dt = Utc::now().naive_utc();
+
+        let status = match dex_result.operation {
+            dex::DexOperation::CreateAskOrder | dex::DexOperation::CreateBidOrder => "open",
+            dex::DexOperation::PartialFill => "partial",
+            dex::DexOperation::FulfillAsk | dex::DexOperation::FulfillBid => "filled",
+            dex::DexOperation::CancelOrder => "cancelled",
+        };
+
+        use crate::domain::services::dex::{ExecType, OrderSide};
+        let side_str = match order.side {
+            OrderSide::Ask => "ask",
+            OrderSide::Bid => "bid",
+        };
+        let exec_type_str = match &order.exec_type {
+            ExecType::AllOrNone => "all_or_none",
+            ExecType::Partial { .. } => "partial",
+        };
+        let parent_order_id = if let ExecType::Partial { from } = &order.exec_type {
+            from.clone()
+        } else {
+            None
+        };
+
+        let order_model = dex_orders::ActiveModel {
+            order_id: Set(order_id),
+            txid: Set(txid.to_string()),
+            vout: Set(0i32),
+            block_height: Set(None),
+            platform: Set("charms-cast".to_string()),
+            maker: Set(order.maker.clone()),
+            side: Set(side_str.to_string()),
+            exec_type: Set(exec_type_str.to_string()),
+            price_num: Set(order.price.0 as i64),
+            price_den: Set(order.price.1 as i64),
+            amount: Set(order.amount as i64),
+            quantity: Set(order.quantity as i64),
+            filled_amount: Set(0),
+            filled_quantity: Set(0),
+            asset_app_id: Set(order.asset_app_id.clone()),
+            scrolls_address: Set(order.scrolls_address.clone()),
+            status: Set(status.to_string()),
+            parent_order_id: Set(parent_order_id),
+            created_at: Set(now_dt),
+            updated_at: Set(now_dt),
+            blockchain: Set(blockchain.to_string()),
+            network: Set(network.to_string()),
+        };
+
+        match order_model.insert(&self.db).await {
+            Ok(_) => {
+                logging::log_info(&format!(
+                    "[{}] 💾 Mempool DEX order saved: {} ({:?})",
+                    network, txid, dex_result.operation
+                ));
+            }
+            Err(e) if e.to_string().contains("duplicate key") => {}
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Failed to save mempool DEX order {}: {}",
+                    network, txid, e
+                ));
+            }
+        }
     }
 
     /// Extract (spending_txid, spent_txid, spent_vout) from a raw tx hex

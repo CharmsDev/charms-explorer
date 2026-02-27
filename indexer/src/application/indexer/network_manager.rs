@@ -150,7 +150,6 @@ impl NetworkManager {
 
         // Create charm service (synchronous, no queue)
         let charm_service = CharmService::new(
-            bitcoin_client.clone(),
             charm_repository.clone(),
             asset_repository,
             spell_repository,
