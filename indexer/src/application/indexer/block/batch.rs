@@ -69,9 +69,8 @@ impl BatchProcessor {
         .await?;
 
         // Then update stats_holders with positive amounts for new charms
-        // Extract (app_id, address, amount, block_height) from batch
         // For tokens (t/): use actual amount as balance delta
-        // For NFTs (n/): use 1 as balance delta (NFT ownership, not the raw amount which is an identifier)
+        // For NFTs (n/): use 1 as balance delta (ownership count)
         let holder_updates: Vec<(String, String, i64, i32)> = batch
             .iter()
             .filter_map(
@@ -79,7 +78,6 @@ impl BatchProcessor {
                     if let Some(addr) = address {
                         if *amount > 0 && !addr.is_empty() {
                             if app_id.starts_with("t/") {
-                                // Token charm: convert t/ to n/ for consolidation, use actual amount
                                 let nft_app_id = app_id.replacen("t/", "n/", 1);
                                 return Some((
                                     nft_app_id,
@@ -88,7 +86,6 @@ impl BatchProcessor {
                                     *block_height as i32,
                                 ));
                             } else if app_id.starts_with("n/") {
-                                // NFT charm: keep n/ app_id, use 1 as amount (ownership count)
                                 return Some((
                                     app_id.clone(),
                                     addr.clone(),
@@ -142,7 +139,7 @@ impl BatchProcessor {
         .await
     }
 
-    /// Generic batch save execution with retry logic to eliminate code duplication
+    /// Generic batch save execution with retry logic
     async fn execute_batch_save<F, Fut, E, ErrMapper>(
         &self,
         batch_type: &str,
@@ -199,9 +196,6 @@ pub type TransactionBatchItem = (
 );
 
 /// Charm batch item for bulk operations
-/// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
-/// [RJJ-ADDRESS] Added address field
-/// [RJJ-DEX] Added tags field
 pub type CharmBatchItem = (
     String,         // txid
     i32,            // vout

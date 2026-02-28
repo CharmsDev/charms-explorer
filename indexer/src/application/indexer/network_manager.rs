@@ -3,8 +3,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
 
-use crate::application::indexer::bitcoin_processor::BitcoinProcessor;
-use crate::application::indexer::mempool_processor::MempoolProcessor;
+use crate::application::indexer::block::BitcoinProcessor;
+use crate::application::indexer::mempool::MempoolProcessor;
 use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;

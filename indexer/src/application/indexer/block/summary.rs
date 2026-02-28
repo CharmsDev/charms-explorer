@@ -5,8 +5,8 @@ use crate::domain::errors::BlockProcessorError;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::SummaryRepository;
 
-use super::batch_processor::{CharmBatchItem, TransactionBatchItem};
-use super::retry_handler::RetryHandler;
+use super::batch::{CharmBatchItem, TransactionBatchItem};
+use super::retry::RetryHandler;
 
 /// Handles updating summary statistics after block processing
 #[derive(Debug)]
@@ -34,7 +34,6 @@ impl SummaryUpdater {
         transaction_batch: &[TransactionBatchItem],
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
-        // Get bitcoin node information
         let (bitcoin_node_status, bitcoin_node_block_count, bitcoin_node_best_block_hash) =
             match self.bitcoin_client.get_best_block_hash().await {
                 Ok(best_hash) => (
@@ -46,28 +45,25 @@ impl SummaryUpdater {
             };
 
         let latest_confirmed_block = if latest_height >= 6 {
-            latest_height - 5 // 6 confirmations means 5 blocks behind
+            latest_height - 5
         } else {
             0
         };
 
-        // Calculate asset type counts from current batch
-        let asset_counts = self.calculate_asset_counts(charm_batch);
+        let asset_counts = calculate_asset_counts(charm_batch);
 
-        // Count confirmed transactions in current batch
         let confirmed_transactions = transaction_batch
             .iter()
-            .filter(|tx| tx.6) // is_confirmed is the 7th element
+            .filter(|tx| tx.6)
             .count() as i64;
 
-        // Get current totals from database to add to them
         let current_summary = self
             .summary_repository
             .get_summary(network_id)
             .await
             .map_err(BlockProcessorError::DbError)?;
 
-        let totals = self.calculate_totals(
+        let totals = calculate_totals(
             current_summary,
             charm_batch,
             transaction_batch,
@@ -75,7 +71,6 @@ impl SummaryUpdater {
             &asset_counts,
         );
 
-        // Update summary table with bitcoin node information
         self.retry_handler
             .execute_with_retry_and_logging(
                 || async {
@@ -105,51 +100,46 @@ impl SummaryUpdater {
 
         Ok(())
     }
-    /// Calculate asset type counts from charm batch
-    fn calculate_asset_counts(&self, charm_batch: &[CharmBatchItem]) -> AssetCounts {
-        let mut counts = AssetCounts::default();
+}
 
-        for charm_item in charm_batch {
-            let asset_type = &charm_item.4; // asset_type is still the 5th element (index 4)
-            match asset_type.as_str() {
-                "nft" => counts.nft_count += 1,
-                "token" => counts.token_count += 1,
-                _ => counts.other_count += 1,
-            }
+fn calculate_asset_counts(charm_batch: &[CharmBatchItem]) -> AssetCounts {
+    let mut counts = AssetCounts::default();
+    for charm_item in charm_batch {
+        match charm_item.4.as_str() {
+            "nft" => counts.nft_count += 1,
+            "token" => counts.token_count += 1,
+            _ => counts.other_count += 1,
         }
-
-        counts
     }
-    /// Calculate total counts by adding current batch to existing totals
-    fn calculate_totals(
-        &self,
-        current_summary: Option<crate::infrastructure::persistence::entities::summary::Model>,
-        charm_batch: &[CharmBatchItem],
-        transaction_batch: &[TransactionBatchItem],
-        confirmed_transactions: i64,
-        asset_counts: &AssetCounts,
-    ) -> SummaryTotals {
-        if let Some(summary) = current_summary {
-            SummaryTotals {
-                total_charms: summary.total_charms + charm_batch.len() as i64,
-                total_transactions: summary.total_transactions + transaction_batch.len() as i64,
-                total_confirmed_transactions: summary.confirmed_transactions
-                    + confirmed_transactions,
-                total_nft_count: summary.nft_count + asset_counts.nft_count,
-                total_token_count: summary.token_count + asset_counts.token_count,
-                total_dapp_count: summary.dapp_count + asset_counts.dapp_count,
-                total_other_count: summary.other_count + asset_counts.other_count,
-            }
-        } else {
-            SummaryTotals {
-                total_charms: charm_batch.len() as i64,
-                total_transactions: transaction_batch.len() as i64,
-                total_confirmed_transactions: confirmed_transactions,
-                total_nft_count: asset_counts.nft_count,
-                total_token_count: asset_counts.token_count,
-                total_dapp_count: asset_counts.dapp_count,
-                total_other_count: asset_counts.other_count,
-            }
+    counts
+}
+
+fn calculate_totals(
+    current_summary: Option<crate::infrastructure::persistence::entities::summary::Model>,
+    charm_batch: &[CharmBatchItem],
+    transaction_batch: &[TransactionBatchItem],
+    confirmed_transactions: i64,
+    asset_counts: &AssetCounts,
+) -> SummaryTotals {
+    if let Some(summary) = current_summary {
+        SummaryTotals {
+            total_charms: summary.total_charms + charm_batch.len() as i64,
+            total_transactions: summary.total_transactions + transaction_batch.len() as i64,
+            total_confirmed_transactions: summary.confirmed_transactions + confirmed_transactions,
+            total_nft_count: summary.nft_count + asset_counts.nft_count,
+            total_token_count: summary.token_count + asset_counts.token_count,
+            total_dapp_count: summary.dapp_count + asset_counts.dapp_count,
+            total_other_count: summary.other_count + asset_counts.other_count,
+        }
+    } else {
+        SummaryTotals {
+            total_charms: charm_batch.len() as i64,
+            total_transactions: transaction_batch.len() as i64,
+            total_confirmed_transactions: confirmed_transactions,
+            total_nft_count: asset_counts.nft_count,
+            total_token_count: asset_counts.token_count,
+            total_dapp_count: asset_counts.dapp_count,
+            total_other_count: asset_counts.other_count,
         }
     }
 }
