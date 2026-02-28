@@ -6,6 +6,7 @@
 
 mod cleanup;
 mod processor;
+pub mod utxo_tracker;
 
 use std::collections::HashSet;
 use std::time::Duration;
@@ -15,7 +16,9 @@ use tokio::sync::Mutex;
 
 use crate::config::NetworkId;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
-use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
+use crate::infrastructure::persistence::repositories::{
+    MempoolSpendsRepository, MonitoredAddressesRepository, UtxoRepository,
+};
 use crate::utils::logging;
 
 /// How often to poll the mempool (seconds)
@@ -24,13 +27,19 @@ const POLL_INTERVAL_SECS: u64 = 1;
 /// Maximum number of mempool txids to process per poll cycle
 const MAX_TXS_PER_CYCLE: usize = 100;
 
+/// How often to reload the monitored address set (every N cycles)
+const MONITORED_SET_RELOAD_INTERVAL: u64 = 60;
+
 /// Mempool processor — runs as a background task alongside the block processor
 pub struct MempoolProcessor {
     bitcoin_client: BitcoinClient,
     db: DatabaseConnection,
     mempool_spends_repository: MempoolSpendsRepository,
+    utxo_repository: UtxoRepository,
+    monitored_addresses_repository: MonitoredAddressesRepository,
     network_id: NetworkId,
     seen_txids: std::sync::Arc<Mutex<HashSet<String>>>,
+    monitored_set: std::sync::Arc<Mutex<HashSet<String>>>,
 }
 
 impl MempoolProcessor {
@@ -38,14 +47,19 @@ impl MempoolProcessor {
         bitcoin_client: BitcoinClient,
         db: DatabaseConnection,
         mempool_spends_repository: MempoolSpendsRepository,
+        utxo_repository: UtxoRepository,
+        monitored_addresses_repository: MonitoredAddressesRepository,
         network_id: NetworkId,
     ) -> Self {
         Self {
             bitcoin_client,
             db,
             mempool_spends_repository,
+            utxo_repository,
+            monitored_addresses_repository,
             network_id,
             seen_txids: std::sync::Arc::new(Mutex::new(HashSet::new())),
+            monitored_set: std::sync::Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -57,8 +71,16 @@ impl MempoolProcessor {
         ));
 
         let mut cycle: u64 = 0;
+        // Load monitored set on startup
+        self.reload_monitored_set().await;
+
         loop {
             cycle += 1;
+
+            // Reload monitored set periodically
+            if cycle % MONITORED_SET_RELOAD_INTERVAL == 0 {
+                self.reload_monitored_set().await;
+            }
 
             if let Err(e) = self.poll_once(cycle).await {
                 logging::log_warning(&format!(
@@ -114,17 +136,53 @@ impl MempoolProcessor {
 
         logging::log_info(&format!(
             "[{}] 🔍 Mempool cycle {}: {} new txids to check",
-            self.network_id.name, cycle, new_txids.len()
+            self.network_id.name,
+            cycle,
+            new_txids.len()
         ));
 
         let mut charm_count = 0usize;
         let mut order_count = 0usize;
 
+        // Get a snapshot of the monitored set for this cycle
+        let monitored_snapshot = self.monitored_set.lock().await.clone();
+
         for txid in &new_txids {
-            match processor::process_tx(
+            // Track UTXOs for monitored addresses (ALL txs, not just charm txs)
+            // We need the raw hex for both charm detection and UTXO tracking
+            let raw_hex = match self
+                .bitcoin_client
+                .get_raw_transaction_hex(txid, None)
+                .await
+            {
+                Ok(hex) => hex,
+                Err(e) => {
+                    logging::log_debug(&format!(
+                        "[{}] Mempool tx {} hex fetch failed: {}",
+                        self.network_id.name, txid, e
+                    ));
+                    continue;
+                }
+            };
+
+            // Track UTXO changes for monitored addresses
+            if !monitored_snapshot.is_empty() {
+                utxo_tracker::track_mempool_utxos(
+                    txid,
+                    &raw_hex,
+                    &self.network_id.name,
+                    &monitored_snapshot,
+                    &self.utxo_repository,
+                    &self.mempool_spends_repository,
+                )
+                .await;
+            }
+
+            // Detect charms (pass raw_hex to avoid re-fetching)
+            match processor::process_tx_with_hex(
                 txid,
+                &raw_hex,
                 &self.network_id,
-                &self.bitcoin_client,
                 &self.db,
                 &self.mempool_spends_repository,
             )
@@ -139,7 +197,7 @@ impl MempoolProcessor {
                 Ok(None) => {}
                 Err(e) => {
                     logging::log_debug(&format!(
-                        "[{}] Mempool tx {} skipped: {}",
+                        "[{}] Mempool tx {} charm detection skipped: {}",
                         self.network_id.name, txid, e
                     ));
                 }
@@ -154,5 +212,20 @@ impl MempoolProcessor {
         }
 
         Ok(())
+    }
+
+    /// Reload the monitored address set from DB
+    async fn reload_monitored_set(&self) {
+        let set = utxo_tracker::load_monitored_set(
+            &self.network_id.name,
+            &self.monitored_addresses_repository,
+        )
+        .await;
+        let count = set.len();
+        *self.monitored_set.lock().await = set;
+        logging::log_info(&format!(
+            "[{}] 📡 Mempool UTXO tracker: {} seeded addresses loaded",
+            self.network_id.name, count
+        ));
     }
 }

@@ -74,6 +74,23 @@ impl MonitoredAddressesRepository {
         }
     }
 
+    /// Check if an address is monitored AND has been seeded with UTXOs.
+    /// Returns false if the address is not monitored or if seeded_at is NULL
+    /// (registered by indexer/backfill but never had BTC UTXOs fetched).
+    pub async fn is_seeded(&self, address: &str, network: &str) -> Result<bool, String> {
+        let result = monitored_addresses::Entity::find()
+            .filter(monitored_addresses::Column::Address.eq(address))
+            .filter(monitored_addresses::Column::Network.eq(network))
+            .one(&self.conn)
+            .await
+            .map_err(|e| format!("DB query failed: {}", e))?;
+
+        match result {
+            Some(model) => Ok(model.seeded_at.is_some()),
+            None => Ok(false),
+        }
+    }
+
     /// Acquire an advisory lock for seeding an address (prevents race conditions).
     /// Returns true if lock was acquired, false if another process holds it.
     /// Note: pg_try_advisory_lock has no ORM equivalent — uses ConnectionTrait.

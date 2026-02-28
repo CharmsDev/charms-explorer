@@ -115,6 +115,30 @@ impl MonitoredAddressesRepository {
         Ok(total)
     }
 
+    /// Load only seeded addresses (seeded_at IS NOT NULL) for a network into a HashSet.
+    /// These are addresses whose BTC UTXOs have been populated and should be tracked in real time.
+    pub async fn load_seeded_set(&self, network: &str) -> Result<HashSet<String>, DbError> {
+        let sql = format!(
+            "SELECT address FROM monitored_addresses WHERE network = '{}' AND seeded_at IS NOT NULL",
+            network.replace('\'', "''")
+        );
+
+        let rows = self
+            .conn
+            .query_all(Statement::from_string(DbBackend::Postgres, sql))
+            .await
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        let mut set = HashSet::with_capacity(rows.len());
+        for row in rows {
+            if let Ok(addr) = row.try_get::<String>("", "address") {
+                set.insert(addr);
+            }
+        }
+
+        Ok(set)
+    }
+
     /// Check if an address is monitored.
     pub async fn is_monitored(&self, address: &str, network: &str) -> Result<bool, DbError> {
         let sql = format!(

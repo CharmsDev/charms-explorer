@@ -297,6 +297,50 @@ const SECTIONS = [
         desc: 'Current chain tip',
         response: '{ "height": 937396, "hash": "00000000...", "time": 1771501794 }',
       },
+      // ─── Transaction History ──────────────────────────────────
+      // Returns paginated transaction history for a monitored address.
+      // If the address is not yet monitored, it is lazily seeded from
+      // QuickNode (bb_getAddress) on the first request, then kept
+      // up-to-date by the Indexer in real time.
+      {
+        method: 'GET',
+        path: '/v1/wallet/transactions/{address}',
+        desc: 'Paginated BTC transaction history for an address',
+        params: [
+          { name: 'network', type: 'string', required: false, desc: 'mainnet | testnet4 (default: mainnet)' },
+          { name: 'page', type: 'u64', required: false, desc: 'Page number (default: 1)' },
+          { name: 'page_size', type: 'u64', required: false, desc: 'Items per page, max 100 (default: 50)' },
+        ],
+        response: `{
+  "address": "bc1q...",
+  "network": "mainnet",
+  "transactions": [
+    {
+      "txid": "abc123...",
+      "direction": "in",
+      "amount": 50000,
+      "fee": 1200,
+      "block_height": 937396,
+      "block_time": 1771501794,
+      "confirmations": 3
+    },
+    {
+      "txid": "def456...",
+      "direction": "out",
+      "amount": 30000,
+      "fee": 800,
+      "block_height": 937390,
+      "block_time": 1771498000,
+      "confirmations": 9
+    }
+  ],
+  "page": 1,
+  "page_size": 50,
+  "total": 127,
+  "total_pages": 3
+}`,
+        note: 'Amounts in satoshis. "direction": "in" = received, "out" = sent. block_height/block_time may be null for unconfirmed mempool transactions. Seeded lazily from QuickNode on first request; Indexer keeps it current afterward.',
+      },
     ],
   },
   {

@@ -6,8 +6,8 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, MempoolSpendsRepository, MonitoredAddressesRepository,
-    SummaryRepository, TransactionRepository, UtxoRepository,
+    AddressTransactionsRepository, BlockStatusRepository, MempoolSpendsRepository,
+    MonitoredAddressesRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -27,6 +27,7 @@ pub struct BlockProcessor {
     utxo_repository: UtxoRepository,
     monitored_addresses_repository: MonitoredAddressesRepository,
     mempool_spends_repository: MempoolSpendsRepository,
+    address_transactions_repository: AddressTransactionsRepository,
     retry_handler: RetryHandler,
 }
 
@@ -40,6 +41,7 @@ impl BlockProcessor {
         utxo_repository: UtxoRepository,
         monitored_addresses_repository: MonitoredAddressesRepository,
         mempool_spends_repository: MempoolSpendsRepository,
+        address_transactions_repository: AddressTransactionsRepository,
     ) -> Self {
         Self {
             bitcoin_client,
@@ -50,6 +52,7 @@ impl BlockProcessor {
             utxo_repository,
             monitored_addresses_repository,
             mempool_spends_repository,
+            address_transactions_repository,
             retry_handler: RetryHandler::new(),
         }
     }
@@ -60,25 +63,44 @@ impl BlockProcessor {
         height: u64,
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
-        let latest_height = self.bitcoin_client.get_block_count().await
+        let latest_height = self
+            .bitcoin_client
+            .get_block_count()
+            .await
             .map_err(BlockProcessorError::BitcoinClientError)?;
 
-        let block_hash = self.bitcoin_client.get_block_hash(height).await
+        let block_hash = self
+            .bitcoin_client
+            .get_block_hash(height)
+            .await
             .map_err(BlockProcessorError::BitcoinClientError)?;
-        let block = self.bitcoin_client.get_block(&block_hash).await
+        let block = self
+            .bitcoin_client
+            .get_block(&block_hash)
+            .await
             .map_err(BlockProcessorError::BitcoinClientError)?;
 
         // STEP 0: Promote mempool entries to confirmed
         mempool_consolidator::consolidate(
-            &block, height, network_id, &self.mempool_spends_repository,
-        ).await;
+            &block,
+            height,
+            network_id,
+            &self.mempool_spends_repository,
+        )
+        .await;
 
         // STEP 1: Detect charms from all transactions
         let dex_repo = self.charm_service.get_dex_orders_repository();
         let (transaction_batch, charm_batch, asset_batch) = detection::detect_charms(
-            &block, height, latest_height, &network_id.name, "Bitcoin",
-            &self.charm_service, Some(dex_repo),
-        ).await;
+            &block,
+            height,
+            latest_height,
+            &network_id.name,
+            "Bitcoin",
+            &self.charm_service,
+            Some(dex_repo),
+        )
+        .await;
 
         let batch_processor = BatchProcessor::new(
             self.charm_service.clone(),
@@ -86,49 +108,88 @@ impl BlockProcessor {
         );
 
         // STEP 2: Save transactions
-        batch_processor.save_transaction_batch(transaction_batch.clone(), height, network_id).await?;
+        batch_processor
+            .save_transaction_batch(transaction_batch.clone(), height, network_id)
+            .await?;
 
         // STEP 3: Save charms
-        batch_processor.save_charm_batch(charm_batch.clone(), height, network_id).await?;
+        batch_processor
+            .save_charm_batch(charm_batch.clone(), height, network_id)
+            .await?;
 
         // STEP 4: Save assets
-        batch_processor.save_asset_batch(asset_batch, height, network_id).await?;
+        batch_processor
+            .save_asset_batch(asset_batch, height, network_id)
+            .await?;
 
         // STEP 5: Mark spent charms
         spent_tracker::mark_spent_charms(
-            &block, network_id, &self.charm_service, &self.retry_handler,
-        ).await?;
+            &block,
+            network_id,
+            &self.charm_service,
+            &self.retry_handler,
+        )
+        .await?;
 
         // STEP 5.5a: Auto-register charm addresses for monitoring
         utxo_indexer::register_charm_addresses(
-            &charm_batch, network_id, &self.monitored_addresses_repository,
-        ).await;
+            &charm_batch,
+            network_id,
+            &self.monitored_addresses_repository,
+        )
+        .await;
 
         // STEP 5.5b: Update UTXO index for monitored addresses
         utxo_indexer::update_monitored_utxos(
-            &block, height, network_id,
-            &self.monitored_addresses_repository, &self.utxo_repository,
-        ).await?;
+            &block,
+            height,
+            network_id,
+            &self.monitored_addresses_repository,
+            &self.utxo_repository,
+        )
+        .await?;
+
+        // STEP 5.5c: Record address transactions for monitored addresses
+        utxo_indexer::record_address_transactions(
+            &block,
+            height,
+            network_id,
+            &self.monitored_addresses_repository,
+            &self.address_transactions_repository,
+        )
+        .await;
 
         // STEP 6: Update summary statistics
-        let summary_updater = SummaryUpdater::new(
-            self.bitcoin_client.clone(),
-            self.summary_repository.clone(),
-        );
+        let summary_updater =
+            SummaryUpdater::new(self.bitcoin_client.clone(), self.summary_repository.clone());
         summary_updater
-            .update_statistics(height, latest_height, &charm_batch, &transaction_batch, network_id)
+            .update_statistics(
+                height,
+                latest_height,
+                &charm_batch,
+                &transaction_batch,
+                network_id,
+            )
             .await?;
 
         // STEP 7: Update block_status
         let confirmations = latest_height.saturating_sub(height) + 1;
-        let _ = self.block_status_repository
-            .mark_downloaded(height as i32, Some(&block_hash.to_string()), block.txdata.len() as i32, network_id)
+        let _ = self
+            .block_status_repository
+            .mark_downloaded(
+                height as i32,
+                Some(&block_hash.to_string()),
+                block.txdata.len() as i32,
+                network_id,
+            )
             .await;
-        let _ = self.block_status_repository
+        let _ = self
+            .block_status_repository
             .mark_processed(height as i32, charm_batch.len() as i32, network_id)
             .await;
         if confirmations >= 6 {
-            let _ = self.block_status_repository
+            let _ = self
+                .block_status_repository
                 .mark_confirmed(height as i32, network_id)
                 .await;
         }
@@ -136,7 +197,11 @@ impl BlockProcessor {
         let remaining = latest_height.saturating_sub(height);
         logging::log_info(&format!(
             "[{}] ✅ Block {}: Tx {} | Charms {} ({} remaining)",
-            network_id.name, height, block.txdata.len(), charm_batch.len(), remaining
+            network_id.name,
+            height,
+            block.txdata.len(),
+            charm_batch.len(),
+            remaining
         ));
 
         Ok(())

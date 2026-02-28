@@ -16,8 +16,9 @@ pub struct MempoolDetectionResult {
     pub has_dex_order: bool,
 }
 
-/// Process a single mempool transaction.
+/// Process a single mempool transaction (fetches raw hex internally).
 /// Returns Some(result) if it's a charm tx, None if not.
+#[allow(dead_code)]
 pub async fn process_tx(
     txid: &str,
     network_id: &NetworkId,
@@ -30,9 +31,21 @@ pub async fn process_tx(
         .await
         .map_err(|e| format!("get_raw_transaction_hex failed: {}", e))?;
 
+    process_tx_with_hex(txid, &raw_hex, network_id, db, mempool_spends_repository).await
+}
+
+/// Process a single mempool transaction with pre-fetched raw hex.
+/// Returns Some(result) if it's a charm tx, None if not.
+pub async fn process_tx_with_hex(
+    txid: &str,
+    raw_hex: &str,
+    network_id: &NetworkId,
+    db: &DatabaseConnection,
+    mempool_spends_repository: &MempoolSpendsRepository,
+) -> Result<Option<MempoolDetectionResult>, String> {
     // Analyze tx using shared TxAnalyzer (CPU-intensive, run in blocking task)
     let txid_owned = txid.to_string();
-    let raw_hex_clone = raw_hex.clone();
+    let raw_hex_clone = raw_hex.to_string();
     let network = network_id.name.clone();
     let analyzed = tokio::task::spawn_blocking(move || {
         tx_analyzer::analyze_tx(&txid_owned, &raw_hex_clone, &network)

@@ -2,9 +2,10 @@ use sea_orm::DatabaseConnection;
 
 use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, BlockStatusRepository, CharmRepository, DexOrdersRepository,
-    MempoolSpendsRepository, MonitoredAddressesRepository, Repositories, SpellRepository,
-    StatsHoldersRepository, SummaryRepository, TransactionRepository, UtxoRepository,
+    AddressTransactionsRepository, AssetRepository, BlockStatusRepository, CharmRepository,
+    DexOrdersRepository, MempoolSpendsRepository, MonitoredAddressesRepository, Repositories,
+    SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository,
+    UtxoRepository,
 };
 
 /// Factory for creating repositories
@@ -19,6 +20,7 @@ impl RepositoryFactory {
         let conn = db_pool.get_connection().clone();
 
         Repositories::new(
+            Self::create_address_transactions_repository(conn.clone()),
             Self::create_asset_repository(conn.clone()),
             Self::create_block_status_repository(conn.clone()),
             Self::create_charm_repository(conn.clone()),
@@ -91,5 +93,12 @@ impl RepositoryFactory {
     /// Create a mempool_spends repository [RJJ-MEMPOOL]
     pub fn create_mempool_spends_repository(conn: DatabaseConnection) -> MempoolSpendsRepository {
         MempoolSpendsRepository::new(conn)
+    }
+
+    /// Create an address_transactions repository
+    pub fn create_address_transactions_repository(
+        conn: DatabaseConnection,
+    ) -> AddressTransactionsRepository {
+        AddressTransactionsRepository::new(conn)
     }
 }

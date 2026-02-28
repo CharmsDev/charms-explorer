@@ -165,6 +165,7 @@ pub async fn get_wallet_balance(
     let monitored = AddressMonitorService::ensure_monitored(
         &state.repositories.monitored_addresses,
         &state.repositories.utxo,
+        &state.repositories.address_transactions,
         &state.http_client,
         &qn,
         &address,
@@ -692,6 +693,75 @@ pub async fn get_wallet_chain_tip(
         Ok(tip) => Ok(Json(serde_json::json!(tip))),
         Err(e) => {
             tracing::error!("Wallet: failed to get chain tip: {}", e);
+            Err(ExplorerError::InternalError(e))
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TransactionsQuery {
+    #[serde(default = "default_network")]
+    pub network: String,
+    #[serde(default = "default_page")]
+    pub page: u64,
+    #[serde(default = "default_page_size")]
+    pub page_size: u64,
+}
+
+fn default_page() -> u64 {
+    1
+}
+fn default_page_size() -> u64 {
+    50
+}
+
+/// GET /wallet/transactions/{address}
+/// Returns paginated transaction history for a monitored address.
+/// Seeds the address if not yet monitored (lazy seeding).
+pub async fn get_wallet_transactions(
+    State(state): State<AppState>,
+    Path(address): Path<String>,
+    Query(params): Query<TransactionsQuery>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = params.network.as_str();
+    let qn = quicknode_url(&state).to_string();
+
+    // Ensure address is monitored and seeded
+    let _ = AddressMonitorService::ensure_monitored(
+        &state.repositories.monitored_addresses,
+        &state.repositories.utxo,
+        &state.repositories.address_transactions,
+        &state.http_client,
+        &qn,
+        &address,
+        network,
+    )
+    .await;
+
+    // Cap page_size to 100
+    let page_size = params.page_size.min(100);
+    let page = params.page.max(1);
+
+    match state
+        .repositories
+        .address_transactions
+        .get_by_address(&address, network, page, page_size)
+        .await
+    {
+        Ok((txs, total)) => {
+            let total_pages = (total + page_size - 1) / page_size;
+            Ok(Json(serde_json::json!({
+                "address": address,
+                "network": network,
+                "transactions": txs,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages,
+            })))
+        }
+        Err(e) => {
+            tracing::error!("Wallet: failed to get transactions for {}: {}", address, e);
             Err(ExplorerError::InternalError(e))
         }
     }

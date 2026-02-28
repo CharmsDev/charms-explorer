@@ -1,3 +1,4 @@
+pub mod address_transactions_repository;
 pub mod asset;
 pub mod asset_repository;
 pub mod block_status_repository;
@@ -11,6 +12,7 @@ pub mod summary_repository;
 pub mod transaction_repository; // [RJJ-DEX]
 pub mod utxo_repository;
 
+pub use address_transactions_repository::AddressTransactionsRepository;
 pub use asset_repository::AssetRepository;
 pub use block_status_repository::BlockStatusRepository;
 pub use charm_repository::CharmRepository;
@@ -28,6 +30,8 @@ pub use utxo_repository::UtxoRepository;
 /// [RJJ-STATS-HOLDERS] Added stats_holders repository
 /// [RJJ-DEX] Added dex_orders repository
 pub struct Repositories {
+    /// Repository for address transaction history
+    pub address_transactions: AddressTransactionsRepository,
     /// Repository for asset operations
     pub asset: AssetRepository,
     /// Repository for block status tracking
@@ -58,6 +62,7 @@ impl Repositories {
     /// [RJJ-STATS-HOLDERS] Now includes stats_holders repository
     /// [RJJ-DEX] Now includes dex_orders repository
     pub fn new(
+        address_transactions: AddressTransactionsRepository,
         asset: AssetRepository,
         block_status: BlockStatusRepository,
         charm: CharmRepository,
@@ -71,6 +76,7 @@ impl Repositories {
         mempool_spends: MempoolSpendsRepository,
     ) -> Self {
         Self {
+            address_transactions,
             asset,
             block_status,
             charm,

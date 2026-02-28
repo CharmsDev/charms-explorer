@@ -87,6 +87,18 @@ pub struct ChainTip {
     pub time: Option<u64>,
 }
 
+/// A transaction record returned by bb_getAddress (used for seeding)
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AddressTxRecord {
+    pub txid: String,
+    pub direction: String,
+    pub amount: i64,
+    pub fee: i64,
+    pub block_height: Option<i32>,
+    pub block_time: Option<i64>,
+    pub confirmations: i32,
+}
+
 // --- Service ---
 
 pub struct WalletService;
@@ -252,6 +264,143 @@ impl WalletService {
             hash,
             time: None,
         })
+    }
+
+    /// Get address info via QuickNode bb_getAddress (UTXOs + transaction history)
+    /// Returns (utxos, transactions) tuple for seeding.
+    pub async fn get_address_quicknode(
+        http_client: &reqwest::Client,
+        quicknode_url: &str,
+        address: &str,
+    ) -> Result<(Vec<Utxo>, Vec<AddressTxRecord>), String> {
+        // First get UTXOs (existing method)
+        let utxos = Self::get_utxos_quicknode(http_client, quicknode_url, address).await?;
+
+        // Then get transaction history via bb_getAddress with details=txs
+        let mut all_txs: Vec<AddressTxRecord> = Vec::new();
+        let mut page = 1u32;
+        let page_size = 100u32;
+
+        loop {
+            let body = serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "bb_getaddress",
+                "params": [address, {
+                    "page": page,
+                    "size": page_size,
+                    "details": "txs"
+                }],
+                "id": 1
+            });
+
+            let resp = http_client
+                .post(quicknode_url)
+                .json(&body)
+                .send()
+                .await
+                .map_err(|e| format!("QuickNode bb_getAddress failed: {}", e))?;
+
+            let data: Value = resp
+                .json()
+                .await
+                .map_err(|e| format!("QuickNode bb_getAddress parse failed: {}", e))?;
+
+            if let Some(err) = data.get("error").filter(|e| !e.is_null()) {
+                return Err(format!("QuickNode bb_getAddress error: {}", err));
+            }
+
+            let result = &data["result"];
+            let txs = result["transactions"].as_array();
+
+            if let Some(tx_array) = txs {
+                if tx_array.is_empty() {
+                    break;
+                }
+
+                for tx in tx_array {
+                    let txid = tx["txid"].as_str().unwrap_or("").to_string();
+                    let block_height = tx["blockHeight"].as_i64().map(|h| h as i32);
+                    let block_time = tx["blockTime"].as_i64();
+                    let confirmations = tx["confirmations"].as_i64().unwrap_or(0) as i32;
+                    let fees = tx["fees"]
+                        .as_str()
+                        .unwrap_or("0")
+                        .parse::<i64>()
+                        .unwrap_or(0);
+
+                    // Calculate direction and amount from vin/vout
+                    let mut value_in: i64 = 0;
+                    let mut value_out: i64 = 0;
+
+                    if let Some(vins) = tx["vin"].as_array() {
+                        for vin in vins {
+                            if let Some(addrs) = vin["addresses"].as_array() {
+                                for addr in addrs {
+                                    if addr.as_str() == Some(address) {
+                                        let v = vin["value"]
+                                            .as_str()
+                                            .unwrap_or("0")
+                                            .parse::<i64>()
+                                            .unwrap_or(0);
+                                        value_in += v;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if let Some(vouts) = tx["vout"].as_array() {
+                        for vout in vouts {
+                            if let Some(addrs) = vout["addresses"].as_array() {
+                                for addr in addrs {
+                                    if addr.as_str() == Some(address) {
+                                        let v = vout["value"]
+                                            .as_str()
+                                            .unwrap_or("0")
+                                            .parse::<i64>()
+                                            .unwrap_or(0);
+                                        value_out += v;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let (direction, amount) = if value_out >= value_in {
+                        ("in".to_string(), value_out - value_in)
+                    } else {
+                        ("out".to_string(), value_in - value_out)
+                    };
+
+                    all_txs.push(AddressTxRecord {
+                        txid,
+                        direction,
+                        amount,
+                        fee: fees,
+                        block_height,
+                        block_time,
+                        confirmations,
+                    });
+                }
+
+                // Check if there are more pages
+                let total_pages = result["totalPages"].as_u64().unwrap_or(1);
+                if (page as u64) >= total_pages {
+                    break;
+                }
+                page += 1;
+
+                // Safety limit: max 10 pages (1000 txs) during seeding
+                if page > 10 {
+                    tracing::warn!("bb_getAddress: capped at 10 pages for address {}", address);
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+
+        Ok((utxos, all_txs))
     }
 
     /// Get balance via QuickNode (derived from bb_getutxos)

@@ -1,5 +1,6 @@
 // Database repository management
 
+pub mod address_transactions_repository;
 pub mod asset_repository;
 pub mod charm_repository;
 pub mod dex_orders_repository; // [RJJ-DEX]
@@ -9,6 +10,7 @@ pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
 pub mod transaction_repository; // [RJJ-SPELL]
 pub mod utxo_repository;
 
+pub use address_transactions_repository::AddressTransactionsRepository;
 pub use asset_repository::AssetRepository;
 pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository; // [RJJ-DEX]
@@ -23,6 +25,7 @@ use std::sync::Arc;
 
 /// Container for all database repositories
 pub struct Repositories {
+    pub address_transactions: AddressTransactionsRepository,
     pub asset_repository: Arc<AssetRepository>,
     pub charm: CharmRepository,
     pub dex_orders: DexOrdersRepository, // [RJJ-DEX]
@@ -43,7 +46,9 @@ impl Repositories {
         let db_conn5 = conn.clone();
         let db_conn6 = conn.clone();
         let db_conn7 = conn.clone();
+        let db_conn8 = conn.clone();
         Repositories {
+            address_transactions: AddressTransactionsRepository::new(db_conn8),
             asset_repository: Arc::new(AssetRepository::new(std::sync::Arc::new(conn))),
             charm: CharmRepository::new(db_conn),
             dex_orders: DexOrdersRepository::new(db_conn5), // [RJJ-DEX]

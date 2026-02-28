@@ -37,8 +37,8 @@ use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
-    BlockStatusRepository, MempoolSpendsRepository, MonitoredAddressesRepository,
-    SummaryRepository, TransactionRepository, UtxoRepository,
+    AddressTransactionsRepository, BlockStatusRepository, MempoolSpendsRepository,
+    MonitoredAddressesRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
@@ -53,6 +53,7 @@ pub struct BitcoinProcessor {
     utxo_repository: UtxoRepository,
     monitored_addresses_repository: MonitoredAddressesRepository,
     mempool_spends_repository: MempoolSpendsRepository,
+    address_transactions_repository: AddressTransactionsRepository,
     config: AppConfig,
     current_height: u64,
     genesis_block_height: u64,
@@ -68,6 +69,7 @@ impl BitcoinProcessor {
         utxo_repository: UtxoRepository,
         monitored_addresses_repository: MonitoredAddressesRepository,
         mempool_spends_repository: MempoolSpendsRepository,
+        address_transactions_repository: AddressTransactionsRepository,
         config: AppConfig,
         genesis_block_height: u64,
     ) -> Self {
@@ -80,6 +82,7 @@ impl BitcoinProcessor {
             utxo_repository,
             monitored_addresses_repository,
             mempool_spends_repository,
+            address_transactions_repository,
             current_height: genesis_block_height,
             config,
             genesis_block_height,
@@ -100,6 +103,7 @@ impl BitcoinProcessor {
             self.utxo_repository.clone(),
             self.monitored_addresses_repository.clone(),
             self.mempool_spends_repository.clone(),
+            self.address_transactions_repository.clone(),
         )
     }
 
@@ -118,20 +122,23 @@ impl BitcoinProcessor {
                 self.current_height = (height + 1) as u64;
                 logging::log_info(&format!(
                     "[{}] Resuming from block {}",
-                    self.network_id().name, self.current_height
+                    self.network_id().name,
+                    self.current_height
                 ));
             }
             Ok(None) => {
                 self.current_height = self.genesis_block_height;
                 logging::log_info(&format!(
                     "[{}] Starting from genesis block {}",
-                    self.network_id().name, self.current_height
+                    self.network_id().name,
+                    self.current_height
                 ));
             }
             Err(e) => {
                 logging::log_error(&format!(
                     "[{}] Error getting block_status: {}, starting from genesis",
-                    self.network_id().name, e
+                    self.network_id().name,
+                    e
                 ));
                 self.current_height = self.genesis_block_height;
             }
@@ -158,7 +165,8 @@ impl BitcoinProcessor {
                 } else {
                     logging::log_info(&format!(
                         "[{}] ✅ Reindex complete: {} total blocks processed",
-                        self.network_id().name, total_processed
+                        self.network_id().name,
+                        total_processed
                     ));
                 }
                 return Ok(());
@@ -167,22 +175,33 @@ impl BitcoinProcessor {
             let batch_size = pending_blocks.len();
             logging::log_info(&format!(
                 "[{}] ♻️ Starting reindex batch of {} pending blocks (total so far: {})",
-                self.network_id().name, batch_size, total_processed
+                self.network_id().name,
+                batch_size,
+                total_processed
             ));
 
             for (i, height) in pending_blocks.iter().enumerate() {
                 let bp = self.create_block_processor();
-                if let Err(e) = bp.process_block_from_cache(*height as u64, self.network_id()).await {
+                if let Err(e) = bp
+                    .process_block_from_cache(*height as u64, self.network_id())
+                    .await
+                {
                     logging::log_error(&format!(
                         "[{}] ❌ Error reindexing block {}: {}",
-                        self.network_id().name, height, e
+                        self.network_id().name,
+                        height,
+                        e
                     ));
                 }
 
                 if (i + 1) % 100 == 0 {
                     logging::log_info(&format!(
                         "[{}] ♻️ Reindex progress: {}/{} blocks, {} total — height: {}",
-                        self.network_id().name, i + 1, batch_size, total_processed + i + 1, height
+                        self.network_id().name,
+                        i + 1,
+                        batch_size,
+                        total_processed + i + 1,
+                        height
                     ));
                 }
             }
@@ -190,7 +209,9 @@ impl BitcoinProcessor {
             total_processed += batch_size;
             logging::log_info(&format!(
                 "[{}] ✅ Batch complete: {} blocks, {} total processed",
-                self.network_id().name, batch_size, total_processed
+                self.network_id().name,
+                batch_size,
+                total_processed
             ));
         }
     }
@@ -199,7 +220,8 @@ impl BitcoinProcessor {
         let latest_height = self.bitcoin_client.get_block_count().await.map_err(|e| {
             logging::log_error(&format!(
                 "[{}] ❌ Failed to get block count: {}",
-                self.network_id().name, e
+                self.network_id().name,
+                e
             ));
             BlockProcessorError::BitcoinClientError(e)
         })?;
@@ -216,7 +238,9 @@ impl BitcoinProcessor {
                 LAST_WAIT_LOG.store(now, std::sync::atomic::Ordering::Relaxed);
                 logging::log_info(&format!(
                     "[{}] ⏸️ Waiting for new blocks (current: {}, latest: {})...",
-                    self.network_id().name, self.current_height, latest_height
+                    self.network_id().name,
+                    self.current_height,
+                    latest_height
                 ));
             }
             tokio::time::sleep(std::time::Duration::from_secs(10)).await;
@@ -226,7 +250,10 @@ impl BitcoinProcessor {
         while self.current_height <= latest_height {
             let bp = self.create_block_processor();
 
-            match bp.process_block(self.current_height, self.network_id()).await {
+            match bp
+                .process_block(self.current_height, self.network_id())
+                .await
+            {
                 Ok(()) => {
                     self.current_height += 1;
                 }
@@ -239,13 +266,16 @@ impl BitcoinProcessor {
                     {
                         logging::log_info(&format!(
                             "[{}] Block {} pruned/missing, skipping",
-                            self.network_id().name, self.current_height
+                            self.network_id().name,
+                            self.current_height
                         ));
 
-                        let _ = self.block_status_repository
+                        let _ = self
+                            .block_status_repository
                             .mark_downloaded(self.current_height as i32, None, 0, self.network_id())
                             .await;
-                        let _ = self.block_status_repository
+                        let _ = self
+                            .block_status_repository
                             .mark_processed(self.current_height as i32, 0, self.network_id())
                             .await;
                         self.current_height += 1;
@@ -256,7 +286,9 @@ impl BitcoinProcessor {
                 Err(e) => {
                     logging::log_error(&format!(
                         "[{}] ❌ Error at block {}: {}",
-                        self.network_id().name, self.current_height, e
+                        self.network_id().name,
+                        self.current_height,
+                        e
                     ));
                     return Err(e);
                 }
@@ -289,14 +321,16 @@ impl BitcoinProcessor {
                 if confirmed_count > 0 {
                     logging::log_info(&format!(
                         "[{}] ✅ Confirmed {} previously unconfirmed blocks",
-                        self.network_id().name, confirmed_count
+                        self.network_id().name,
+                        confirmed_count
                     ));
                 }
             }
             Err(e) => {
                 logging::log_warning(&format!(
                     "[{}] ⚠️ Failed to check unconfirmed blocks: {}",
-                    self.network_id().name, e
+                    self.network_id().name,
+                    e
                 ));
             }
         }
@@ -317,7 +351,8 @@ impl BlockchainProcessor for BitcoinProcessor {
             if let Err(e) = self.process_available_blocks().await {
                 logging::log_error(&format!(
                     "[{}] ❌ Error processing blocks: {}.",
-                    self.network_id().name, e
+                    self.network_id().name,
+                    e
                 ));
             }
 

@@ -12,8 +12,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use axum::routing::{delete, get, post, Router};
-use http::{header, Method};
+use axum::routing::{Router, delete, get, post};
+use http::{Method, header};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
@@ -22,14 +22,14 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
+    AppState, broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
     get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
     get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker,
     get_reference_nft_by_hash, get_transaction_by_txid, get_transactions, get_wallet_balance,
     get_wallet_chain_tip, get_wallet_charm_balances, get_wallet_charm_balances_batch,
-    get_wallet_fee_estimate, get_wallet_transaction, get_wallet_utxos, health_check, like_charm,
-    unlike_charm, AppState,
+    get_wallet_fee_estimate, get_wallet_transaction, get_wallet_transactions, get_wallet_utxos,
+    health_check, like_charm, unlike_charm,
 };
 
 fn load_env() {
@@ -172,7 +172,11 @@ async fn main() {
             "/wallet/charms/batch",
             post(get_wallet_charm_balances_batch),
         )
-        .route("/wallet/charms/{address}", get(get_wallet_charm_balances));
+        .route("/wallet/charms/{address}", get(get_wallet_charm_balances))
+        .route(
+            "/wallet/transactions/{address}",
+            get(get_wallet_transactions),
+        );
 
     // Mount under /v1/ (canonical) and / (backward compat for Explorer webapp)
     let app = Router::new()
