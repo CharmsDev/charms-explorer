@@ -70,6 +70,32 @@ pub async fn purge_stale(
         .execute(Statement::from_string(DbBackend::Postgres, sql_orders))
         .await;
 
+    // 4. Purge stale mempool transactions
+    let sql_txs = format!(
+        "DELETE FROM transactions WHERE block_height IS NULL AND network = '{}' \
+         AND mempool_detected_at < NOW() - INTERVAL '{} hours'",
+        network, STALE_HOURS
+    );
+    match db
+        .execute(Statement::from_string(DbBackend::Postgres, sql_txs))
+        .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            logging::log_info(&format!(
+                "[{}] 🧹 Purged {} stale mempool transactions",
+                network,
+                r.rows_affected()
+            ));
+        }
+        Ok(_) => {}
+        Err(e) => {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to purge stale mempool transactions: {}",
+                network, e
+            ));
+        }
+    }
+
     // 4. Trim seen_txids cache to prevent unbounded growth
     let mut seen = seen_txids.lock().await;
     if seen.len() > 10_000 {

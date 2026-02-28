@@ -48,6 +48,7 @@ impl TransactionRepository {
             blockchain: Set(transaction.blockchain.clone()),
             network: Set(transaction.network.clone()),
             mempool_detected_at: Set(None),
+            tags: Set(None),
         };
 
         // Try to insert the transaction, handle duplicate key violations gracefully

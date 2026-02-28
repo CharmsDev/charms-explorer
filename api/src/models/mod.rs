@@ -186,7 +186,7 @@ pub struct TransactionsResponse {
 #[derive(Debug, Serialize)]
 pub struct TransactionData {
     pub txid: String,
-    pub block_height: i32,
+    pub block_height: Option<i32>,
     pub status: String,
     pub confirmations: i32,
     pub blockchain: String,
