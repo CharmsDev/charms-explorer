@@ -7,7 +7,7 @@ use crate::config::NetworkId;
 use crate::domain::services::dex;
 use crate::domain::services::tx_analyzer;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
-use crate::infrastructure::persistence::entities::{charms, dex_orders};
+use crate::infrastructure::persistence::entities::{charms, dex_orders, transactions};
 use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
 use crate::utils::logging;
 
@@ -73,35 +73,91 @@ pub async fn process_tx_with_hex(
         ));
     }
 
-    // Save charm with block_height=NULL (mempool)
-    let charm_model = charms::ActiveModel {
-        txid: Set(txid.to_string()),
-        vout: Set(0i32),
-        block_height: Set(None),
-        data: Set(analyzed.charm_json.clone()),
-        date_created: Set(now),
-        asset_type: Set(analyzed.asset_type.clone()),
-        blockchain: Set(blockchain.clone()),
-        network: Set(network.clone()),
-        address: Set(analyzed.address.clone()),
-        spent: Set(false),
-        app_id: Set(analyzed.app_id.clone()),
-        amount: Set(analyzed.amount),
-        mempool_detected_at: Set(Some(now)),
-        tags: Set(analyzed.tags.clone()),
-        verified: Set(true),
+    // Extract per-vout addresses (preserving index alignment, OP_RETURN outputs map to None)
+    let vout_addresses: Vec<Option<String>> = {
+        use bitcoincore_rpc::bitcoin::{consensus::deserialize, Address, Network, Transaction};
+        let btc_network = match network.as_str() {
+            "mainnet" => Network::Bitcoin,
+            "testnet4" | "testnet" => Network::Testnet,
+            "regtest" => Network::Regtest,
+            _ => Network::Testnet,
+        };
+        hex::decode(raw_hex)
+            .ok()
+            .and_then(|bytes| deserialize::<Transaction>(&bytes).ok())
+            .map(|tx| {
+                tx.output
+                    .iter()
+                    .map(|out| {
+                        Address::from_script(&out.script_pubkey, btc_network)
+                            .ok()
+                            .map(|a| a.to_string())
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
     };
 
-    match charm_model.insert(db).await {
-        Ok(_) => {
-            logging::log_info(&format!(
-                "[{}] 💾 Mempool charm saved: {} ({})",
-                network, txid, analyzed.asset_type
-            ));
+    // Save one charm entry per charm-bearing output with block_height=NULL (mempool)
+    for asset in &analyzed.asset_infos {
+        let address = vout_addresses
+            .get(asset.vout_index as usize)
+            .and_then(|a| a.clone());
+        let charm_model = charms::ActiveModel {
+            txid: Set(txid.to_string()),
+            vout: Set(asset.vout_index),
+            block_height: Set(None),
+            data: Set(analyzed.charm_json.clone()),
+            date_created: Set(now),
+            asset_type: Set(asset.asset_type.clone()),
+            blockchain: Set(blockchain.clone()),
+            network: Set(network.clone()),
+            address: Set(address),
+            spent: Set(false),
+            app_id: Set(asset.app_id.clone()),
+            amount: Set(asset.amount as i64),
+            mempool_detected_at: Set(Some(now)),
+            tags: Set(analyzed.tags.clone()),
+            verified: Set(true),
+        };
+        match charm_model.insert(db).await {
+            Ok(_) => {
+                logging::log_info(&format!(
+                    "[{}] 💾 Mempool charm saved: {} vout={} ({})",
+                    network, txid, asset.vout_index, asset.asset_type
+                ));
+            }
+            Err(e) if e.to_string().contains("duplicate key") => {}
+            Err(e) => {
+                return Err(format!("Failed to save mempool charm: {}", e));
+            }
         }
+    }
+
+    // Save transaction with block_height=NULL and status='pending' (mempool)
+    let raw_json = serde_json::json!({"hex": raw_hex});
+    let tx_model = transactions::ActiveModel {
+        txid: Set(txid.to_string()),
+        block_height: Set(None),
+        ordinal: Set(0i64),
+        raw: Set(raw_json),
+        charm: Set(analyzed.charm_json.clone()),
+        updated_at: Set(now),
+        status: Set("pending".to_string()),
+        confirmations: Set(0i32),
+        blockchain: Set(blockchain.clone()),
+        network: Set(network.clone()),
+        mempool_detected_at: Set(Some(now)),
+        tags: Set(analyzed.tags.clone()),
+    };
+    match tx_model.insert(db).await {
+        Ok(_) => {}
         Err(e) if e.to_string().contains("duplicate key") => {}
         Err(e) => {
-            return Err(format!("Failed to save mempool charm: {}", e));
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to save mempool transaction {}: {}",
+                network, txid, e
+            ));
         }
     }
 

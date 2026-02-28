@@ -94,19 +94,50 @@ pub async fn detect_charms(
             network.to_string(),
         ));
 
-        charm_batch.push((
-            txid.clone(),
-            0i32,
-            height,
-            analyzed.charm_json.clone(),
-            analyzed.asset_type.clone(),
-            blockchain.to_string(),
-            network.to_string(),
-            analyzed.address.clone(),
-            analyzed.app_id.clone(),
-            analyzed.amount,
-            analyzed.tags.clone(),
-        ));
+        // Extract per-vout addresses (preserving index alignment, OP_RETURN outputs map to None)
+        let vout_addresses: Vec<Option<String>> = {
+            use bitcoincore_rpc::bitcoin::{consensus::deserialize, Address, Network, Transaction};
+            let btc_network = match network {
+                "mainnet" => Network::Bitcoin,
+                "testnet4" | "testnet" => Network::Testnet,
+                "regtest" => Network::Regtest,
+                _ => Network::Testnet,
+            };
+            hex::decode(&tx_hex)
+                .ok()
+                .and_then(|bytes| deserialize::<Transaction>(&bytes).ok())
+                .map(|tx| {
+                    tx.output
+                        .iter()
+                        .map(|out| {
+                            Address::from_script(&out.script_pubkey, btc_network)
+                                .ok()
+                                .map(|a| a.to_string())
+                        })
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+
+        // Push one charm entry per charm-bearing output with its correct vout
+        for asset in &analyzed.asset_infos {
+            let address = vout_addresses
+                .get(asset.vout_index as usize)
+                .and_then(|a| a.clone());
+            charm_batch.push((
+                txid.clone(),
+                asset.vout_index,
+                height,
+                analyzed.charm_json.clone(),
+                asset.asset_type.clone(),
+                blockchain.to_string(),
+                network.to_string(),
+                address,
+                asset.app_id.clone(),
+                asset.amount as i64,
+                analyzed.tags.clone(),
+            ));
+        }
 
         let asset_requests = build_asset_requests(
             &analyzed, &input_txids, height, blockchain, network, charm_service,

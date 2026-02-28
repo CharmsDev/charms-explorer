@@ -5,9 +5,9 @@
 use crate::db::error::DbError;
 use crate::entity::transactions;
 use crate::models::PaginationParams;
+use sea_orm::sea_query::{NullOrdering, Order};
 use sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect,
+    ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter, QuerySelect,
 };
 
 /// Repository for transaction database operations
@@ -47,9 +47,15 @@ impl TransactionRepository {
         let total = transactions::Entity::find().count(&self.conn).await? as u64;
 
         let offset = (pagination.page - 1) * pagination.limit;
-        let txs = transactions::Entity::find()
-            .order_by_desc(transactions::Column::BlockHeight)
-            .order_by_desc(transactions::Column::UpdatedAt)
+        let mut query = transactions::Entity::find();
+        QuerySelect::query(&mut query)
+            .order_by_with_nulls(
+                transactions::Column::BlockHeight,
+                Order::Desc,
+                NullOrdering::First,
+            )
+            .order_by(transactions::Column::UpdatedAt, Order::Desc);
+        let txs = query
             .limit(pagination.limit)
             .offset(offset)
             .all(&self.conn)
@@ -70,10 +76,16 @@ impl TransactionRepository {
             .await? as u64;
 
         let offset = (pagination.page - 1) * pagination.limit;
-        let txs = transactions::Entity::find()
-            .filter(transactions::Column::Network.eq(network))
-            .order_by_desc(transactions::Column::BlockHeight)
-            .order_by_desc(transactions::Column::UpdatedAt)
+        let mut query = transactions::Entity::find()
+            .filter(transactions::Column::Network.eq(network));
+        QuerySelect::query(&mut query)
+            .order_by_with_nulls(
+                transactions::Column::BlockHeight,
+                Order::Desc,
+                NullOrdering::First,
+            )
+            .order_by(transactions::Column::UpdatedAt, Order::Desc);
+        let txs = query
             .limit(pagination.limit)
             .offset(offset)
             .all(&self.conn)

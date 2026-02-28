@@ -26,6 +26,8 @@ pub struct Model {
     pub network: String,
     #[sea_orm(nullable)]
     pub mempool_detected_at: Option<NaiveDateTime>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub tags: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
