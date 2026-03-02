@@ -5,29 +5,28 @@
  * Displays detailed information about DEX orders (Ask, Bid, Fulfill, Cancel)
  */
 
-const TOKEN_DECIMALS = 9;
-
-const formatTokenQuantity = (rawQuantity) => {
-    if (!rawQuantity) return '-';
-    const displayValue = rawQuantity / Math.pow(10, TOKEN_DECIMALS);
-    return displayValue.toLocaleString(undefined, { 
-        minimumFractionDigits: 0, 
-        maximumFractionDigits: 2 
-    });
-};
-
-const formatPrice = (price) => {
-    if (!price || !Array.isArray(price)) return '-';
-    const [numerator, denominator] = price;
-    if (!denominator) return '-';
-    const pricePerToken = numerator / denominator;
-    return `${pricePerToken.toLocaleString()} sats/token`;
-};
-
-export default function DexOrderDetails({ orderDetails, copyToClipboard }) {
+export default function DexOrderDetails({ orderDetails, copyToClipboard, tokenDecimals = 8, tokenTicker = 'tokens' }) {
     if (!orderDetails) return null;
-    
+
     const { side, amount, quantity, price, maker, asset } = orderDetails;
+
+    const formatTokenQuantity = (rawQuantity) => {
+        if (rawQuantity == null) return '-';
+        const displayValue = rawQuantity / Math.pow(10, tokenDecimals);
+        return displayValue.toLocaleString(undefined, {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 8
+        });
+    };
+
+    const formatPrice = (price) => {
+        if (!price || !Array.isArray(price)) return '-';
+        const [numerator, denominator] = price;
+        if (!denominator) return '-';
+        // Convert from sats/raw_unit to sats/token
+        const pricePerToken = (numerator / denominator) * Math.pow(10, tokenDecimals);
+        return `${Math.round(pricePerToken).toLocaleString()} sats/${tokenTicker}`;
+    };
     
     return (
         <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
@@ -42,7 +41,7 @@ export default function DexOrderDetails({ orderDetails, copyToClipboard }) {
                     <p className="text-xs text-dark-400 mb-1">Quantity</p>
                     <p className="text-white font-mono text-lg">
                         {formatTokenQuantity(quantity)}
-                        <span className="text-dark-400 text-sm ml-1">tokens</span>
+                        <span className="text-dark-400 text-sm ml-1">{tokenTicker}</span>
                     </p>
                 </div>
                 
