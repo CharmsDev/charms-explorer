@@ -161,7 +161,11 @@ export default function TransactionsPage() {
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-dark-300 text-sm whitespace-nowrap">
-                                                    {tx.status || '-'}
+                                                    {tx.status === 'pending' ? (
+                                                        <span className="px-2 py-1 rounded text-xs font-medium bg-yellow-500/20 text-yellow-400">
+                                                            Pending
+                                                        </span>
+                                                    ) : tx.status || '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-dark-300 text-sm whitespace-nowrap">
                                                     {tx.block_height?.toLocaleString() || '-'}
