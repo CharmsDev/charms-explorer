@@ -96,13 +96,7 @@ pub async fn purge_stale(
         }
     }
 
-    // 4. Trim seen_txids cache to prevent unbounded growth
-    let mut seen = seen_txids.lock().await;
-    if seen.len() > 10_000 {
-        seen.clear();
-        logging::log_info(&format!(
-            "[{}] 🧹 Cleared seen_txids cache (was >10k entries)",
-            network
-        ));
-    }
+    // seen_txids is kept in sync with the live mempool via retain() in poll_once —
+    // no explicit clearing needed here.
+    let _ = seen_txids; // suppress unused warning
 }
