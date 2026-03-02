@@ -5,9 +5,7 @@
 
 use serde_json::Value;
 
-use super::types::{
-    DexDetectionResult, DexOperation, DexOrder, ExecType, OrderSide, is_dex_app_id,
-};
+use super::types::{DexDetectionResult, DexOperation, DexOrder, ExecType, OrderSide, is_dex_app_id};
 
 /// Detect DEX operations from a charm's JSON data
 ///
@@ -21,16 +19,14 @@ pub fn detect_dex_operation(charm_data: &Value) -> Option<DexDetectionResult> {
     let app_inputs = native_data.get("app_public_inputs")?;
     let dex_app_id = find_dex_app_id(app_inputs)?;
 
-    // Get transaction inputs and outputs
+    // Get transaction outputs
     let tx = native_data.get("tx")?;
-    let ins = tx.get("ins").and_then(|v| v.as_array());
     let outs = tx.get("outs").and_then(|v| v.as_array());
 
-    // Analyze inputs and outputs to determine operation type
-    let input_orders = extract_orders_from_inputs(ins, &dex_app_id);
+    // Analyze outputs to determine operation type
     let output_orders = extract_orders_from_outputs(outs, &dex_app_id);
 
-    let operation = determine_operation(&input_orders, &output_orders);
+    let operation = determine_operation(&output_orders, outs);
 
     // Build tags - only product tags, not operation types
     // Operation details go in dex_orders table
@@ -39,11 +35,8 @@ pub fn detect_dex_operation(charm_data: &Value) -> Option<DexDetectionResult> {
     // Extract order details from output if creating/modifying
     let order = output_orders.first().cloned();
 
-    // Build input order IDs
-    let input_order_ids: Vec<String> = input_orders
-        .iter()
-        .filter_map(|o| o.scrolls_address.clone())
-        .collect();
+    // Input order IDs (empty — spell ins are raw UtxoId bytes, not charm data)
+    let input_order_ids: Vec<String> = Vec::new();
 
     // Build output order ID
     let output_order_id = order.as_ref().and_then(|o| o.scrolls_address.clone());
@@ -85,21 +78,6 @@ fn find_dex_app_id(app_inputs: &Value) -> Option<String> {
     None
 }
 
-/// Extract order data from transaction inputs
-fn extract_orders_from_inputs(ins: Option<&Vec<Value>>, dex_app_id: &str) -> Vec<DexOrder> {
-    let mut orders = Vec::new();
-
-    if let Some(inputs) = ins {
-        for (idx, input) in inputs.iter().enumerate() {
-            if let Some(order) = extract_order_from_charms(input, dex_app_id, idx) {
-                orders.push(order);
-            }
-        }
-    }
-
-    orders
-}
-
 /// Extract order data from transaction outputs
 fn extract_orders_from_outputs(outs: Option<&Vec<Value>>, dex_app_id: &str) -> Vec<DexOrder> {
     let mut orders = Vec::new();
@@ -131,30 +109,6 @@ fn extract_order_from_output(output: &Value, dex_app_id: &str, _idx: usize) -> O
 
     // Structure 2: output has "charms" field
     if let Some(charms) = output.get("charms") {
-        if let Some(obj) = charms.as_object() {
-            for (_key, charm_data) in obj {
-                if let Some(order) = parse_order_data(charm_data, dex_app_id) {
-                    return Some(order);
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Extract order from input charms
-fn extract_order_from_charms(input: &Value, dex_app_id: &str, _idx: usize) -> Option<DexOrder> {
-    // Similar to output extraction
-    if let Some(obj) = input.as_object() {
-        for (_key, charm_data) in obj {
-            if let Some(order) = parse_order_data(charm_data, dex_app_id) {
-                return Some(order);
-            }
-        }
-    }
-
-    if let Some(charms) = input.get("charms") {
         if let Some(obj) = charms.as_object() {
             for (_key, charm_data) in obj {
                 if let Some(order) = parse_order_data(charm_data, dex_app_id) {
@@ -240,53 +194,52 @@ fn parse_price(value: Option<&Value>) -> Option<(u64, u64)> {
     }
 }
 
-/// Determine operation type based on input/output orders
-fn determine_operation(input_orders: &[DexOrder], output_orders: &[DexOrder]) -> DexOperation {
-    let has_input_order = !input_orders.is_empty();
-    let has_output_order = !output_orders.is_empty();
-
-    match (has_input_order, has_output_order) {
-        // No input order, has output order -> Creating new order
-        (false, true) => {
-            let order = &output_orders[0];
-            match order.side {
-                OrderSide::Ask => DexOperation::CreateAskOrder,
-                OrderSide::Bid => DexOperation::CreateBidOrder,
-            }
-        }
-        // Has input order, no output order -> Full fill or cancel
-        (true, false) => {
-            // Could be cancel or full fill - need more context
-            // For now, assume fulfill
-            let order = &input_orders[0];
-            match order.side {
-                OrderSide::Ask => DexOperation::FulfillAsk,
-                OrderSide::Bid => DexOperation::FulfillBid,
-            }
-        }
-        // Has both input and output orders -> Partial fill or cancel+replace
-        (true, true) => {
-            let input_order = &input_orders[0];
-            let output_order = &output_orders[0];
-
-            // Check if it's a partial fill (same side, reduced quantity)
-            if input_order.side == output_order.side {
-                if let ExecType::Partial { from: Some(_) } = &output_order.exec_type {
-                    return DexOperation::PartialFill;
-                }
-                // Could be cancel+replace
-                DexOperation::CancelOrder
-            } else {
-                // Different sides - likely a match/fulfill
-                match input_order.side {
-                    OrderSide::Ask => DexOperation::FulfillAsk,
-                    OrderSide::Bid => DexOperation::FulfillBid,
-                }
-            }
-        }
-        // No orders at all - shouldn't happen for DEX tx
-        (false, false) => DexOperation::CancelOrder,
+/// Determine operation type based on output orders and spell output count.
+///
+/// Spell output structure is the primary signal:
+///
+/// | Operation    | outs_count | has order charm in outs |
+/// |------------- |------------|-------------------------|
+/// | CREATE-ASK   | 2          | ✓ (side=ask)            |
+/// | CREATE-BID   | 1          | ✓ (side=bid)            |
+/// | FULFILL-ASK  | 3          | ✗                       |
+/// | FULFILL-BID  | 3 or 4     | ✗ (4 = with token chng) |
+/// | CANCEL-ASK   | 1          | ✗                       |
+/// | CANCEL-BID   | 1          | ✗                       |
+///
+/// FULFILL-BID with token change back to taker produces a 4th non-empty output,
+/// which is the only signal that distinguishes it from FULFILL-ASK at the spell level.
+/// For 3-output fulfills without token change, we default to FulfillAsk.
+fn determine_operation(output_orders: &[DexOrder], outs: Option<&Vec<Value>>) -> DexOperation {
+    // CREATE: has order charm in outputs (has maker+side+price fields)
+    if !output_orders.is_empty() {
+        let order = &output_orders[0];
+        return match order.side {
+            OrderSide::Ask => DexOperation::CreateAskOrder,
+            OrderSide::Bid => DexOperation::CreateBidOrder,
+        };
     }
+
+    let outs_count = outs.map(|o| o.len()).unwrap_or(0);
+
+    // FULFILL: 3+ outputs (taker addr + maker addr + fee addr)
+    // FULFILL-BID with token change has outs[3] = non-empty token charm to taker
+    if outs_count >= 3 {
+        if outs_count >= 4 {
+            if let Some(out3) = outs.and_then(|o| o.get(3)) {
+                if out3.as_object().map(|m| !m.is_empty()).unwrap_or(false) {
+                    return DexOperation::FulfillBid;
+                }
+            }
+        }
+        // 3 outputs (or 4+ without a non-empty outs[3]) → FULFILL-ASK
+        // Note: FULFILL-BID with exact token amount also produces 3 outs and
+        // is indistinguishable here — treated as FulfillAsk (rare edge case).
+        return DexOperation::FulfillAsk;
+    }
+
+    // CANCEL: 1-2 outputs (maker gets assets back)
+    DexOperation::CancelOrder
 }
 
 #[cfg(test)]
