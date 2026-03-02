@@ -116,9 +116,16 @@ impl MempoolProcessor {
             return Ok(());
         }
 
-        // Diff against seen set
+        // Build a set of current mempool txids for O(1) lookup
+        let mempool_set: HashSet<&str> = mempool_txids.iter().map(String::as_str).collect();
+
+        // Diff against seen set.
+        // IMPORTANT: retain() removes txids that left the mempool (confirmed or dropped).
+        // This keeps seen_txids naturally bounded to mempool size and ensures truly new
+        // txids are always detected on their first poll cycle — no bulk re-scanning.
         let new_txids: Vec<String> = {
             let mut seen = self.seen_txids.lock().await;
+            seen.retain(|txid| mempool_set.contains(txid.as_str()));
             let new: Vec<String> = mempool_txids
                 .into_iter()
                 .filter(|txid| !seen.contains(txid))
