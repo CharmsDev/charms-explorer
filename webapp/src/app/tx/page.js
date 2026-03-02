@@ -194,26 +194,31 @@ function TransactionPageContent() {
                 {/* Transaction Info Header */}
                 {(() => {
                     const analysis = analyzeTransaction(charm);
+                    const tokenDecimals = charm.decimals || 8;
+                    const tokenTicker = charm.ticker || charm.name || null;
+                    const formattedQuantity = analysis.orderDetails?.quantity != null
+                        ? (analysis.orderDetails.quantity / Math.pow(10, tokenDecimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })
+                        : null;
                     return (
                         <div className="mb-6">
                             {/* Transaction Header with Type */}
                             <div className="card p-6 mb-6">
-                                <TransactionHeader 
+                                <TransactionHeader
                                     type={analysis.type}
                                     status="confirmed"
-                                    amount={analysis.orderDetails?.quantity}
-                                    ticker={analysis.orderDetails?.asset ? 'tokens' : null}
+                                    amount={analysis.orderDetails?.asset ? formattedQuantity : null}
+                                    ticker={analysis.orderDetails?.asset ? tokenTicker : null}
                                 />
                             </div>
-                            
+
                             {/* TXID Section */}
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-lg font-semibold text-dark-300">TXID</h2>
                                 <TransactionBadge type={analysis.type} size="sm" />
                                 {/* Network Badge */}
                                 <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                    charm.network === 'mainnet' 
-                                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                                    charm.network === 'mainnet'
+                                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                                         : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                                 }`}>
                                     ₿ {charm.network === 'mainnet' ? 'Mainnet' : 'Testnet4'}
@@ -221,7 +226,7 @@ function TransactionPageContent() {
                             </div>
                             <div className="flex items-center text-dark-400 text-sm break-all">
                                 <span className="font-mono">{txid}</span>
-                                <button 
+                                <button
                                     className="ml-2 text-dark-500 hover:text-primary-400 transition-colors relative"
                                     onClick={() => {
                                         navigator.clipboard.writeText(txid);
@@ -238,7 +243,7 @@ function TransactionPageContent() {
                                         </svg>
                                     )}
                                 </button>
-                                <a 
+                                <a
                                     href={`https://mempool.space/${charm.network === 'testnet4' ? 'testnet4/' : ''}tx/${txid}`}
                                     target="_blank"
                                     rel="noopener noreferrer"
@@ -247,13 +252,15 @@ function TransactionPageContent() {
                                     View on Mempool →
                                 </a>
                             </div>
-                            
+
                             {/* DEX Order Details (if applicable) */}
                             {analysis.isDex && analysis.orderDetails && (
                                 <div className="mt-6">
-                                    <DexOrderDetails 
+                                    <DexOrderDetails
                                         orderDetails={analysis.orderDetails}
                                         copyToClipboard={(text) => navigator.clipboard.writeText(text)}
+                                        tokenDecimals={tokenDecimals}
+                                        tokenTicker={tokenTicker}
                                     />
                                 </div>
                             )}
