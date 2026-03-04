@@ -280,7 +280,9 @@ const classificationRules = [
     type: TRANSACTION_TYPES.DEX_PARTIAL_FILL,
   },
 
-  // Charms Cast DEX detection by app_id prefix (b/)
+  // Charms Cast DEX detection by app_id prefix (b/) — fallback for txs without specific op tag
+  // (e.g. indexed before operation-specific tags were added). Returns SPELL instead of a
+  // specific DEX type to avoid mislabeling fulfills/cancels as "DEX Ask Order".
   {
     name: "Charms Cast DEX Order",
     priority: 15,
@@ -311,7 +313,7 @@ const classificationRules = [
       }
       return false;
     },
-    type: TRANSACTION_TYPES.DEX_CREATE_ASK,
+    type: TRANSACTION_TYPES.SPELL,
   },
 
   // BRO specific rules
