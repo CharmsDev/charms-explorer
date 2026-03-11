@@ -8,5 +8,6 @@ pub mod types;
 
 pub use detection::detect_dex_operation;
 pub use types::{
-    DexDetectionResult, DexOperation, DexOrder, ExecType, OrderSide, is_bro_token, is_dex_app_id,
+    DexDetectionResult, DexOperation, DexOrder, ExecType, OrderSide, extract_ins0_order_id,
+    is_bro_token, is_dex_app_id,
 };

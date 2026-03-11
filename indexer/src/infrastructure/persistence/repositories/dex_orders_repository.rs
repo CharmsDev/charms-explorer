@@ -154,6 +154,58 @@ impl DexOrdersRepository {
         Ok(())
     }
 
+    /// Save a FULFILL/CANCEL activity row by copying data from the parent order.
+    /// The new row gets its own order_id (based on the fulfill/cancel txid) and
+    /// links back to the parent via parent_order_id.
+    pub async fn save_activity_row(
+        &self,
+        txid: &str,
+        block_height: Option<u64>,
+        parent: &dex_orders::Model,
+        status: &str,
+        blockchain: &str,
+        network: &str,
+    ) -> Result<(), DbError> {
+        let order_id = format!("{}:0", txid);
+        let now = chrono::Utc::now().naive_utc();
+
+        let model = dex_orders::ActiveModel {
+            order_id: Set(order_id),
+            txid: Set(txid.to_string()),
+            vout: Set(0i32),
+            block_height: Set(block_height.map(|h| h as i32)),
+            platform: Set(parent.platform.clone()),
+            maker: Set(parent.maker.clone()),
+            side: Set(parent.side.clone()),
+            exec_type: Set(parent.exec_type.clone()),
+            price_num: Set(parent.price_num),
+            price_den: Set(parent.price_den),
+            amount: Set(parent.amount),
+            quantity: Set(parent.quantity),
+            filled_amount: Set(0),
+            filled_quantity: Set(0),
+            asset_app_id: Set(parent.asset_app_id.clone()),
+            scrolls_address: Set(parent.scrolls_address.clone()),
+            status: Set(status.to_string()),
+            parent_order_id: Set(Some(parent.order_id.clone())),
+            created_at: Set(now),
+            updated_at: Set(now),
+            blockchain: Set(blockchain.to_string()),
+            network: Set(network.to_string()),
+        };
+
+        match model.insert(&self.conn).await {
+            Ok(_) => Ok(()),
+            Err(e) => {
+                if e.to_string().contains("duplicate key") {
+                    Ok(()) // Activity row already exists (idempotent)
+                } else {
+                    Err(e.into())
+                }
+            }
+        }
+    }
+
     /// Count orders by platform
     pub async fn count_by_platform(&self, platform: &str) -> Result<u64, DbError> {
         use sea_orm::PaginatorTrait;

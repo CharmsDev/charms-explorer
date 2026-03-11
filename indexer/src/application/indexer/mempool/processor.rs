@@ -4,7 +4,7 @@ use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 
 use crate::config::NetworkId;
-use crate::domain::services::dex;
+use crate::domain::services::dex::{self, extract_ins0_order_id};
 use crate::domain::services::tx_analyzer;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::entities::{charms, dex_orders, transactions};
@@ -171,7 +171,8 @@ pub async fn process_tx_with_hex(
     save_dex_order(txid, &analyzed, &blockchain, &network, db).await;
 
     // Update the consumed order status for FULFILL and CANCEL operations
-    update_consumed_order_status(raw_hex, &analyzed, &network, db).await;
+    // and insert an activity row for the fulfill/cancel transaction
+    update_consumed_order_status(txid, raw_hex, &analyzed, &blockchain, &network, db).await;
 
     // Record mempool spends (inputs being consumed by this tx)
     let spends = extract_spends(&raw_hex, txid);
@@ -325,11 +326,13 @@ async fn correct_fulfill_classification(
 }
 
 /// Update the consumed order's status in dex_orders when a FULFILL or CANCEL
-/// is detected in the mempool. This keeps the /cast-dex page current without
-/// waiting for block confirmation.
+/// is detected in the mempool. Also inserts a new activity row for the
+/// fulfill/cancel transaction, copying data from the parent order.
 async fn update_consumed_order_status(
+    txid: &str,
     raw_hex: &str,
     analyzed: &tx_analyzer::AnalyzedTx,
+    blockchain: &str,
     network: &str,
     db: &DatabaseConnection,
 ) {
@@ -359,6 +362,51 @@ async fn update_consumed_order_status(
         }
     };
 
+    // Insert activity row for the fulfill/cancel transaction
+    let activity_order_id = format!("{}:0", txid);
+    let now = chrono::Utc::now().naive_utc();
+    let activity_model = dex_orders::ActiveModel {
+        order_id: Set(activity_order_id.clone()),
+        txid: Set(txid.to_string()),
+        vout: Set(0i32),
+        block_height: Set(None), // mempool
+        platform: Set(order.platform.clone()),
+        maker: Set(order.maker.clone()),
+        side: Set(order.side.clone()),
+        exec_type: Set(order.exec_type.clone()),
+        price_num: Set(order.price_num),
+        price_den: Set(order.price_den),
+        amount: Set(order.amount),
+        quantity: Set(order.quantity),
+        filled_amount: Set(0),
+        filled_quantity: Set(0),
+        asset_app_id: Set(order.asset_app_id.clone()),
+        scrolls_address: Set(order.scrolls_address.clone()),
+        status: Set(new_status.to_string()),
+        parent_order_id: Set(Some(order.order_id.clone())),
+        created_at: Set(now),
+        updated_at: Set(now),
+        blockchain: Set(blockchain.to_string()),
+        network: Set(network.to_string()),
+    };
+
+    match activity_model.insert(db).await {
+        Ok(_) => {
+            logging::log_info(&format!(
+                "[{}] 💾 Mempool activity row saved: {} ({}) parent={}",
+                network, txid, new_status, order_id
+            ));
+        }
+        Err(e) if e.to_string().contains("duplicate key") => {}
+        Err(e) => {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to save activity row for {}: {}",
+                network, txid, e
+            ));
+        }
+    }
+
+    // Update parent order status
     if order.status == "open" || order.status == "partial" {
         let mut active: dex_orders::ActiveModel = order.into();
         active.status = Set(new_status.to_string());
@@ -380,20 +428,7 @@ async fn update_consumed_order_status(
     }
 }
 
-/// Extract the order UTXO reference from ins[0] of a raw Bitcoin transaction.
-/// For FULFILL and CANCEL, ins[0] is always the order UTXO.
-fn extract_ins0_order_id(raw_hex: &str) -> Option<String> {
-    use bitcoincore_rpc::bitcoin::{self, consensus::deserialize};
-    let bytes = hex::decode(raw_hex).ok()?;
-    let tx: bitcoin::Transaction = deserialize(&bytes).ok()?;
-    let inp = tx.input.first()?;
-    let prev_txid = inp.previous_output.txid.to_string();
-    let prev_vout = inp.previous_output.vout;
-    if prev_txid == "0000000000000000000000000000000000000000000000000000000000000000" {
-        return None; // Coinbase
-    }
-    Some(format!("{}:{}", prev_txid, prev_vout))
-}
+// extract_ins0_order_id is now in crate::domain::services::dex::extract_ins0_order_id
 
 /// Extract (spending_txid, spent_txid, spent_vout) from a raw tx hex
 fn extract_spends(raw_hex: &str, spending_txid: &str) -> Vec<(String, String, i32)> {
