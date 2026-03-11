@@ -11,7 +11,6 @@ const CAST_APP_URL = process.env.NEXT_PUBLIC_CAST_APP_URL || 'https://cast.charm
 // BRO token uses 8 decimal places (10^8)
 const TOKEN_DECIMALS = 8;
 
-// Format token quantity from raw integer to display value
 const formatTokenQuantity = (rawQuantity) => {
     if (!rawQuantity) return '-';
     const displayValue = rawQuantity / Math.pow(10, TOKEN_DECIMALS);
@@ -21,29 +20,34 @@ const formatTokenQuantity = (rawQuantity) => {
     });
 };
 
-// Get order type display info combining side + status
-const getOrderTypeDisplay = (order) => {
+// Combine side + status into a descriptive activity type
+const getActivityType = (order) => {
     const side = order.side?.toLowerCase();
     const status = order.status?.toLowerCase();
 
-    if (status === 'filled') return { type: 'Filled', color: 'bg-purple-500/20 text-purple-400', icon: '✅' };
-    if (status === 'cancelled') return { type: 'Cancel', color: 'bg-red-500/20 text-red-400', icon: '🚫' };
-    if (status === 'partial') return { type: 'Partial', color: 'bg-yellow-500/20 text-yellow-400', icon: '⚡' };
-
-    if (side === 'ask') return { type: 'Ask', color: 'bg-green-500/20 text-green-400', icon: '📈' };
-    if (side === 'bid') return { type: 'Bid', color: 'bg-blue-500/20 text-blue-400', icon: '📉' };
-    return { type: 'Order', color: 'bg-purple-500/20 text-purple-400', icon: '🔄' };
+    if (status === 'cancelled') {
+        return { label: 'Cancel', color: 'bg-red-500/20 text-red-400', icon: '🚫' };
+    }
+    if (status === 'filled') {
+        if (side === 'ask') return { label: 'Filled Ask', color: 'bg-purple-500/20 text-purple-400', icon: '✅' };
+        if (side === 'bid') return { label: 'Filled Bid', color: 'bg-purple-500/20 text-purple-400', icon: '✅' };
+        return { label: 'Filled', color: 'bg-purple-500/20 text-purple-400', icon: '✅' };
+    }
+    if (status === 'partial') {
+        if (side === 'ask') return { label: 'Partial Ask', color: 'bg-yellow-500/20 text-yellow-400', icon: '⚡' };
+        if (side === 'bid') return { label: 'Partial Bid', color: 'bg-yellow-500/20 text-yellow-400', icon: '⚡' };
+        return { label: 'Partial', color: 'bg-yellow-500/20 text-yellow-400', icon: '⚡' };
+    }
+    // open = create
+    if (side === 'ask') return { label: 'Create Ask', color: 'bg-green-500/20 text-green-400', icon: '📈' };
+    if (side === 'bid') return { label: 'Create Bid', color: 'bg-blue-500/20 text-blue-400', icon: '📉' };
+    return { label: 'Order', color: 'bg-dark-500/20 text-dark-400', icon: '🔄' };
 };
 
-// Status badge styles
-const getStatusBadge = (status) => {
-    switch (status?.toLowerCase()) {
-        case 'open': return { label: 'Open', cls: 'bg-green-500/20 text-green-400' };
-        case 'filled': return { label: 'Filled', cls: 'bg-purple-500/20 text-purple-400' };
-        case 'cancelled': return { label: 'Cancelled', cls: 'bg-red-500/20 text-red-400' };
-        case 'partial': return { label: 'Partial', cls: 'bg-yellow-500/20 text-yellow-400' };
-        default: return { label: status || '-', cls: 'bg-dark-500/20 text-dark-400' };
-    }
+// Format price from price_per_token (API already returns sats * 10^8 / den)
+const formatPrice = (order) => {
+    if (!order.price_per_token || order.price_per_token === 0) return '-';
+    return Math.round(order.price_per_token).toLocaleString();
 };
 
 export default function CastDexPage() {
@@ -56,11 +60,8 @@ export default function CastDexPage() {
         try {
             setLoading(true);
             const networkParam = getNetworkParam();
-
             const result = await fetchAllDexOrders(networkParam);
-            const orders = result?.orders || [];
-
-            setTransactions(orders);
+            setTransactions(result?.orders || []);
             setError(null);
         } catch (err) {
             setError('Failed to load Cast Dex activity from indexer.');
@@ -69,7 +70,6 @@ export default function CastDexPage() {
         }
     }, [getNetworkParam]);
 
-    // Silent refresh: fetch latest orders and prepend any new ones
     const transactionsRef = useRef(transactions);
     transactionsRef.current = transactions;
 
@@ -139,7 +139,7 @@ export default function CastDexPage() {
                         </div>
                         <div className="flex items-center gap-4">
                             <span className="text-dark-400">
-                                <span className="text-primary-400 font-semibold">{transactions.length}</span> transactions
+                                <span className="text-primary-400 font-semibold">{transactions.length}</span> events
                             </span>
                             <a
                                 href={`${CAST_APP_URL}/orderbook`}
@@ -154,7 +154,7 @@ export default function CastDexPage() {
                 </div>
             </div>
 
-            {/* Activity Table */}
+            {/* Activity Feed */}
             <div className="container mx-auto px-4 py-6">
                 {loading ? (
                     <div className="flex justify-center items-center py-20">
@@ -172,62 +172,54 @@ export default function CastDexPage() {
                     </div>
                 ) : transactions.length === 0 ? (
                     <div className="text-center py-20 text-dark-400">
-                        No Cast Dex activity found in the indexer
+                        No Cast Dex activity found
                     </div>
                 ) : (
                     <div className="bg-dark-800/50 rounded-lg overflow-hidden overflow-x-auto">
-                        <table className="w-full table-fixed min-w-[1000px]">
+                        <table className="w-full table-fixed min-w-[950px]">
                             <thead>
                                 <tr className="border-b border-dark-700">
-                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[180px]">TXID</th>
-                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[90px]">Type</th>
-                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[80px]">Status</th>
-                                    <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium w-[100px]">Quantity</th>
-                                    <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium w-[100px]">Amount</th>
+                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[110px]">Type</th>
+                                    <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium w-[90px]">Quantity</th>
+                                    <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium w-[110px]">Price</th>
+                                    <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium w-[90px]">Amount</th>
                                     <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium w-[80px]">Block</th>
-                                    <th className="text-center px-4 py-3 text-dark-400 text-sm font-medium w-[80px]">Network</th>
-                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[140px]">Date</th>
+                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[150px]">Date</th>
+                                    <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium w-[180px]">TXID</th>
                                     <th className="text-center px-4 py-3 text-dark-400 text-sm font-medium w-[70px]">Links</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {transactions.map((order, index) => {
-                                    const opType = getOrderTypeDisplay(order);
-                                    const statusBadge = getStatusBadge(order.status);
+                                    const activity = getActivityType(order);
                                     return (
                                         <tr
                                             key={`${order.txid}-${index}`}
                                             className="border-b border-dark-700/50 hover:bg-dark-700/30 transition-colors"
                                         >
                                             <td className="px-4 py-3">
-                                                <Link
-                                                    href={`/tx?txid=${order.txid}&from=cast-dex`}
-                                                    className="text-primary-400 hover:text-primary-300 font-mono text-xs break-all"
-                                                >
-                                                    {order.txid?.slice(0, 16)}...{order.txid?.slice(-8)}
-                                                </Link>
-                                            </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${opType.color}`}>
-                                                    <span>{opType.icon}</span>
-                                                    <span>{opType.type}</span>
+                                                <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium whitespace-nowrap ${activity.color}`}>
+                                                    <span>{activity.icon}</span>
+                                                    <span>{activity.label}</span>
                                                 </span>
                                             </td>
-                                            <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 rounded text-xs font-medium whitespace-nowrap ${statusBadge.cls}`}>
-                                                    {statusBadge.label}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-right text-dark-300 text-sm tabular-nums">
+                                            <td className="px-4 py-3 text-right text-white text-sm font-mono tabular-nums">
                                                 {formatTokenQuantity(order.quantity)}
+                                                <span className="text-dark-500 text-xs ml-1">BRO</span>
+                                            </td>
+                                            <td className="px-4 py-3 text-right text-sm tabular-nums">
+                                                <span className="text-dark-300 font-mono">{formatPrice(order)}</span>
+                                                <span className="text-dark-600 text-xs ml-1">sats/BRO</span>
                                             </td>
                                             <td className="px-4 py-3 text-right text-sm tabular-nums">
                                                 {order.amount ? (
-                                                    <span className="text-orange-400">{order.amount.toLocaleString()} <span className="text-dark-500 text-xs">sats</span></span>
+                                                    <span className="text-orange-400 font-mono">{order.amount.toLocaleString()}</span>
                                                 ) : '-'}
                                             </td>
-                                            <td className="px-4 py-3 text-right text-dark-300 text-sm tabular-nums">
-                                                {order.block_height ? order.block_height.toLocaleString() : (
+                                            <td className="px-4 py-3 text-right text-sm tabular-nums">
+                                                {order.block_height ? (
+                                                    <span className="text-dark-300">{order.block_height.toLocaleString()}</span>
+                                                ) : (
                                                     <a
                                                         href={getMempoolUrl(order.txid, order.network)}
                                                         target="_blank"
@@ -238,17 +230,16 @@ export default function CastDexPage() {
                                                     </a>
                                                 )}
                                             </td>
-                                            <td className="px-4 py-3 text-center">
-                                                <span className={`inline-block px-2 py-1 rounded text-xs ${
-                                                    order.network === 'mainnet'
-                                                        ? 'bg-orange-500/20 text-orange-400'
-                                                        : 'bg-blue-500/20 text-blue-400'
-                                                }`}>
-                                                    {order.network || 'testnet4'}
-                                                </span>
-                                            </td>
                                             <td className="px-4 py-3 text-dark-400 text-sm whitespace-nowrap">
                                                 {formatDate(order.created_at)}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Link
+                                                    href={`/tx?txid=${order.txid}&from=cast-dex`}
+                                                    className="text-primary-400 hover:text-primary-300 font-mono text-xs"
+                                                >
+                                                    {order.txid?.slice(0, 16)}...{order.txid?.slice(-8)}
+                                                </Link>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="flex items-center justify-center gap-1">
