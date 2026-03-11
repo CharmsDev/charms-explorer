@@ -153,6 +153,21 @@ pub fn is_dex_app_id(app_id: &str) -> bool {
     app_id.ends_with(dex_vks::CAST_V01) || app_id.ends_with(dex_vks::CAST_V02)
 }
 
+/// Extract the order UTXO reference from ins[0] of a raw Bitcoin transaction.
+/// For FULFILL and CANCEL, ins[0] is always the order UTXO.
+pub fn extract_ins0_order_id(raw_hex: &str) -> Option<String> {
+    use bitcoincore_rpc::bitcoin::{self, consensus::deserialize};
+    let bytes = hex::decode(raw_hex).ok()?;
+    let tx: bitcoin::Transaction = deserialize(&bytes).ok()?;
+    let inp = tx.input.first()?;
+    let prev_txid = inp.previous_output.txid.to_string();
+    let prev_vout = inp.previous_output.vout;
+    if prev_txid == "0000000000000000000000000000000000000000000000000000000000000000" {
+        return None; // Coinbase
+    }
+    Some(format!("{}:{}", prev_txid, prev_vout))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

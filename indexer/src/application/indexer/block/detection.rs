@@ -6,7 +6,7 @@ use bitcoincore_rpc::bitcoin;
 use serde_json::json;
 use std::collections::HashMap;
 
-use crate::domain::services::dex;
+use crate::domain::services::dex::{self, extract_ins0_order_id};
 use crate::domain::services::tx_analyzer::{self, AnalyzedTx};
 use crate::domain::services::CharmService;
 use crate::infrastructure::persistence::repositories::DexOrdersRepository;
@@ -51,19 +51,60 @@ pub async fn detect_charms(
                 network, height, txid, dex_res.operation
             ));
 
-            if let (Some(ref order), Some(repo)) = (&dex_res.order, dex_repo) {
-                match repo
-                    .save_order(&txid, 0, Some(height), order, &dex_res.operation, "charms-cast", blockchain, network)
-                    .await
-                {
-                    Ok(_) => logging::log_info(&format!(
-                        "[{}] 💾 Block {}: Saved DEX order for tx {}: {:?} {:?}",
-                        network, height, txid, order.side, dex_res.operation
-                    )),
-                    Err(e) => logging::log_error(&format!(
-                        "[{}] ❌ Block {}: Failed to save DEX order for tx {}: {}",
-                        network, height, txid, e
-                    )),
+            if let Some(repo) = dex_repo {
+                if let Some(ref order) = dex_res.order {
+                    // CREATE or PARTIAL: save the order directly
+                    match repo
+                        .save_order(&txid, 0, Some(height), order, &dex_res.operation, "charms-cast", blockchain, network)
+                        .await
+                    {
+                        Ok(_) => logging::log_info(&format!(
+                            "[{}] 💾 Block {}: Saved DEX order for tx {}: {:?} {:?}",
+                            network, height, txid, order.side, dex_res.operation
+                        )),
+                        Err(e) => logging::log_error(&format!(
+                            "[{}] ❌ Block {}: Failed to save DEX order for tx {}: {}",
+                            network, height, txid, e
+                        )),
+                    }
+                } else {
+                    // FULFILL or CANCEL: no order in outputs, insert activity row from parent
+                    let new_status = match dex_res.operation {
+                        dex::DexOperation::FulfillAsk | dex::DexOperation::FulfillBid => "filled",
+                        dex::DexOperation::CancelOrder => "cancelled",
+                        _ => "unknown",
+                    };
+                    if let Some(parent_order_id) = extract_ins0_order_id(&tx_hex) {
+                        match repo.get_by_id(&parent_order_id).await {
+                            Ok(Some(parent)) => {
+                                match repo.save_activity_row(&txid, Some(height), &parent, new_status, blockchain, network).await {
+                                    Ok(_) => logging::log_info(&format!(
+                                        "[{}] 💾 Block {}: Saved activity row for tx {} ({}) parent={}",
+                                        network, height, txid, new_status, parent_order_id
+                                    )),
+                                    Err(e) => logging::log_error(&format!(
+                                        "[{}] ❌ Block {}: Failed to save activity row for tx {}: {}",
+                                        network, height, txid, e
+                                    )),
+                                }
+                                // Update parent order status
+                                if let Err(e) = repo.update_status(&parent_order_id, new_status).await {
+                                    logging::log_warning(&format!(
+                                        "[{}] ⚠️ Block {}: Failed to update parent order {} status: {}",
+                                        network, height, parent_order_id, e
+                                    ));
+                                }
+                            }
+                            Ok(None) => logging::log_warning(&format!(
+                                "[{}] ⚠️ Block {}: Parent order {} not found for tx {}",
+                                network, height, parent_order_id, txid
+                            )),
+                            Err(e) => logging::log_error(&format!(
+                                "[{}] ❌ Block {}: Failed to look up parent order {}: {}",
+                                network, height, parent_order_id, e
+                            )),
+                        }
+                    }
                 }
             }
         }
