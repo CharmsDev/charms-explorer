@@ -1,6 +1,6 @@
 // [RJJ-DEX] Repository for DEX orders queries
 
-use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::{Expr, Order}};
 
 use crate::db::DbError;
 use crate::entity::dex_orders;
@@ -76,7 +76,8 @@ impl DexOrdersRepository {
         }
 
         let results = query
-            .order_by_desc(dex_orders::Column::CreatedAt)
+            .order_by(Expr::col(dex_orders::Column::BlockHeight).is_null(), Order::Desc)
+            .order_by_desc(dex_orders::Column::BlockHeight)
             .all(&self.conn)
             .await?;
         Ok(results)
