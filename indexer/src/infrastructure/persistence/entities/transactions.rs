@@ -24,8 +24,9 @@ pub struct Model {
     pub blockchain: String,
     #[sea_orm(column_type = "Text")]
     pub network: String,
+    // TIMESTAMPTZ in DB → must use DateTimeWithTimeZone, NOT NaiveDateTime
     #[sea_orm(nullable)]
-    pub mempool_detected_at: Option<NaiveDateTime>,
+    pub mempool_detected_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_type = "Text", nullable)]
     pub tags: Option<String>,
 }

@@ -31,8 +31,9 @@ pub struct Model {
     #[sea_orm(column_type = "Text")]
     pub app_id: String,
     pub amount: i64,
+    // TIMESTAMPTZ in DB → must use DateTimeWithTimeZone, NOT NaiveDateTime
     #[sea_orm(nullable)]
-    pub mempool_detected_at: Option<NaiveDateTime>,
+    pub mempool_detected_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_type = "Text", nullable)]
     pub tags: Option<String>,
     pub verified: bool,
