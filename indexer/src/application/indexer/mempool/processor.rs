@@ -1,7 +1,7 @@
 //! Core mempool transaction processing: detect charm txs and save them.
 
-use chrono::Utc;
-use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
+use chrono::{DateTime, FixedOffset, Utc};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 
 use crate::config::NetworkId;
 use crate::domain::services::dex;
@@ -59,8 +59,14 @@ pub async fn process_tx_with_hex(
     };
 
     let network = network_id.name.clone();
+
+    // [FULFILL-BID correction] detect_dex_operation() returns FulfillAsk for all 3-output
+    // fulfills because the spell structure is identical for FULFILL-ASK and FULFILL-BID
+    // without token change. Look up the consumed order in dex_orders to disambiguate.
+    let analyzed = correct_fulfill_classification(txid, raw_hex, analyzed, &network, db).await;
     let blockchain = "Bitcoin".to_string();
     let now = Utc::now().naive_utc();
+    let now_tz: DateTime<FixedOffset> = Utc::now().fixed_offset();
     let has_dex_order = analyzed
         .dex_result
         .as_ref()
@@ -116,7 +122,7 @@ pub async fn process_tx_with_hex(
             spent: Set(false),
             app_id: Set(asset.app_id.clone()),
             amount: Set(asset.amount as i64),
-            mempool_detected_at: Set(Some(now)),
+            mempool_detected_at: Set(Some(now_tz)),
             tags: Set(analyzed.tags.clone()),
             verified: Set(true),
         };
@@ -147,7 +153,7 @@ pub async fn process_tx_with_hex(
         confirmations: Set(0i32),
         blockchain: Set(blockchain.clone()),
         network: Set(network.clone()),
-        mempool_detected_at: Set(Some(now)),
+        mempool_detected_at: Set(Some(now_tz)),
         tags: Set(analyzed.tags.clone()),
     };
     match tx_model.insert(db).await {
@@ -161,8 +167,11 @@ pub async fn process_tx_with_hex(
         }
     }
 
-    // Save DEX order with block_height=NULL
+    // Save DEX order with block_height=NULL (only for CREATE operations)
     save_dex_order(txid, &analyzed, &blockchain, &network, db).await;
+
+    // Update the consumed order status for FULFILL and CANCEL operations
+    update_consumed_order_status(raw_hex, &analyzed, &network, db).await;
 
     // Record mempool spends (inputs being consumed by this tx)
     let spends = extract_spends(&raw_hex, txid);
@@ -263,6 +272,127 @@ async fn save_dex_order(
             ));
         }
     }
+}
+
+/// Correct FULFILL-BID misclassified as FulfillAsk (3-output edge case).
+///
+/// detect_dex_operation() returns FulfillAsk for all 3-output fulfills because
+/// FULFILL-ASK and FULFILL-BID without token change have identical spell structures.
+/// This function looks up the consumed order (ins[0]) in dex_orders and, if its
+/// side is "bid", corrects the operation and tag to FulfillBid.
+async fn correct_fulfill_classification(
+    txid: &str,
+    raw_hex: &str,
+    mut analyzed: tx_analyzer::AnalyzedTx,
+    network: &str,
+    db: &DatabaseConnection,
+) -> tx_analyzer::AnalyzedTx {
+    let is_fulfill_ask = analyzed
+        .dex_result
+        .as_ref()
+        .map_or(false, |d| d.operation == dex::DexOperation::FulfillAsk);
+    if !is_fulfill_ask {
+        return analyzed;
+    }
+
+    let order_id = match extract_ins0_order_id(raw_hex) {
+        Some(id) => id,
+        None => return analyzed,
+    };
+
+    let order = match dex_orders::Entity::find_by_id(order_id.clone())
+        .one(db)
+        .await
+    {
+        Ok(Some(o)) => o,
+        _ => return analyzed, // Not found or DB error → keep FulfillAsk
+    };
+
+    if order.side == "bid" {
+        if let Some(ref mut result) = analyzed.dex_result {
+            result.operation = dex::DexOperation::FulfillBid;
+        }
+        if let Some(ref mut tags) = analyzed.tags {
+            *tags = tags.replace("fulfill-ask", "fulfill-bid");
+        }
+        logging::log_info(&format!(
+            "[{}] 🔄 FULFILL-BID (3-out) corrected for tx {} (consumed order {})",
+            network, txid, order_id
+        ));
+    }
+
+    analyzed
+}
+
+/// Update the consumed order's status in dex_orders when a FULFILL or CANCEL
+/// is detected in the mempool. This keeps the /cast-dex page current without
+/// waiting for block confirmation.
+async fn update_consumed_order_status(
+    raw_hex: &str,
+    analyzed: &tx_analyzer::AnalyzedTx,
+    network: &str,
+    db: &DatabaseConnection,
+) {
+    let new_status = match analyzed.dex_result.as_ref().map(|d| &d.operation) {
+        Some(dex::DexOperation::FulfillAsk) | Some(dex::DexOperation::FulfillBid) => "filled",
+        Some(dex::DexOperation::CancelOrder) => "cancelled",
+        _ => return,
+    };
+
+    let order_id = match extract_ins0_order_id(raw_hex) {
+        Some(id) => id,
+        None => return,
+    };
+
+    let order = match dex_orders::Entity::find_by_id(order_id.clone())
+        .one(db)
+        .await
+    {
+        Ok(Some(o)) => o,
+        Ok(None) => return, // Order not yet indexed (e.g., still in mempool)
+        Err(e) => {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to look up order {} for status update: {}",
+                network, order_id, e
+            ));
+            return;
+        }
+    };
+
+    if order.status == "open" || order.status == "partial" {
+        let mut active: dex_orders::ActiveModel = order.into();
+        active.status = Set(new_status.to_string());
+        active.updated_at = Set(chrono::Utc::now().naive_utc());
+        match active.update(db).await {
+            Ok(_) => {
+                logging::log_info(&format!(
+                    "[{}] 🔄 Order {} → {} (mempool)",
+                    network, order_id, new_status
+                ));
+            }
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Failed to update order {} status to {}: {}",
+                    network, order_id, new_status, e
+                ));
+            }
+        }
+    }
+}
+
+/// Extract the order UTXO reference from ins[0] of a raw Bitcoin transaction.
+/// For FULFILL and CANCEL, ins[0] is always the order UTXO.
+fn extract_ins0_order_id(raw_hex: &str) -> Option<String> {
+    use bitcoincore_rpc::bitcoin::{self, consensus::deserialize};
+    let bytes = hex::decode(raw_hex).ok()?;
+    let tx: bitcoin::Transaction = deserialize(&bytes).ok()?;
+    let inp = tx.input.first()?;
+    let prev_txid = inp.previous_output.txid.to_string();
+    let prev_vout = inp.previous_output.vout;
+    if prev_txid == "0000000000000000000000000000000000000000000000000000000000000000" {
+        return None; // Coinbase
+    }
+    Some(format!("{}:{}", prev_txid, prev_vout))
 }
 
 /// Extract (spending_txid, spent_txid, spent_vout) from a raw tx hex

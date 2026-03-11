@@ -56,7 +56,7 @@ impl CharmRepository {
             spent: Set(charm.spent),
             app_id: Set(charm.app_id.clone()),
             amount: Set(charm.amount),
-            mempool_detected_at: Set(charm.mempool_detected_at),
+            mempool_detected_at: Set(charm.mempool_detected_at.map(|dt| dt.and_utc().fixed_offset())),
             tags: Set(charm.tags.clone()),
             verified: Set(charm.verified),
         };
@@ -357,7 +357,7 @@ impl CharmRepository {
             entity.app_id,
             entity.amount,
         );
-        charm.mempool_detected_at = entity.mempool_detected_at;
+        charm.mempool_detected_at = entity.mempool_detected_at.map(|dt| dt.naive_utc());
         charm.tags = entity.tags;
         charm
     }
