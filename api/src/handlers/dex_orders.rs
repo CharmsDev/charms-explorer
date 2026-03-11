@@ -33,6 +33,27 @@ pub async fn get_open_orders(
     Ok(Json(response))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AllOrdersQuery {
+    pub network: Option<String>,
+    pub status: Option<String>,
+}
+
+/// GET /dex/orders?network=...&status=...
+/// Returns all DEX orders (any status) — full activity history
+pub async fn get_all_orders(
+    State(state): State<AppState>,
+    Query(params): Query<AllOrdersQuery>,
+) -> ExplorerResult<Json<DexOrdersListResponse>> {
+    let response = dex_orders_service::get_all_orders(
+        &state,
+        params.network.as_deref(),
+        params.status.as_deref(),
+    )
+    .await?;
+    Ok(Json(response))
+}
+
 /// GET /dex/orders/{order_id}
 /// Returns a single order by ID
 pub async fn get_order_by_id(

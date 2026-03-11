@@ -168,7 +168,16 @@ export default function TransactionsPage() {
                                                     ) : tx.status || '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-dark-300 text-sm whitespace-nowrap">
-                                                    {tx.block_height?.toLocaleString() || '-'}
+                                                    {tx.block_height ? tx.block_height.toLocaleString() : (
+                                                        <a
+                                                            href={getMempoolUrl(tx.txid, tx.network)}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="px-2 py-1 rounded text-xs font-medium bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 transition-colors"
+                                                        >
+                                                            mempool
+                                                        </a>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3">
                                                     <span className={`px-2 py-1 rounded text-xs whitespace-nowrap ${

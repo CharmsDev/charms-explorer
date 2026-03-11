@@ -2,6 +2,27 @@
 
 import { ENDPOINTS } from '../apiConfig';
 
+export const fetchAllDexOrders = async (network = null) => {
+    try {
+        let url = ENDPOINTS.DEX_ALL_ORDERS;
+        if (network && network !== 'all') {
+            url += `?network=${encodeURIComponent(network)}`;
+        }
+
+        const response = await fetch(url);
+
+        if (!response.ok) {
+            throw new Error(`API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Failed to fetch all DEX orders:', error);
+        return { orders: [] };
+    }
+};
+
 export const fetchOpenDexOrders = async (network = null) => {
     try {
         let url = ENDPOINTS.DEX_OPEN_ORDERS;

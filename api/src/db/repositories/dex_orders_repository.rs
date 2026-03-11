@@ -60,6 +60,28 @@ impl DexOrdersRepository {
         Ok(results)
     }
 
+    /// Get all orders (any status), optionally filtered by network and/or status
+    pub async fn find_all_orders(
+        &self,
+        network: Option<&str>,
+        status: Option<&str>,
+    ) -> Result<Vec<dex_orders::Model>, DbError> {
+        let mut query = dex_orders::Entity::find();
+
+        if let Some(n) = network {
+            query = query.filter(dex_orders::Column::Network.eq(n));
+        }
+        if let Some(s) = status {
+            query = query.filter(dex_orders::Column::Status.eq(s));
+        }
+
+        let results = query
+            .order_by_desc(dex_orders::Column::CreatedAt)
+            .all(&self.conn)
+            .await?;
+        Ok(results)
+    }
+
     /// Find orders by maker address
     pub async fn find_by_maker(
         &self,

@@ -94,6 +94,30 @@ pub async fn get_open_orders(
     })
 }
 
+/// Get all DEX orders (any status), optionally filtered by network and status
+pub async fn get_all_orders(
+    state: &AppState,
+    network: Option<&str>,
+    status: Option<&str>,
+) -> ExplorerResult<DexOrdersListResponse> {
+    let orders = state
+        .repositories
+        .dex_orders
+        .find_all_orders(network, status)
+        .await
+        .map_err(|e| {
+            tracing::warn!("Database error in get_all_orders: {:?}", e);
+            crate::error::ExplorerError::InternalError(format!("Database error: {}", e))
+        })?;
+
+    let responses: Vec<DexOrderResponse> = orders.iter().map(model_to_response).collect();
+
+    Ok(DexOrdersListResponse {
+        total: responses.len(),
+        orders: responses,
+    })
+}
+
 /// Get a single order by ID
 pub async fn get_order_by_id(
     state: &AppState,
