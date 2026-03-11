@@ -188,8 +188,8 @@ const SECTIONS = [
   "monitored": true,
   "btc": {
     "confirmed": 150000,
-    "unconfirmed": 0,
-    "total": 150000,
+    "unconfirmed": 10000,
+    "total": 160000,
     "available": 100000,
     "locked": 50000,
     "utxos": [
@@ -198,14 +198,16 @@ const SECTIONS = [
         "vout": 0,
         "value": 100000,
         "blockHeight": 937396,
-        "hasCharms": false
+        "hasCharms": false,
+        "confirmed": true
       },
       {
         "txid": "def456...",
         "vout": 1,
         "value": 50000,
         "blockHeight": 937390,
-        "hasCharms": true
+        "hasCharms": true,
+        "confirmed": true
       }
     ]
   },
@@ -216,6 +218,10 @@ const SECTIONS = [
         "appId": "t/abc123.../vk",
         "assetType": "token",
         "symbol": "BRO",
+        "confirmed": 1000,
+        "unconfirmed": 0,
+        "mempoolSpent": 0,
+        "available": 1000,
         "total": 1000,
         "utxos": [
           {
@@ -224,14 +230,15 @@ const SECTIONS = [
             "value": 50000,
             "amount": 1000,
             "confirmed": true,
-            "blockHeight": 937390
+            "blockHeight": 937390,
+            "mempoolSpent": false
           }
         ]
       }
     ]
   }
 }`,
-        note: 'All BTC values in satoshis. "available" = BTC in UTXOs without charms (spendable). "locked" = BTC in UTXOs that carry charms (not freely spendable). "monitored" = whether the address was already tracked; false on first request (seeded on the fly from QuickNode). Charm amounts are in token units.',
+        note: 'All BTC values in satoshis. "available" = BTC in UTXOs without charms (spendable). "locked" = BTC in UTXOs that carry charms (not freely spendable). "unconfirmed" = BTC in mempool UTXOs (not yet confirmed). "monitored" = whether the address was already tracked; false on first request (seeded on the fly from QuickNode). Charm amounts are in token units. mempoolSpent: amount of tokens in UTXOs currently being spent by unconfirmed mempool TXs.',
       },
       {
         method: 'GET',
@@ -247,7 +254,9 @@ const SECTIONS = [
       "symbol": "BRO",
       "confirmed": 1000,
       "unconfirmed": 50,
-      "total": 1050,
+      "mempoolSpent": 200,
+      "available": 1050,
+      "total": 1250,
       "utxos": [
         {
           "txid": "def456...",
@@ -259,6 +268,7 @@ const SECTIONS = [
           "confirmed": true,
           "blockHeight": 210000,
           "hasOrderCharm": false,
+          "mempoolSpent": false,
           "allCharmAppIds": ["t/abc123.../vk"]
         }
       ]
@@ -266,7 +276,7 @@ const SECTIONS = [
   ],
   "count": 1
 }`,
-        note: 'Amounts are token units (not sats). hasOrderCharm: true if the UTXO also contains a DEX order charm (b/ prefix). allCharmAppIds: all charm app IDs on the same UTXO.',
+        note: 'Amounts are token units (not sats). hasOrderCharm: true if the UTXO also contains a DEX order charm (b/ prefix). allCharmAppIds: all charm app IDs on the same UTXO. mempoolSpent: true if this UTXO is being spent by an unconfirmed mempool transaction (do NOT use for new orders). available = confirmed + unconfirmed (usable). total = available + mempoolSpent.',
       },
       {
         method: 'GET',
