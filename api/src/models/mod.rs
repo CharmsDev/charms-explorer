@@ -193,6 +193,8 @@ pub struct TransactionData {
     pub network: String,
     pub updated_at: String,
     pub charm: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tags: Option<String>,
 }
 
 impl From<crate::entity::transactions::Model> for TransactionData {
@@ -206,6 +208,7 @@ impl From<crate::entity::transactions::Model> for TransactionData {
             network: tx.network,
             updated_at: tx.updated_at.format("%Y-%m-%dT%H:%M:%S").to_string(),
             charm: tx.charm,
+            tags: tx.tags,
         }
     }
 }

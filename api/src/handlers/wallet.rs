@@ -194,16 +194,20 @@ pub async fn get_wallet_balance(
     let charm_utxo_keys: std::collections::HashSet<(String, i32)> =
         charms.iter().map(|c| (c.txid.clone(), c.vout)).collect();
 
-    // Step 4: Classify UTXOs as available (no charms) or locked (has charms)
+    // Step 4: Classify UTXOs as available (no charms), locked (has charms), or unconfirmed (mempool)
     let mut available: u64 = 0;
     let mut locked: u64 = 0;
+    let mut unconfirmed: u64 = 0;
     let mut btc_utxos: Vec<serde_json::Value> = Vec::new();
 
     for row in &utxo_rows {
         let has_charms = charm_utxo_keys.contains(&(row.txid.clone(), row.vout));
         let value = row.value as u64;
+        let is_confirmed = row.block_height > 0;
 
-        if has_charms {
+        if !is_confirmed {
+            unconfirmed += value;
+        } else if has_charms {
             locked += value;
         } else {
             available += value;
@@ -215,6 +219,7 @@ pub async fn get_wallet_balance(
             "value": row.value,
             "blockHeight": row.block_height,
             "hasCharms": has_charms,
+            "confirmed": is_confirmed,
         }));
     }
 
@@ -284,8 +289,8 @@ pub async fn get_wallet_balance(
         "monitored": monitored,
         "btc": {
             "confirmed": confirmed,
-            "unconfirmed": 0,
-            "total": confirmed,
+            "unconfirmed": unconfirmed,
+            "total": confirmed + unconfirmed,
             "available": available,
             "locked": locked,
             "utxos": btc_utxos,
@@ -383,7 +388,15 @@ pub async fn get_wallet_charm_balances(
         })));
     }
 
-    // 2. Get sibling app_ids per (txid, vout) — single efficient SQL query
+    // 2. Get mempool-spent UTXOs to flag them
+    let mempool_spent = state
+        .repositories
+        .charm
+        .get_mempool_spent_utxos(network)
+        .await
+        .unwrap_or_default();
+
+    // 3. Get sibling app_ids per (txid, vout) — single efficient SQL query
     let utxo_app_ids = state
         .repositories
         .charm
@@ -391,7 +404,7 @@ pub async fn get_wallet_charm_balances(
         .await
         .unwrap_or_default();
 
-    // 3. Look up BTC values from address_utxos
+    // 4. Look up BTC values from address_utxos
     let btc_utxos = state
         .repositories
         .utxo
@@ -419,13 +432,14 @@ pub async fn get_wallet_charm_balances(
     // 6. Group charms by app_id and build Cast-compatible response
     let mut balance_map: std::collections::HashMap<
         String,
-        (String, String, i64, i64, Vec<serde_json::Value>),
+        (String, String, i64, i64, i64, Vec<serde_json::Value>),
     > = std::collections::HashMap::new();
-    // key -> (asset_type, symbol, confirmed_total, unconfirmed_total, utxos_json)
+    // key -> (asset_type, symbol, confirmed, unconfirmed, mempool_spent_total, utxos)
 
     for charm in &charms {
         let confirmed = charm.block_height.map_or(false, |h| h > 0);
         let key = (charm.txid.clone(), charm.vout);
+        let is_mempool_spent = mempool_spent.contains(&key);
         let all_app_ids = utxo_app_ids
             .get(&key)
             .cloned()
@@ -445,32 +459,38 @@ pub async fn get_wallet_charm_balances(
             "blockHeight": charm.block_height,
             "hasOrderCharm": has_order_charm,
             "allCharmAppIds": all_app_ids,
+            "mempoolSpent": is_mempool_spent,
         });
 
         let entry = balance_map
             .entry(charm.app_id.clone())
-            .or_insert_with(|| (charm.asset_type.clone(), symbol.clone(), 0, 0, Vec::new()));
+            .or_insert_with(|| (charm.asset_type.clone(), symbol.clone(), 0, 0, 0, Vec::new()));
 
-        if confirmed {
+        if is_mempool_spent {
+            entry.4 += charm.amount;
+        } else if confirmed {
             entry.2 += charm.amount;
         } else {
             entry.3 += charm.amount;
         }
-        entry.4.push(utxo_json);
+        entry.5.push(utxo_json);
     }
 
     // 7. Build final balances array
     let balances: Vec<serde_json::Value> = balance_map
         .into_iter()
         .map(
-            |(app_id, (asset_type, symbol, confirmed, unconfirmed, utxos))| {
+            |(app_id, (asset_type, symbol, confirmed, unconfirmed, mempool_spent_total, utxos))| {
+                let available = confirmed + unconfirmed;
                 serde_json::json!({
                     "appId": app_id,
                     "assetType": asset_type,
                     "symbol": symbol,
                     "confirmed": confirmed,
                     "unconfirmed": unconfirmed,
-                    "total": confirmed + unconfirmed,
+                    "mempoolSpent": mempool_spent_total,
+                    "available": available,
+                    "total": available + mempool_spent_total,
                     "utxos": utxos,
                 })
             },
@@ -576,6 +596,13 @@ async fn resolve_charm_balances_for_address(
         }));
     }
 
+    let mempool_spent = state
+        .repositories
+        .charm
+        .get_mempool_spent_utxos(network)
+        .await
+        .unwrap_or_default();
+
     let utxo_app_ids = state
         .repositories
         .charm
@@ -608,12 +635,13 @@ async fn resolve_charm_balances_for_address(
 
     let mut balance_map: std::collections::HashMap<
         String,
-        (String, String, i64, i64, Vec<serde_json::Value>),
+        (String, String, i64, i64, i64, Vec<serde_json::Value>),
     > = std::collections::HashMap::new();
 
     for charm in &charms {
         let confirmed = charm.block_height.map_or(false, |h| h > 0);
         let key = (charm.txid.clone(), charm.vout);
+        let is_mempool_spent = mempool_spent.contains(&key);
         let all_app_ids = utxo_app_ids
             .get(&key)
             .cloned()
@@ -633,31 +661,37 @@ async fn resolve_charm_balances_for_address(
             "blockHeight": charm.block_height,
             "hasOrderCharm": has_order_charm,
             "allCharmAppIds": all_app_ids,
+            "mempoolSpent": is_mempool_spent,
         });
 
         let entry = balance_map
             .entry(charm.app_id.clone())
-            .or_insert_with(|| (charm.asset_type.clone(), symbol.clone(), 0, 0, Vec::new()));
+            .or_insert_with(|| (charm.asset_type.clone(), symbol.clone(), 0, 0, 0, Vec::new()));
 
-        if confirmed {
+        if is_mempool_spent {
+            entry.4 += charm.amount;
+        } else if confirmed {
             entry.2 += charm.amount;
         } else {
             entry.3 += charm.amount;
         }
-        entry.4.push(utxo_json);
+        entry.5.push(utxo_json);
     }
 
     let balances: Vec<serde_json::Value> = balance_map
         .into_iter()
         .map(
-            |(app_id, (asset_type, symbol, confirmed, unconfirmed, utxos))| {
+            |(app_id, (asset_type, symbol, confirmed, unconfirmed, mempool_spent_total, utxos))| {
+                let available = confirmed + unconfirmed;
                 serde_json::json!({
                     "appId": app_id,
                     "assetType": asset_type,
                     "symbol": symbol,
                     "confirmed": confirmed,
                     "unconfirmed": unconfirmed,
-                    "total": confirmed + unconfirmed,
+                    "mempoolSpent": mempool_spent_total,
+                    "available": available,
+                    "total": available + mempool_spent_total,
                     "utxos": utxos,
                 })
             },
