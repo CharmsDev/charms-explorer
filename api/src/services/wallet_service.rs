@@ -166,7 +166,7 @@ impl WalletService {
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "bb_getutxos",
-            "params": [address, {"confirmed": true}],
+            "params": [address, {"confirmed": false}],
             "id": 1
         });
 

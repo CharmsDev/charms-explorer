@@ -306,6 +306,35 @@ impl CharmRepository {
             .map_err(Into::into)
     }
 
+    /// Get set of (txid, vout) being spent by mempool transactions for a given network
+    pub async fn get_mempool_spent_utxos(
+        &self,
+        network: &str,
+    ) -> Result<std::collections::HashSet<(String, i32)>, DbError> {
+        use sea_orm::FromQueryResult;
+
+        #[derive(FromQueryResult)]
+        struct SpentUtxo {
+            spent_txid: String,
+            spent_vout: i32,
+        }
+
+        let rows = sea_orm::Statement::from_sql_and_values(
+            sea_orm::DatabaseBackend::Postgres,
+            "SELECT spent_txid, spent_vout FROM mempool_spends WHERE network = $1",
+            [network.into()],
+        );
+        let results = SpentUtxo::find_by_statement(rows)
+            .all(&self.conn)
+            .await
+            .map_err(|e| DbError::from(e))?;
+
+        Ok(results
+            .into_iter()
+            .map(|r| (r.spent_txid, r.spent_vout))
+            .collect())
+    }
+
     /// Get sibling charm app_ids for UTXOs owned by an address
     /// Returns (txid, vout) -> Vec<app_id> for all charms sharing those UTXOs
     /// Two-step ORM approach: first get owned UTXOs, then find siblings
