@@ -24,7 +24,7 @@ pub use charms::{
     get_charm_by_charmid, get_charm_by_txid, get_charm_numbers, get_charms, get_charms_by_address,
     get_charms_by_type, get_charms_count_by_type, like_charm, unlike_charm,
 };
-pub use dex_orders::{get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker}; // [RJJ-DEX]
+pub use dex_orders::{get_all_orders, get_open_orders, get_order_by_id, get_orders_by_asset, get_orders_by_maker}; // [RJJ-DEX]
 pub use diagnostic::diagnose_database;
 pub use health::health_check;
 pub use stats_holders::get_asset_holders; // [RJJ-STATS-HOLDERS]

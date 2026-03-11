@@ -40,6 +40,7 @@ export const ENDPOINTS = {
   WALLET_TIP: `${API_BASE_URL}/wallet/tip`,
 
   // DEX endpoints
+  DEX_ALL_ORDERS: `${API_BASE_URL}/dex/orders`,
   DEX_OPEN_ORDERS: `${API_BASE_URL}/dex/orders/open`,
   DEX_ORDERS_BY_ASSET: (assetAppId) =>
     `${API_BASE_URL}/dex/orders/by-asset/${encodeURIComponent(assetAppId)}`,
