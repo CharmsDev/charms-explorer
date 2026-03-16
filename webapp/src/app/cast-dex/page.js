@@ -141,14 +141,12 @@ export default function CastDexPage() {
                             <span className="text-dark-400">
                                 <span className="text-primary-400 font-semibold">{transactions.length}</span> events
                             </span>
-                            <a
-                                href={`${CAST_APP_URL}/orderbook`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white rounded-lg text-sm font-medium transition-colors"
+                            <span
+                                className="px-3 py-1.5 bg-dark-700/50 text-dark-500 rounded-lg text-sm font-medium cursor-default"
+                                title="Coming soon"
                             >
                                 Order Book →
-                            </a>
+                            </span>
                         </div>
                     </div>
                 </div>
