@@ -102,12 +102,12 @@ export default function TransactionsPage() {
                             >
                                 Transactions
                             </Link>
-                            <Link 
-                                href="/cast-dex"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
+                            <span
+                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800/50 text-dark-500 cursor-default"
+                                title="Coming soon"
                             >
                                 Cast Dex
-                            </Link>
+                            </span>
                         </div>
                         <div className="text-dark-400">
                             <span className="text-primary-400 font-semibold">{total.toLocaleString()}</span> transactions

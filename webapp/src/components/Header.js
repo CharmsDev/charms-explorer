@@ -2,14 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
 import { NetworkSelector, MobileMenu } from './header/index';
 
 export default function Header() {
-    const [isConnecting, setIsConnecting] = useState(false);
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-    const pathname = usePathname();
 
     useEffect(() => {
         const handleScroll = () => {
@@ -19,13 +16,6 @@ export default function Header() {
         window.addEventListener('scroll', handleScroll);
         return () => window.removeEventListener('scroll', handleScroll);
     }, []);
-
-    const handleConnect = () => {
-        setIsConnecting(true);
-        setTimeout(() => {
-            setIsConnecting(false);
-        }, 1000);
-    };
 
     return (
         <header className={`fixed top-0 left-0 right-0 z-50 border-b transition-all duration-300 ${isScrolled
@@ -58,7 +48,7 @@ export default function Header() {
                     {/* Center section - Network selector */}
                     <NetworkSelector />
 
-                    {/* Right section - Status button, Connect button and menu */}
+                    {/* Right section - Status button and menu */}
                     <div className="flex items-center justify-end space-x-3">
                         {/* Status page button */}
                         <Link
@@ -72,34 +62,6 @@ export default function Header() {
                                 Status
                             </span>
                         </Link>
-
-                        {/* Connect wallet button - hidden on status page */}
-                        {pathname !== '/status' && (
-                            <button
-                                onClick={handleConnect}
-                                disabled={isConnecting}
-                                className="px-4 py-2 text-sm font-medium bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition-colors flex items-center shadow-lg shadow-primary-600/25"
-                            >
-                                <span className="flex items-center">
-                                    {isConnecting ? (
-                                        <>
-                                            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                                            </svg>
-                                            Connecting...
-                                        </>
-                                    ) : (
-                                        <>
-                                            <svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
-                                            </svg>
-                                            Connect
-                                        </>
-                                    )}
-                                </span>
-                            </button>
-                        )}
 
                         {/* Mobile menu button */}
                         <button
