@@ -6,6 +6,7 @@
 
 mod cleanup;
 mod processor;
+mod reconcile;
 pub mod utxo_tracker;
 
 use std::collections::HashSet;
@@ -29,6 +30,10 @@ const MAX_TXS_PER_CYCLE: usize = 100;
 
 /// How often to reload the monitored address set (every N cycles)
 const MONITORED_SET_RELOAD_INTERVAL: u64 = 60;
+
+/// How often to reconcile DB state with the live mempool (every N cycles).
+/// At 1s per cycle, 300 cycles = every 5 minutes.
+const RECONCILE_INTERVAL_CYCLES: u64 = 300;
 
 /// Mempool processor — runs as a background task alongside the block processor
 pub struct MempoolProcessor {
@@ -98,6 +103,11 @@ impl MempoolProcessor {
                     &self.seen_txids,
                 )
                 .await;
+            }
+
+            // Reconcile: revert side effects for txs that left the mempool
+            if cycle % RECONCILE_INTERVAL_CYCLES == 0 {
+                self.reconcile_with_mempool().await;
             }
 
             tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
@@ -219,6 +229,38 @@ impl MempoolProcessor {
         }
 
         Ok(())
+    }
+
+    /// Reconcile DB with live mempool: revert all side effects for dropped txs.
+    async fn reconcile_with_mempool(&self) {
+        let mempool_txids = match self.bitcoin_client.get_raw_mempool().await {
+            Ok(txids) => txids,
+            Err(e) => {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Reconcile: getrawmempool failed: {}",
+                    self.network_id.name, e
+                ));
+                return;
+            }
+        };
+
+        let live_set: std::collections::HashSet<String> =
+            mempool_txids.into_iter().collect();
+
+        let reverted = reconcile::reconcile_dropped_txs(
+            &self.network_id.name,
+            &live_set,
+            &self.db,
+            &self.mempool_spends_repository,
+        )
+        .await;
+
+        if reverted > 0 {
+            // Also remove reverted txids from seen_txids so they don't block re-detection
+            // if the same tx re-enters the mempool later
+            let mut seen = self.seen_txids.lock().await;
+            seen.retain(|txid| live_set.contains(txid));
+        }
     }
 
     /// Reload the monitored address set from DB
