@@ -17,11 +17,21 @@ pub mod known_tokens {
         "3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b";
     pub const BRO_IDENTITY_2: &str =
         "6274399ab68d4a35e5193394aded0bed548453f6ebb7ea46dd2ca0c251f74580";
+
+    /// eBTC (Enchanted BTC) - app identity hash
+    /// Full app_id: n/0796f63ed48144b4ec69fb794fbc2290ae63acf945fb035d5474648b50ee43b6/fd0cac892e457454be0212fa7d9a0e1517d5bd6a33aa7c66a1f10f55e375c290
+    pub const EBTC_IDENTITY: &str =
+        "0796f63ed48144b4ec69fb794fbc2290ae63acf945fb035d5474648b50ee43b6";
 }
 
 /// Check if an app_id is the $BRO token
 pub fn is_bro_token(app_id: &str) -> bool {
     app_id.contains(known_tokens::BRO_IDENTITY_1) || app_id.contains(known_tokens::BRO_IDENTITY_2)
+}
+
+/// Check if an app_id is eBTC (Enchanted BTC)
+pub fn is_ebtc_token(app_id: &str) -> bool {
+    app_id.contains(known_tokens::EBTC_IDENTITY)
 }
 
 /// Type of DEX operation detected in a transaction

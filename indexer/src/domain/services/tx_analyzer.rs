@@ -99,6 +99,18 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         }
     }
 
+    // eBTC token detection (check primary + all assets)
+    if dex::is_ebtc_token(&app_id) {
+        tag_list.push("ebtc".to_string());
+    } else {
+        for asset in &asset_infos {
+            if dex::is_ebtc_token(&asset.app_id) {
+                tag_list.push("ebtc".to_string());
+                break;
+            }
+        }
+    }
+
     let tags = if tag_list.is_empty() {
         None
     } else {
