@@ -29,6 +29,9 @@ export const TRANSACTION_TYPES = {
   DEX_CANCEL: "dex_cancel",
   DEX_PARTIAL_FILL: "dex_partial_fill",
 
+  // eBTC
+  EBTC: "ebtc",
+
   // BRO specific
   BRO_MINING: "bro_mining",
   BRO_MINT: "bro_mint",
@@ -156,6 +159,15 @@ export const TRANSACTION_METADATA = {
     borderClass: "border-yellow-500/30",
     description: "Order partially filled",
   },
+  [TRANSACTION_TYPES.EBTC]: {
+    label: "eBTC",
+    icon: "₿",
+    color: "amber",
+    bgClass: "bg-amber-500/20",
+    textClass: "text-amber-400",
+    borderClass: "border-amber-500/30",
+    description: "Enchanted BTC transaction",
+  },
   [TRANSACTION_TYPES.BRO_MINING]: {
     label: "BRO Mining",
     icon: "⛏️",
@@ -218,6 +230,14 @@ export const TRANSACTION_METADATA = {
  */
 
 const classificationRules = [
+  // eBTC (priority 8 — before DEX and BRO)
+  {
+    name: "eBTC",
+    priority: 8,
+    test: (tx) => tx.tags?.includes("ebtc"),
+    type: TRANSACTION_TYPES.EBTC,
+  },
+
   // DEX Rules (highest priority - check tags first)
   {
     name: "DEX Create Ask",
