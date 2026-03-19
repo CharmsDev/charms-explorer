@@ -32,10 +32,18 @@ pub struct AnalyzedTx {
 /// This is intentionally a free function, not a method on a struct,
 /// because it needs no state — only the raw bytes and the network name.
 pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx> {
-    // 1. Parse spell from OP_RETURN or Taproot witness
-    let spell = match NativeCharmParser::extract_spell_no_verify(raw_hex) {
+    // 1. Verify ZK proof. If verification fails, reject the transaction entirely.
+    //    We only index charms with valid proofs.
+    let spell = match NativeCharmParser::extract_and_verify_charm(raw_hex, false) {
         Ok(s) => s,
-        Err(_) => return None,
+        Err(_) => {
+            // Fallback for unsupported versions (V11+) where we don't have the VK yet.
+            // Parse without verification so we can still detect and display them.
+            match NativeCharmParser::extract_spell_no_verify(raw_hex) {
+                Ok(s) if s.version > charms_client::V10 => s,
+                _ => return None,
+            }
+        }
     };
 
     // 2. Build charm JSON (same structure used by all paths)

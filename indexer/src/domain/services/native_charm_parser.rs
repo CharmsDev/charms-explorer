@@ -5,19 +5,21 @@ use charms_client::bitcoin_tx::{
     BitcoinTx, parse_spell_and_proof_from_op_return, parse_spell_and_proof_from_witness,
 };
 use charms_client::tx::{EnchantedTx, Tx};
-// Import V9_SPELL_VK from charms_client - the library handles version detection internally
+// Import from charms_client - the library handles version detection internally
 // For versions V0-V9, the library uses its internal VKs automatically
-// For CURRENT_VERSION (V10+), we pass V9_SPELL_VK as fallback (will be updated when V10 VK is published)
-use charms_client::{V7, V9_SPELL_VK, V10};
+// For CURRENT_VERSION (V10), we pass the correct V10 VK from charms-lib
+use charms_client::{V7, V10};
 
 /// Native charm parser using the charms-client crate
 /// Provides direct parsing and verification of charm transactions
 pub struct NativeCharmParser;
 
 impl NativeCharmParser {
-    /// Spell verification key - uses V9_SPELL_VK from charms_client
-    /// The library internally handles version detection and uses the correct VK for each version
-    pub const SPELL_VK: &'static str = V9_SPELL_VK;
+    /// Spell verification key for CURRENT_VERSION (V10)
+    /// Source: charms-lib SPELL_VK constant
+    /// The library uses this for V10 and falls back to hardcoded VKs for V0-V9
+    pub const SPELL_VK: &'static str =
+        "0x00ccf030317cae019a4cd3c8557b2c5b522050e7e562e3adf287cd5ad596511f";
 
     /// Extract and verify a charm from a transaction hex string
     ///
