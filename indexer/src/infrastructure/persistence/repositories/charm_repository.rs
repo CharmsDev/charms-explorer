@@ -230,68 +230,59 @@ impl CharmRepository {
             Option<String>,    // tags
         )>,
     ) -> Result<(), DbError> {
-        // Skip individual existence checks - let database handle duplicates
         if charms.is_empty() {
             return Ok(());
         }
 
-        // Create active models for all charms
         let now = chrono::Utc::now().naive_utc();
-        let models: Vec<charms::ActiveModel> = charms
-            .into_iter()
-            .map(
-                |(
-                    txid,
-                    vout,
-                    block_height,
-                    data,
-                    asset_type,
-                    blockchain,
-                    network,
-                    address,
-                    app_id,
-                    amount,
-                    tags,
-                )| {
-                    // [RJJ-S01] Removed charmid, vout now comes from input, added app_id and amount
-                    // [RJJ-DEX] Added tags field
-                    charms::ActiveModel {
-                        txid: Set(txid),
-                        vout: Set(vout),
-                        block_height: Set(Some(block_height as i32)),
-                        data: Set(data),
-                        date_created: Set(now),
-                        asset_type: Set(asset_type),
-                        blockchain: Set(blockchain),
-                        network: Set(network),
-                        address: Set(address), // [RJJ-ADDRESS] Now includes address from extraction
-                        spent: Set(false),     // New charms are unspent by default
-                        app_id: Set(app_id),
-                        amount: Set(amount),
-                        mempool_detected_at: Set(None),
-                        tags: Set(tags),     // [RJJ-DEX] Tags from detection
-                        verified: Set(true), // Charms are verified during extraction
-                    }
-                },
-            )
-            .collect();
+        let now_str = now.format("%Y-%m-%d %H:%M:%S%.6f").to_string();
 
-        // Try to insert all charms, handle duplicate key violations gracefully
-        match charms::Entity::insert_many(models).exec(&self.conn).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                // Check if the error is a duplicate key violation
-                if e.to_string()
-                    .contains("duplicate key value violates unique constraint")
-                {
-                    // Some charms already exist, this is not an error
-                    Ok(())
-                } else {
-                    // If it's not a duplicate key error, propagate the original error
-                    Err(e.into())
-                }
-            }
+        // Build raw SQL with ON CONFLICT DO NOTHING so that duplicates are
+        // silently skipped while the rest of the batch is still inserted.
+        // The previous insert_many approach would abort the ENTIRE batch when
+        // even a single duplicate existed (e.g. a charm promoted from mempool).
+        let mut values_parts: Vec<String> = Vec::with_capacity(charms.len());
+
+        for (txid, vout, block_height, data, asset_type, blockchain, network, address, app_id, amount, tags) in &charms {
+            let addr_sql = match address {
+                Some(a) => format!("'{}'", a.replace('\'', "''")),
+                None => "NULL".to_string(),
+            };
+            let tags_sql = match tags {
+                Some(t) => format!("'{}'", t.replace('\'', "''")),
+                None => "NULL".to_string(),
+            };
+            let data_json = serde_json::to_string(data).unwrap_or_else(|_| "{}".to_string());
+
+            values_parts.push(format!(
+                "('{}', {}, {}, '{}'::jsonb, '{}', '{}', '{}', '{}', {}, false, '{}', {}, NULL, {}, true)",
+                txid.replace('\'', "''"),
+                vout,
+                block_height,
+                data_json.replace('\'', "''"),
+                now_str,
+                asset_type.replace('\'', "''"),
+                blockchain.replace('\'', "''"),
+                network.replace('\'', "''"),
+                addr_sql,
+                app_id.replace('\'', "''"),
+                amount,
+                tags_sql,
+            ));
         }
+
+        let sql = format!(
+            "INSERT INTO charms (txid, vout, block_height, data, date_created, asset_type, blockchain, network, address, spent, app_id, amount, mempool_detected_at, tags, verified) \
+             VALUES {} \
+             ON CONFLICT (txid, vout) DO NOTHING",
+            values_parts.join(", ")
+        );
+
+        self.conn
+            .execute(Statement::from_string(DbBackend::Postgres, sql))
+            .await
+            .map(|_| ())
+            .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
     /// Get charms by Bitcoin address
