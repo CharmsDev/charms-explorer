@@ -182,6 +182,18 @@ pub struct TransactionsResponse {
     pub transactions: Vec<TransactionData>,
 }
 
+/// Asset summary returned inline with transaction data
+#[derive(Debug, Serialize)]
+pub struct TransactionAsset {
+    pub app_id: String,
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub amount: i64,
+    pub asset_type: String,
+    pub vout: i32,
+    pub verified: bool,
+}
+
 /// Transaction data structure for API responses
 #[derive(Debug, Serialize)]
 pub struct TransactionData {
@@ -195,6 +207,8 @@ pub struct TransactionData {
     pub charm: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub assets: Vec<TransactionAsset>,
 }
 
 impl From<crate::entity::transactions::Model> for TransactionData {
@@ -209,6 +223,7 @@ impl From<crate::entity::transactions::Model> for TransactionData {
             updated_at: tx.updated_at.format("%Y-%m-%dT%H:%M:%S").to_string(),
             charm: tx.charm,
             tags: tx.tags,
+            assets: vec![],
         }
     }
 }
