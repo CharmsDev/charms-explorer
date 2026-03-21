@@ -227,22 +227,46 @@ function TransactionPageContent() {
                     const formattedQuantity = analysis.orderDetails?.quantity != null
                         ? (analysis.orderDetails.quantity / Math.pow(10, tokenDecimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })
                         : null;
+
+                    // Determine smart header: detect token transfers from assets or spell
+                    const assets = charm.assets || [];
+                    const spellTokenInfo = extractTokenFromSpell(charm.spell || charm.data);
+                    const isBroTransfer = assets.some(a => a.app_id?.includes(VERIFIED_BRO_HASH)) || spellTokenInfo?.isBro;
+
+                    // Override type label for token transfers that classifier marks as generic "Spell"
+                    let headerType = analysis.type;
+                    let headerLabel = null;
+                    let headerDescription = null;
+                    let headerIcon = null;
+                    if (isBroTransfer && analysis.type === TRANSACTION_TYPES.SPELL) {
+                        headerType = TRANSACTION_TYPES.TOKEN_TRANSFER;
+                        headerLabel = 'BRO Transfer';
+                        headerDescription = 'BRO token transfer on Bitcoin';
+                        headerIcon = '🟠';
+                    } else if (spellTokenInfo && !analysis.isDex && analysis.type === TRANSACTION_TYPES.SPELL) {
+                        headerType = TRANSACTION_TYPES.TOKEN_TRANSFER;
+                        headerLabel = 'Token Transfer';
+                        headerDescription = 'Charms token transfer';
+                    }
                     return (
                         <div className="mb-6">
                             {/* Transaction Header with Type */}
                             <div className="card p-6 mb-6">
                                 <TransactionHeader
-                                    type={analysis.type}
+                                    type={headerType}
                                     status="confirmed"
                                     amount={analysis.orderDetails?.asset ? formattedQuantity : null}
                                     ticker={analysis.orderDetails?.asset ? tokenTicker : null}
+                                    label={headerLabel}
+                                    description={headerDescription}
+                                    icon={headerIcon}
                                 />
                             </div>
 
                             {/* TXID Section */}
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-lg font-semibold text-dark-300">TXID</h2>
-                                <TransactionBadge type={analysis.type} size="sm" />
+                                <TransactionBadge type={headerType} size="sm" />
                                 {/* Network Badge */}
                                 <span className={`px-2 py-1 rounded text-xs font-medium ${
                                     charm.network === 'mainnet'
@@ -463,7 +487,7 @@ function TransactionPageContent() {
                             if (assets.length > 0) {
                                 const firstAsset = assets[0];
                                 const isBro = firstAsset.app_id?.includes(VERIFIED_BRO_HASH);
-                                const decimals = 9; // BRO uses 9 decimals
+                                const decimals = 8; // BRO uses 8 decimals (1 BRO = 10^8 raw units)
                                 const symbol = firstAsset.symbol || (isBro ? 'BRO' : null);
                                 const name = firstAsset.name || (isBro ? '$BRO Token' : 'Token');
                                 const icon = isBro ? '🟠' : '🪙';

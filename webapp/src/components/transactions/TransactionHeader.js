@@ -7,7 +7,7 @@
 
 import { getTransactionMetadata } from '@/services/transactions/transactionClassifier';
 
-export default function TransactionHeader({ type, status = 'confirmed', amount, ticker }) {
+export default function TransactionHeader({ type, status = 'confirmed', amount, ticker, label, description, icon }) {
     const metadata = getTransactionMetadata(type);
     
     const getStatusColor = (status) => {
@@ -24,13 +24,13 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
             <div className="flex items-start gap-4 flex-1">
                 {/* Icon Circle */}
                 <div className={`w-16 h-16 rounded-full flex items-center justify-center flex-shrink-0 ${metadata.bgClass} border-2 ${metadata.borderClass}`}>
-                    <span className="text-3xl">{metadata.icon}</span>
+                    <span className="text-3xl">{icon || metadata.icon}</span>
                 </div>
-                
+
                 {/* Title and Status */}
                 <div className="flex-1">
                     <h2 className="text-2xl font-bold text-white mb-2">
-                        {metadata.label}
+                        {label || metadata.label}
                     </h2>
                     <div className="flex items-center gap-2 flex-wrap">
                         <span className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${getStatusColor(status)}`}>
@@ -42,7 +42,7 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
                             </span>
                         )}
                     </div>
-                    <p className="text-dark-400 text-sm mt-2">{metadata.description}</p>
+                    <p className="text-dark-400 text-sm mt-2">{description || metadata.description}</p>
                 </div>
             </div>
             
