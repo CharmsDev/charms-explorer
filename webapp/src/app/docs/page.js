@@ -424,6 +424,57 @@ const SECTIONS = [
     ],
   },
   {
+    id: 'transactions',
+    title: 'Transactions',
+    badge: 'Explorer',
+    badgeColor: 'blue',
+    description: 'Query indexed transactions. Charm transactions include enriched asset metadata.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/v1/transactions',
+        desc: 'List all indexed transactions (paginated)',
+        params: [
+          { name: 'page', type: 'u64', required: false, desc: 'Page number (default: 1)' },
+          { name: 'limit', type: 'u64', required: false, desc: 'Items per page (default: 20)' },
+          { name: 'network', type: 'string', required: false, desc: 'mainnet | testnet4' },
+        ],
+        response: `{
+  "data": [...],
+  "pagination": { "total": 5678, "page": 1, "limit": 20, "total_pages": 284 }
+}`,
+      },
+      {
+        method: 'GET',
+        path: '/v1/transactions/{txid}',
+        desc: 'Get transaction by txid with asset metadata',
+        response: `{
+  "txid": "6aec4d...",
+  "block_height": 941474,
+  "status": "confirmed",
+  "confirmations": 86,
+  "blockchain": "Bitcoin",
+  "network": "mainnet",
+  "updated_at": "2026-03-21T11:37:38",
+  "charm": { "detected": true, ... },
+  "tags": "bro",
+  "assets": [
+    {
+      "app_id": "t/3d7f.../c975...",
+      "name": "Bro",
+      "symbol": "BRO",
+      "amount": 333000000,
+      "asset_type": "token",
+      "vout": 0,
+      "verified": true
+    }
+  ]
+}`,
+        note: 'The "assets" array is populated from the charms + assets tables when the transaction contains charm data. For pure BTC transactions, "charm" is null and "assets" is omitted. Amount is in token base units (e.g. 333000000 = 3.33 BRO with 8 decimals).',
+      },
+    ],
+  },
+  {
     id: 'infra',
     title: 'Infrastructure',
     badge: 'Internal',
