@@ -105,4 +105,26 @@ pub async fn consolidate(
             network, height, e
         ));
     }
+
+    // 5. Promote unconfirmed address_utxos to confirmed block_height
+    let sql = format!(
+        "UPDATE address_utxos SET block_height = {} \
+         WHERE txid IN ({}) AND network = '{}' AND block_height = 0",
+        height, ids_sql, network
+    );
+    match conn.execute(Statement::from_string(DbBackend::Postgres, sql)).await {
+        Ok(r) if r.rows_affected() > 0 => {
+            logging::log_info(&format!(
+                "[{}] ✅ Block {}: Promoted {} mempool address_utxos to confirmed",
+                network, height, r.rows_affected()
+            ));
+        }
+        Ok(_) => {}
+        Err(e) => {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Block {}: Failed to promote mempool address_utxos: {}",
+                network, height, e
+            ));
+        }
+    }
 }

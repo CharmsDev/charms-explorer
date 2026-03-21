@@ -97,6 +97,32 @@ pub async fn purge_stale(
         }
     }
 
+    // 5. Purge orphaned address_utxos (block_height=0 with no matching pending tx)
+    let sql_utxos = format!(
+        "DELETE FROM address_utxos WHERE block_height = 0 AND network = '{}' \
+         AND txid NOT IN (SELECT txid FROM transactions WHERE block_height IS NULL AND network = '{}')",
+        network, network
+    );
+    match db
+        .execute(Statement::from_string(DbBackend::Postgres, sql_utxos))
+        .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            logging::log_info(&format!(
+                "[{}] 🧹 Purged {} orphaned mempool address_utxos",
+                network,
+                r.rows_affected()
+            ));
+        }
+        Ok(_) => {}
+        Err(e) => {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to purge orphaned mempool address_utxos: {}",
+                network, e
+            ));
+        }
+    }
+
     // seen_txids is kept in sync with the live mempool via retain() in poll_once —
     // no explicit clearing needed here.
     let _ = seen_txids; // suppress unused warning
