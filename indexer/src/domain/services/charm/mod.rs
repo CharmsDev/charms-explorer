@@ -88,6 +88,7 @@ impl CharmService {
     /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
     /// [RJJ-ADDRESS] Added address field
     /// [RJJ-DEX] Added tags field
+    /// Returns the list of (txid, vout) that were actually inserted (not duplicates).
     pub async fn save_batch(
         &self,
         charms: Vec<(
@@ -103,7 +104,7 @@ impl CharmService {
             i64,               // amount
             Option<String>,    // tags
         )>,
-    ) -> Result<(), CharmError> {
+    ) -> Result<Vec<(String, i32)>, CharmError> {
         let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);
         persistence.save_charm_batch(charms).await
     }

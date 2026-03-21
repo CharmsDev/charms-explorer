@@ -129,11 +129,14 @@ pub async fn process_block_from_cache(
             ));
         }
 
-        if let Err(e) = charm_service.save_batch(charm_items).await {
-            logging::log_error(&format!(
-                "[{}] Error saving charm for tx {} at height {}: {}",
-                network_id.name, tx.txid, height, e
-            ));
+        match charm_service.save_batch(charm_items).await {
+            Ok(_inserted) => {}
+            Err(e) => {
+                logging::log_error(&format!(
+                    "[{}] Error saving charm for tx {} at height {}: {}",
+                    network_id.name, tx.txid, height, e
+                ));
+            }
         }
     }
 

@@ -158,7 +158,16 @@ async fn revert_mempool_tx(
     .await
     .map_err(|e| format!("delete dex_orders: {}", e))?;
 
-    // 3. Delete charms entries
+    // 3. Get charm info BEFORE deletion (for stats_holders reversal) then delete
+    let get_charms_sql = format!(
+        "SELECT app_id, address, amount FROM charms WHERE txid = '{}' AND network = '{}' AND block_height IS NULL AND address IS NOT NULL",
+        escaped_txid, escaped_network
+    );
+    let charm_rows = db
+        .query_all(Statement::from_string(DbBackend::Postgres, get_charms_sql))
+        .await
+        .unwrap_or_default();
+
     let del_charms_sql = format!(
         "DELETE FROM charms WHERE txid = '{}' AND network = '{}' AND block_height IS NULL",
         escaped_txid, escaped_network
@@ -169,6 +178,86 @@ async fn revert_mempool_tx(
     ))
     .await
     .map_err(|e| format!("delete charms: {}", e))?;
+
+    // Revert stats_holders for deleted charms (subtract what was added at mempool detection)
+    for row in &charm_rows {
+        if let (Ok(app_id), Ok(addr), Ok(amount)) = (
+            row.try_get::<String>("", "app_id"),
+            row.try_get::<String>("", "address"),
+            row.try_get::<i64>("", "amount"),
+        ) {
+            let (holder_app_id, delta) = if app_id.starts_with("t/") {
+                (app_id.replacen("t/", "n/", 1), -amount)
+            } else if app_id.starts_with("n/") {
+                (app_id.clone(), -1_i64)
+            } else {
+                continue;
+            };
+            let update_sql = format!(
+                r#"UPDATE stats_holders SET total_amount = total_amount + {}, charm_count = charm_count - 1, updated_at = CURRENT_TIMESTAMP
+                   WHERE app_id = '{}' AND address = '{}'"#,
+                delta,
+                holder_app_id.replace('\'', "''"),
+                addr.replace('\'', "''")
+            );
+            let _ = db.execute(Statement::from_string(DbBackend::Postgres, update_sql)).await;
+            // Clean up zero-balance holders
+            let cleanup_sql = format!(
+                "DELETE FROM stats_holders WHERE app_id = '{}' AND address = '{}' AND total_amount <= 0",
+                holder_app_id.replace('\'', "''"),
+                addr.replace('\'', "''")
+            );
+            let _ = db.execute(Statement::from_string(DbBackend::Postgres, cleanup_sql)).await;
+        }
+    }
+
+    // Also restore stats_holders for inputs this tx was spending (re-add what was subtracted)
+    let get_spends_sql = format!(
+        "SELECT ms.spent_txid, ms.spent_vout FROM mempool_spends ms WHERE ms.spending_txid = '{}' AND ms.network = '{}'",
+        escaped_txid, escaped_network
+    );
+    if let Ok(spend_rows) = db.query_all(Statement::from_string(DbBackend::Postgres, get_spends_sql)).await {
+        for row in &spend_rows {
+            if let (Ok(spent_txid), Ok(spent_vout)) = (
+                row.try_get::<String>("", "spent_txid"),
+                row.try_get::<i32>("", "spent_vout"),
+            ) {
+                let get_charm_sql = format!(
+                    "SELECT app_id, address, amount FROM charms WHERE txid = '{}' AND vout = {} AND spent = false AND address IS NOT NULL",
+                    spent_txid.replace('\'', "''"), spent_vout
+                );
+                if let Ok(charm_rows) = db.query_all(Statement::from_string(DbBackend::Postgres, get_charm_sql)).await {
+                    for cr in &charm_rows {
+                        if let (Ok(app_id), Ok(addr), Ok(amount)) = (
+                            cr.try_get::<String>("", "app_id"),
+                            cr.try_get::<String>("", "address"),
+                            cr.try_get::<i64>("", "amount"),
+                        ) {
+                            let (holder_app_id, delta) = if app_id.starts_with("t/") {
+                                (app_id.replacen("t/", "n/", 1), amount) // positive: re-add
+                            } else if app_id.starts_with("n/") {
+                                (app_id.clone(), 1_i64)
+                            } else {
+                                continue;
+                            };
+                            let restore_sql = format!(
+                                r#"INSERT INTO stats_holders (app_id, address, total_amount, charm_count, first_seen_block, last_updated_block, created_at, updated_at)
+                                   VALUES ('{}', '{}', {}, 1, 0, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                                   ON CONFLICT (app_id, address) DO UPDATE SET
+                                       total_amount = stats_holders.total_amount + {},
+                                       charm_count = stats_holders.charm_count + 1,
+                                       updated_at = CURRENT_TIMESTAMP"#,
+                                holder_app_id.replace('\'', "''"),
+                                addr.replace('\'', "''"),
+                                delta, delta
+                            );
+                            let _ = db.execute(Statement::from_string(DbBackend::Postgres, restore_sql)).await;
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     // 4. Delete transactions entry
     let del_tx_sql = format!(

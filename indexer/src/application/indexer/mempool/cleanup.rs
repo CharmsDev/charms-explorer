@@ -34,7 +34,17 @@ pub async fn purge_stale(
         }
     }
 
-    // 2. Purge stale mempool charms
+    // 2. Get stale charm info BEFORE deletion (for stats_holders reversal) then purge
+    let get_stale_sql = format!(
+        "SELECT app_id, address, amount FROM charms WHERE block_height IS NULL AND network = '{}' \
+         AND mempool_detected_at < NOW() - INTERVAL '{} hours' AND address IS NOT NULL",
+        network, STALE_HOURS
+    );
+    let stale_charms = db
+        .query_all(Statement::from_string(DbBackend::Postgres, get_stale_sql))
+        .await
+        .unwrap_or_default();
+
     let sql = format!(
         "DELETE FROM charms WHERE block_height IS NULL AND network = '{}' \
          AND mempool_detected_at < NOW() - INTERVAL '{} hours'",
@@ -50,6 +60,37 @@ pub async fn purge_stale(
                 network,
                 r.rows_affected()
             ));
+
+            // Revert stats_holders for purged charms
+            for row in &stale_charms {
+                if let (Ok(app_id), Ok(addr), Ok(amount)) = (
+                    row.try_get::<String>("", "app_id"),
+                    row.try_get::<String>("", "address"),
+                    row.try_get::<i64>("", "amount"),
+                ) {
+                    let (holder_app_id, delta) = if app_id.starts_with("t/") {
+                        (app_id.replacen("t/", "n/", 1), -amount)
+                    } else if app_id.starts_with("n/") {
+                        (app_id.clone(), -1_i64)
+                    } else {
+                        continue;
+                    };
+                    let update_sql = format!(
+                        r#"UPDATE stats_holders SET total_amount = total_amount + {}, charm_count = charm_count - 1, updated_at = CURRENT_TIMESTAMP
+                           WHERE app_id = '{}' AND address = '{}'"#,
+                        delta,
+                        holder_app_id.replace('\'', "''"),
+                        addr.replace('\'', "''")
+                    );
+                    let _ = db.execute(Statement::from_string(DbBackend::Postgres, update_sql)).await;
+                    let cleanup_sql = format!(
+                        "DELETE FROM stats_holders WHERE app_id = '{}' AND address = '{}' AND total_amount <= 0",
+                        holder_app_id.replace('\'', "''"),
+                        addr.replace('\'', "''")
+                    );
+                    let _ = db.execute(Statement::from_string(DbBackend::Postgres, cleanup_sql)).await;
+                }
+            }
         }
         Ok(_) => {}
         Err(e) => {

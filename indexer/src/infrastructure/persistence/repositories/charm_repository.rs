@@ -229,9 +229,9 @@ impl CharmRepository {
             i64,               // amount
             Option<String>,    // tags
         )>,
-    ) -> Result<(), DbError> {
+    ) -> Result<Vec<(String, i32)>, DbError> {
         if charms.is_empty() {
-            return Ok(());
+            return Ok(vec![]);
         }
 
         let now = chrono::Utc::now().naive_utc();
@@ -239,8 +239,8 @@ impl CharmRepository {
 
         // Build raw SQL with ON CONFLICT DO NOTHING so that duplicates are
         // silently skipped while the rest of the batch is still inserted.
-        // The previous insert_many approach would abort the ENTIRE batch when
-        // even a single duplicate existed (e.g. a charm promoted from mempool).
+        // Returns the (txid, vout) pairs that were actually inserted so callers
+        // can update stats_holders only for truly new charms (not mempool-promoted ones).
         let mut values_parts: Vec<String> = Vec::with_capacity(charms.len());
 
         for (txid, vout, block_height, data, asset_type, blockchain, network, address, app_id, amount, tags) in &charms {
@@ -274,15 +274,26 @@ impl CharmRepository {
         let sql = format!(
             "INSERT INTO charms (txid, vout, block_height, data, date_created, asset_type, blockchain, network, address, spent, app_id, amount, mempool_detected_at, tags, verified) \
              VALUES {} \
-             ON CONFLICT (txid, vout) DO NOTHING",
+             ON CONFLICT (txid, vout) DO NOTHING \
+             RETURNING txid, vout",
             values_parts.join(", ")
         );
 
-        self.conn
-            .execute(Statement::from_string(DbBackend::Postgres, sql))
+        let rows = self.conn
+            .query_all(Statement::from_string(DbBackend::Postgres, sql))
             .await
-            .map(|_| ())
-            .map_err(|e| DbError::QueryError(e.to_string()))
+            .map_err(|e| DbError::QueryError(e.to_string()))?;
+
+        let inserted: Vec<(String, i32)> = rows
+            .iter()
+            .filter_map(|row| {
+                let txid: String = row.try_get("", "txid").ok()?;
+                let vout: i32 = row.try_get("", "vout").ok()?;
+                Some((txid, vout))
+            })
+            .collect();
+
+        Ok(inserted)
     }
 
     /// Get charms by Bitcoin address

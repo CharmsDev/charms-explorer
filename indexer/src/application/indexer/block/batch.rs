@@ -45,8 +45,9 @@ impl BatchProcessor {
         .await
     }
 
-    /// Save charm batch with retry logic
-    /// Also updates stats_holders with positive amounts for new charms
+    /// Save charm batch with retry logic.
+    /// Updates stats_holders ONLY for charms that were actually inserted (not
+    /// mempool-promoted duplicates that already had stats_holders updated).
     pub async fn save_charm_batch(
         &self,
         batch: Vec<CharmBatchItem>,
@@ -57,24 +58,30 @@ impl BatchProcessor {
             return Ok(());
         }
 
-        // First save the charms
-        self.execute_batch_save(
-            "charm",
-            batch.len(),
-            height,
-            network_id,
-            || async { self.charm_service.save_batch(batch.clone()).await },
-            |e| BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e)),
-        )
-        .await?;
+        // Save charms — returns which (txid, vout) were actually new insertions
+        let inserted = self
+            .charm_service
+            .save_batch(batch.clone())
+            .await
+            .map_err(|e| {
+                BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e))
+            })?;
 
-        // Then update stats_holders with positive amounts for new charms
-        // For tokens (t/): use actual amount as balance delta
-        // For NFTs (n/): use 1 as balance delta (ownership count)
+        // Build a set of inserted keys for fast lookup
+        let inserted_set: std::collections::HashSet<(String, i32)> =
+            inserted.into_iter().collect();
+
+        // Only update stats_holders for charms that were actually NEW insertions.
+        // Charms promoted from mempool (duplicates skipped by ON CONFLICT DO NOTHING)
+        // already had their stats_holders updated during mempool detection.
         let holder_updates: Vec<(String, String, i64, i32)> = batch
             .iter()
             .filter_map(
-                |(_, _, block_height, _, _, _, _, address, app_id, amount, _)| {
+                |(txid, vout, block_height, _, _, _, _, address, app_id, amount, _)| {
+                    // Skip charms that were not inserted (already existed from mempool)
+                    if !inserted_set.contains(&(txid.clone(), *vout)) {
+                        return None;
+                    }
                     if let Some(addr) = address {
                         if *amount > 0 && !addr.is_empty() {
                             if app_id.starts_with("t/") {
