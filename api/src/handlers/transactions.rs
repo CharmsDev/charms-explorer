@@ -86,6 +86,7 @@ pub async fn get_transaction_by_txid(
                         amount: charm.amount,
                         asset_type: charm.asset_type.clone(),
                         vout: charm.vout,
+                        address: charm.address.clone(),
                         verified: charm.verified,
                     }
                 })
