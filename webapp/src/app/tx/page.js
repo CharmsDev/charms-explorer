@@ -20,9 +20,11 @@ import {
     SpellDataViewer 
 } from '@/components/transactions';
 
+const VERIFIED_BRO_HASH = '3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b';
+
 const formatSpellData = (data) => {
     if (!data) return '';
-    
+
     const replacer = (key, value) => {
         if (Array.isArray(value) && value.length > 4 && value.every(v => typeof v === 'number' && v >= 0 && v <= 255)) {
             const hex = value.map(b => b.toString(16).padStart(2, '0')).join('');
@@ -30,8 +32,49 @@ const formatSpellData = (data) => {
         }
         return value;
     };
-    
+
     return JSON.stringify(data, replacer, 2);
+};
+
+/**
+ * Extract token info from spell's app_public_inputs and tx.outs
+ * Returns { appId, ticker, amount, decimals } or null
+ */
+const extractTokenFromSpell = (spellData) => {
+    if (!spellData) return null;
+    const data = spellData?.native_data || spellData;
+    const appInputs = data?.app_public_inputs;
+    if (!appInputs) return null;
+
+    // Find token app_id (t/...) in app_public_inputs keys
+    const tokenKey = Object.keys(appInputs).find(k => k.startsWith('t/'));
+    if (!tokenKey) return null;
+
+    const isBro = tokenKey.includes(VERIFIED_BRO_HASH);
+
+    // Try to extract amount from tx.outs
+    let totalAmount = null;
+    const outs = data?.tx?.outs || [];
+    for (const out of outs) {
+        for (const [key, value] of Object.entries(out)) {
+            if (key === '0' && typeof value === 'number') {
+                // Token amount in smallest unit — take the largest output as the main transfer
+                if (totalAmount === null || value > totalAmount) {
+                    totalAmount = value;
+                }
+            }
+        }
+    }
+
+    return {
+        appId: tokenKey,
+        ticker: isBro ? 'BRO' : null,
+        name: isBro ? '$BRO Token' : null,
+        icon: isBro ? '🟠' : '🪙',
+        amount: totalAmount,
+        decimals: 8,
+        isBro,
+    };
 };
 
 function TransactionPageContent() {
@@ -284,28 +327,12 @@ function TransactionPageContent() {
                     
                     {/* Left Column - Overview */}
                     <div className="lg:col-span-2 space-y-6">
-                        <div className="card p-6">
-                            <h2 className="text-xl font-semibold text-white mb-6">Overview</h2>
-                            
-                            <div className="space-y-4">
-                                <div className="flex flex-col sm:flex-row justify-between border-b border-dark-800/50 pb-4">
-                                    <span className="text-dark-400 mb-1 sm:mb-0">Date Created</span>
-                                    <span className="text-white font-mono">{new Date(charm.date_created).toLocaleString()}</span>
-                                </div>
-                                
-                                <div className="flex flex-col sm:flex-row justify-between border-b border-dark-800/50 pb-4">
-                                    <span className="text-dark-400 mb-1 sm:mb-0">Block Height</span>
-                                    <Link href={`https://mempool.space/block/${charm.block_height}`} target="_blank" className="text-primary-400 hover:text-primary-300 font-mono">
-                                        {charm.block_height}
-                                    </Link>
-                                </div>
-
-                                <div className="flex flex-col sm:flex-row justify-between border-b border-dark-800/50 pb-4">
-                                    <span className="text-dark-400 mb-1 sm:mb-0">Status</span>
-                                    <span className="px-2 py-1 bg-green-900/30 text-green-400 rounded text-xs font-medium w-fit">
-                                        Confirmed
-                                    </span>
-                                </div>
+                        {/* Compact Overview */}
+                        <div className="card px-4 py-3">
+                            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+                                <span className="text-dark-400">Date <span className="text-white font-mono">{new Date(charm.date_created).toLocaleString()}</span></span>
+                                <span className="text-dark-400">Block <Link href={`https://mempool.space/block/${charm.block_height}`} target="_blank" className="text-primary-400 hover:text-primary-300 font-mono">{charm.block_height}</Link></span>
+                                <span className="px-2 py-0.5 bg-green-900/30 text-green-400 rounded text-xs font-medium">Confirmed</span>
                             </div>
                         </div>
 
@@ -372,10 +399,34 @@ function TransactionPageContent() {
                             </>
                         ) : (
                             <div className="card p-6">
-                                <h2 className="text-xl font-semibold text-white mb-6">Spell Data (Raw JSON)</h2>
-                                <p className="text-dark-400 text-xs mb-3">
-                                    {charm.spell ? 'Original spell extracted from transaction' : 'Byte arrays are displayed as hex strings for readability'}
-                                </p>
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h2 className="text-xl font-semibold text-white">Spell Data (Raw JSON)</h2>
+                                        <p className="text-dark-400 text-xs mt-1">
+                                            {charm.spell ? 'Original spell extracted from transaction' : 'Byte arrays are displayed as hex strings for readability'}
+                                        </p>
+                                    </div>
+                                    <button
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-dark-800 hover:bg-dark-700 text-dark-300 hover:text-white rounded transition-colors"
+                                        onClick={() => {
+                                            const text = formatSpellData(charm.spell?.native_data || charm.spell || charm.data);
+                                            navigator.clipboard.writeText(text);
+                                            setCopied(true);
+                                            setTimeout(() => setCopied(false), 2000);
+                                        }}
+                                    >
+                                        {copied ? (
+                                            <span className="text-green-400">Copied!</span>
+                                        ) : (
+                                            <>
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                </svg>
+                                                Copy
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
                                 <div className="bg-dark-900/50 rounded-lg p-4 overflow-x-auto max-h-[600px] overflow-y-auto">
                                     <pre className="text-xs sm:text-sm text-green-400 font-mono whitespace-pre-wrap break-words">
                                         {formatSpellData(charm.spell?.native_data || charm.spell || charm.data)}
@@ -387,81 +438,96 @@ function TransactionPageContent() {
 
                     {/* Right Column - Related Charm or Bitcoin TX Info */}
                     <div className="space-y-6">
-                        <div className="card p-6">
-                            <h2 className="text-xl font-semibold text-white mb-6">
-                                {charm.isBitcoinTx ? 'Transaction Info' : 'Related Asset'}
-                            </h2>
-                            
-                            <div className="flex flex-col items-center text-center">
-                                {charm.isBitcoinTx ? (
-                                    <>
-                                        <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
-                                            <span className="text-3xl">₿</span>
+                        {charm.isBitcoinTx ? (
+                            <div className="card p-6">
+                                <h2 className="text-xl font-semibold text-white mb-6">Transaction Info</h2>
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
+                                        <span className="text-3xl">₿</span>
+                                    </div>
+                                    <h3 className="text-lg font-bold text-white mb-1">Bitcoin Transaction</h3>
+                                    <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-4 uppercase tracking-wider">
+                                        BTC Transfer
+                                    </span>
+                                    <div className="w-full space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-dark-400">Size</span>
+                                            <span className="text-white">{charm.data.size} bytes</span>
                                         </div>
-                                        <h3 className="text-lg font-bold text-white mb-1">Bitcoin Transaction</h3>
-                                        <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-4 uppercase tracking-wider">
-                                            BTC Transfer
-                                        </span>
-                                        <div className="w-full space-y-2 text-sm">
-                                            <div className="flex justify-between">
-                                                <span className="text-dark-400">Size</span>
-                                                <span className="text-white">{charm.data.size} bytes</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-dark-400">Weight</span>
-                                                <span className="text-white">{charm.data.weight} WU</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-dark-400">Fee</span>
-                                                <span className="text-white">{(charm.data.fee / 100000000).toFixed(8)} BTC</span>
-                                            </div>
-                                            <div className="flex justify-between">
-                                                <span className="text-dark-400">Fee Rate</span>
-                                                <span className="text-white">{(charm.data.fee / charm.data.weight * 4).toFixed(2)} sat/vB</span>
-                                            </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-dark-400">Weight</span>
+                                            <span className="text-white">{charm.data.weight} WU</span>
                                         </div>
-                                    </>
-                                ) : (
-                                    <>
+                                        <div className="flex justify-between">
+                                            <span className="text-dark-400">Fee</span>
+                                            <span className="text-white">{(charm.data.fee / 100000000).toFixed(8)} BTC</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-dark-400">Fee Rate</span>
+                                            <span className="text-white">{(charm.data.fee / charm.data.weight * 4).toFixed(2)} sat/vB</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (() => {
+                            const tokenInfo = extractTokenFromSpell(charm.spell || charm.data);
+                            // Only show Related Asset if we can identify the token
+                            if (!tokenInfo && !charm.name && !charm.app_id) return null;
+
+                            return (
+                                <div className="card p-6">
+                                    <h2 className="text-xl font-semibold text-white mb-6">Related Asset</h2>
+                                    <div className="flex flex-col items-center text-center">
                                         {charm.image ? (
                                             <img src={charm.image} alt={charm.name} className="w-24 h-24 rounded-lg object-cover mb-4 shadow-lg" />
                                         ) : (
                                             <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
-                                                <span className="text-3xl">
-                                                    {charm.asset_type === 'nft' ? '🎨' : 
-                                                     charm.asset_type === 'token' ? '🪙' : 
-                                                     charm.asset_type === 'dapp' ? '⚙️' :
-                                                     charm.asset_type === 'other' ? '📦' : '⚡'}
-                                                </span>
+                                                <span className="text-3xl">{tokenInfo?.icon || (charm.asset_type === 'nft' ? '🎨' : charm.asset_type === 'token' ? '🪙' : '⚡')}</span>
                                             </div>
                                         )}
-                                        
-                                        <h3 className="text-lg font-bold text-white mb-1">{charm.name || 'Unnamed Asset'}</h3>
-                                        <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-4 uppercase tracking-wider">
-                                            {charm.asset_type}
+
+                                        <h3 className="text-lg font-bold text-white mb-1">
+                                            {tokenInfo?.name || charm.name || 'Unknown Token'}
+                                        </h3>
+                                        <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-2 uppercase tracking-wider">
+                                            {tokenInfo?.ticker || charm.asset_type || 'TOKEN'}
                                         </span>
 
-                                        <Link 
-                                            href={`/asset/${encodeURIComponent(charm.app_id || charm.charmid)}`}
-                                            className="btn btn-primary w-full justify-center"
-                                        >
-                                            View Asset Details
-                                        </Link>
+                                        {/* Amount from spell */}
+                                        {tokenInfo?.amount != null && (
+                                            <div className="mt-3 mb-4 px-4 py-2 bg-dark-800/50 rounded-lg w-full">
+                                                <span className="text-dark-400 text-xs">Amount</span>
+                                                <div className="text-white font-mono text-lg">
+                                                    {(tokenInfo.amount / Math.pow(10, tokenInfo.decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })}
+                                                    {tokenInfo.ticker && <span className="text-dark-400 text-sm ml-2">{tokenInfo.ticker}</span>}
+                                                </div>
+                                            </div>
+                                        )}
 
-                                        <div className="mt-6 pt-6 border-t border-dark-800/50 w-full">
-                                            <div className="flex justify-between text-sm mb-2">
-                                                <span className="text-dark-400">Vout</span>
-                                                <span className="text-white font-mono">{charm.vout}</span>
+                                        {/* App ID */}
+                                        {(tokenInfo?.appId || charm.app_id) && (
+                                            <div className="w-full pt-3 border-t border-dark-800/50">
+                                                <div className="flex justify-between text-xs mb-1">
+                                                    <span className="text-dark-400">App ID</span>
+                                                </div>
+                                                <div className="text-dark-300 font-mono text-xs break-all text-left">
+                                                    {tokenInfo?.appId || charm.app_id}
+                                                </div>
                                             </div>
-                                            <div className="flex justify-between text-sm">
-                                                <span className="text-dark-400">Charm ID</span>
-                                                <span className="text-white font-mono truncate w-32" title={charm.charmid}>{charm.charmid}</span>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
+                                        )}
+
+                                        {charm.app_id && (
+                                            <Link
+                                                href={`/asset/${encodeURIComponent(charm.app_id || charm.charmid)}`}
+                                                className="btn btn-primary w-full justify-center mt-4"
+                                            >
+                                                View Asset Details
+                                            </Link>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
 
                 </div>
