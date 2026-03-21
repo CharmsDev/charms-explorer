@@ -1,7 +1,7 @@
 //! Core mempool transaction processing: detect charm txs and save them.
 
 use chrono::{DateTime, FixedOffset, Utc};
-use sea_orm::{ActiveModelTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, Set, Statement};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, EntityTrait, Set};
 
 use crate::config::NetworkId;
 use crate::domain::services::dex::{self, extract_ins0_order_id};
@@ -105,7 +105,8 @@ pub async fn process_tx_with_hex(
     };
 
     // Save one charm entry per charm-bearing output with block_height=NULL (mempool)
-    // and update stats_holders for incoming charms
+    // stats_holders is NOT updated here — it only tracks confirmed balances.
+    // Unconfirmed balance is computed at query time from charms WHERE block_height IS NULL.
     for asset in &analyzed.asset_infos {
         let address = vout_addresses
             .get(asset.vout_index as usize)
@@ -119,7 +120,7 @@ pub async fn process_tx_with_hex(
             asset_type: Set(asset.asset_type.clone()),
             blockchain: Set(blockchain.clone()),
             network: Set(network.clone()),
-            address: Set(address.clone()),
+            address: Set(address),
             spent: Set(false),
             app_id: Set(asset.app_id.clone()),
             amount: Set(asset.amount as i64),
@@ -133,20 +134,6 @@ pub async fn process_tx_with_hex(
                     "[{}] 💾 Mempool charm saved: {} vout={} ({})",
                     network, txid, asset.vout_index, asset.asset_type
                 ));
-
-                // Update stats_holders for the new mempool charm
-                if let Some(ref addr) = address {
-                    if !addr.is_empty() && asset.amount > 0 {
-                        let (holder_app_id, delta) = if asset.app_id.starts_with("t/") {
-                            (asset.app_id.replacen("t/", "n/", 1), asset.amount as i64)
-                        } else if asset.app_id.starts_with("n/") {
-                            (asset.app_id.clone(), 1_i64)
-                        } else {
-                            (asset.app_id.clone(), asset.amount as i64)
-                        };
-                        update_stats_holders_raw(db, &holder_app_id, addr, delta, 0).await;
-                    }
-                }
             }
             Err(e) if e.to_string().contains("duplicate key") => {}
             Err(e) => {
@@ -190,7 +177,8 @@ pub async fn process_tx_with_hex(
     update_consumed_order_status(txid, raw_hex, &analyzed, &blockchain, &network, db).await;
 
     // Record mempool spends (inputs being consumed by this tx)
-    // and update stats_holders for spent charm inputs (subtract balance)
+    // stats_holders is NOT updated here — spent tracking only happens at block confirmation
+    // via spent_tracker::mark_spent_charms to avoid double-subtraction.
     let spends = extract_spends(&raw_hex, txid);
     if !spends.is_empty() {
         if let Err(e) = mempool_spends_repository
@@ -201,34 +189,6 @@ pub async fn process_tx_with_hex(
                 "[{}] ⚠️ Failed to record mempool spends for {}: {}",
                 network, txid, e
             ));
-        }
-
-        // Check if any spent inputs are charm UTXOs and subtract from stats_holders
-        let spent_pairs: Vec<String> = spends
-            .iter()
-            .map(|(_, spent_txid, vout)| format!("('{}', {})", spent_txid.replace('\'', "''"), vout))
-            .collect();
-        let sql = format!(
-            "SELECT app_id, address, amount FROM charms WHERE (txid, vout) IN (VALUES {}) AND spent = false AND address IS NOT NULL",
-            spent_pairs.join(", ")
-        );
-        if let Ok(rows) = db.query_all(Statement::from_string(DbBackend::Postgres, sql)).await {
-            for row in &rows {
-                if let (Ok(app_id), Ok(addr), Ok(amount)) = (
-                    row.try_get::<String>("", "app_id"),
-                    row.try_get::<String>("", "address"),
-                    row.try_get::<i64>("", "amount"),
-                ) {
-                    let (holder_app_id, delta) = if app_id.starts_with("t/") {
-                        (app_id.replacen("t/", "n/", 1), -amount)
-                    } else if app_id.starts_with("n/") {
-                        (app_id.clone(), -1_i64)
-                    } else {
-                        continue;
-                    };
-                    update_stats_holders_raw(db, &holder_app_id, &addr, delta, 0).await;
-                }
-            }
         }
     }
 
@@ -469,39 +429,6 @@ async fn update_consumed_order_status(
                 ));
             }
         }
-    }
-}
-
-/// Update stats_holders directly via raw SQL (used by mempool processor
-/// which doesn't have access to StatsHoldersRepository).
-async fn update_stats_holders_raw(db: &DatabaseConnection, app_id: &str, address: &str, delta: i64, block_height: i32) {
-    let sql = format!(
-        r#"INSERT INTO stats_holders (app_id, address, total_amount, charm_count, first_seen_block, last_updated_block, created_at, updated_at)
-           VALUES ('{}', '{}', {}, 1, {}, {}, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-           ON CONFLICT (app_id, address) DO UPDATE SET
-               total_amount = stats_holders.total_amount + {},
-               charm_count = CASE WHEN {} > 0 THEN stats_holders.charm_count + 1 ELSE stats_holders.charm_count - 1 END,
-               last_updated_block = {},
-               updated_at = CURRENT_TIMESTAMP"#,
-        app_id.replace('\'', "''"),
-        address.replace('\'', "''"),
-        delta, block_height, block_height,
-        delta, delta, block_height
-    );
-    if let Err(e) = db.execute(Statement::from_string(DbBackend::Postgres, sql)).await {
-        logging::log_warning(&format!(
-            "⚠️ Failed to update stats_holders for {}/{}: {}", app_id, address, e
-        ));
-    }
-
-    // Clean up zero-balance holders
-    if delta < 0 {
-        let cleanup_sql = format!(
-            "DELETE FROM stats_holders WHERE app_id = '{}' AND address = '{}' AND total_amount <= 0",
-            app_id.replace('\'', "''"),
-            address.replace('\'', "''")
-        );
-        let _ = db.execute(Statement::from_string(DbBackend::Postgres, cleanup_sql)).await;
     }
 }
 
