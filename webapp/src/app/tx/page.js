@@ -52,27 +52,11 @@ const extractTokenFromSpell = (spellData) => {
 
     const isBro = tokenKey.includes(VERIFIED_BRO_HASH);
 
-    // Try to extract amount from tx.outs
-    let totalAmount = null;
-    const outs = data?.tx?.outs || [];
-    for (const out of outs) {
-        for (const [key, value] of Object.entries(out)) {
-            if (key === '0' && typeof value === 'number') {
-                // Token amount in smallest unit — take the largest output as the main transfer
-                if (totalAmount === null || value > totalAmount) {
-                    totalAmount = value;
-                }
-            }
-        }
-    }
-
     return {
         appId: tokenKey,
         ticker: isBro ? 'BRO' : null,
         name: isBro ? '$BRO Token' : null,
         icon: isBro ? '🟠' : '🪙',
-        amount: totalAmount,
-        decimals: 8,
         isBro,
     };
 };
@@ -127,6 +111,7 @@ function TransactionPageContent() {
                             data: txData.charm?.native_data || txData.charm,
                             charm: txData.charm,
                             asset_type: txData.charm?.type || 'spell',
+                            assets: txData.assets || [],
                             isTransactionView: true,
                         });
                         setError(null);
@@ -470,59 +455,86 @@ function TransactionPageContent() {
                                 </div>
                             </div>
                         ) : (() => {
+                            // Use assets[] from API if available (has address, amount, symbol)
+                            const assets = charm.assets || [];
                             const tokenInfo = extractTokenFromSpell(charm.spell || charm.data);
-                            // Only show Related Asset if we can identify the token
+
+                            // If we have assets from the API, show token transfer details
+                            if (assets.length > 0) {
+                                const firstAsset = assets[0];
+                                const isBro = firstAsset.app_id?.includes(VERIFIED_BRO_HASH);
+                                const decimals = 9; // BRO uses 9 decimals
+                                const symbol = firstAsset.symbol || (isBro ? 'BRO' : null);
+                                const name = firstAsset.name || (isBro ? '$BRO Token' : 'Token');
+                                const icon = isBro ? '🟠' : '🪙';
+
+                                return (
+                                    <div className="card p-6">
+                                        <h2 className="text-lg font-semibold text-white mb-4">Token Outputs</h2>
+
+                                        {/* Token identity */}
+                                        <div className="flex items-center gap-3 mb-4 pb-3 border-b border-dark-800/50">
+                                            <span className="text-2xl">{icon}</span>
+                                            <div>
+                                                <div className="text-white font-semibold">{name}</div>
+                                                {symbol && <div className="text-dark-400 text-xs">{symbol}</div>}
+                                            </div>
+                                        </div>
+
+                                        {/* Each output */}
+                                        <div className="space-y-3">
+                                            {assets.map((asset, idx) => (
+                                                <div key={idx} className="bg-dark-900/50 rounded-lg p-3">
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <span className="text-dark-400 text-xs">Output #{asset.vout}</span>
+                                                        <span className="text-white font-mono text-sm">
+                                                            {(asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 9 })}
+                                                            {symbol && <span className="text-dark-400 ml-1">{symbol}</span>}
+                                                        </span>
+                                                    </div>
+                                                    {asset.address && (
+                                                        <div className="text-dark-300 font-mono text-xs break-all">
+                                                            {asset.address}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* App ID */}
+                                        <div className="mt-4 pt-3 border-t border-dark-800/50">
+                                            <div className="text-dark-400 text-xs mb-1">App ID</div>
+                                            <div className="text-dark-300 font-mono text-xs break-all">
+                                                {firstAsset.app_id}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            }
+
+                            // Fallback: use spell parsing if no assets from API
                             if (!tokenInfo && !charm.name && !charm.app_id) return null;
 
                             return (
                                 <div className="card p-6">
-                                    <h2 className="text-xl font-semibold text-white mb-6">Related Asset</h2>
+                                    <h2 className="text-lg font-semibold text-white mb-4">Related Asset</h2>
                                     <div className="flex flex-col items-center text-center">
-                                        {charm.image ? (
-                                            <img src={charm.image} alt={charm.name} className="w-24 h-24 rounded-lg object-cover mb-4 shadow-lg" />
-                                        ) : (
-                                            <div className="w-24 h-24 rounded-lg bg-dark-800 flex items-center justify-center mb-4 shadow-lg">
-                                                <span className="text-3xl">{tokenInfo?.icon || (charm.asset_type === 'nft' ? '🎨' : charm.asset_type === 'token' ? '🪙' : '⚡')}</span>
-                                            </div>
-                                        )}
-
+                                        <div className="w-20 h-20 rounded-lg bg-dark-800 flex items-center justify-center mb-3 shadow-lg">
+                                            <span className="text-3xl">{tokenInfo?.icon || '⚡'}</span>
+                                        </div>
                                         <h3 className="text-lg font-bold text-white mb-1">
                                             {tokenInfo?.name || charm.name || 'Unknown Token'}
                                         </h3>
                                         <span className="text-xs px-2 py-1 rounded-full bg-dark-800 text-dark-300 mb-2 uppercase tracking-wider">
                                             {tokenInfo?.ticker || charm.asset_type || 'TOKEN'}
                                         </span>
-
-                                        {/* Amount from spell */}
-                                        {tokenInfo?.amount != null && (
-                                            <div className="mt-3 mb-4 px-4 py-2 bg-dark-800/50 rounded-lg w-full">
-                                                <span className="text-dark-400 text-xs">Amount</span>
-                                                <div className="text-white font-mono text-lg">
-                                                    {(tokenInfo.amount / Math.pow(10, tokenInfo.decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })}
-                                                    {tokenInfo.ticker && <span className="text-dark-400 text-sm ml-2">{tokenInfo.ticker}</span>}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* App ID */}
                                         {(tokenInfo?.appId || charm.app_id) && (
                                             <div className="w-full pt-3 border-t border-dark-800/50">
-                                                <div className="flex justify-between text-xs mb-1">
-                                                    <span className="text-dark-400">App ID</span>
-                                                </div>
+                                                <div className="text-dark-400 text-xs mb-1">App ID</div>
                                                 <div className="text-dark-300 font-mono text-xs break-all text-left">
                                                     {tokenInfo?.appId || charm.app_id}
                                                 </div>
                                             </div>
-                                        )}
-
-                                        {charm.app_id && (
-                                            <Link
-                                                href={`/asset/${encodeURIComponent(charm.app_id || charm.charmid)}`}
-                                                className="btn btn-primary w-full justify-center mt-4"
-                                            >
-                                                View Asset Details
-                                            </Link>
                                         )}
                                     </div>
                                 </div>
