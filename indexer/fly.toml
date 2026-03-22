@@ -1,4 +1,4 @@
-# Fly.io configuration for charms-indexer
+# Fly.io configuration for charms-indexer (background worker)
 app = "charms-explorer-indexer"
 primary_region = "sjc"
 
@@ -6,14 +6,16 @@ primary_region = "sjc"
   dockerfile = "Dockerfile"
 
 [env]
-  RUST_LOG = "info"  # Logging level for Rust app
-  ENABLE_BITCOIN_MAINNET = "true"   # Enable mainnet
-  ENABLE_BITCOIN_TESTNET4 = "true"  # Ensure testnet4 is enabled
+  RUST_LOG = "info"
+  ENABLE_BITCOIN_MAINNET = "true"
+  ENABLE_BITCOIN_TESTNET4 = "true"
 
-#[processes]
-#  indexer = "charms-indexer"  # Background process, runs continuously
+# Restart policy: always restart, unlimited retries.
+# The indexer is a long-running worker — it must never stay stopped.
+[[restart]]
+  policy = "always"
 
 [[vm]]
-  memory = "1gb"
+  memory = "2gb"
   cpu_kind = "shared"
-  cpus = 1
+  cpus = 2
