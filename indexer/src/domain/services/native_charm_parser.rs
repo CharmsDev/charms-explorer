@@ -6,8 +6,8 @@ use charms_client::bitcoin_tx::{
 };
 use charms_client::tx::{EnchantedTx, Tx};
 // Import from charms_client - the library handles version detection internally
-// For versions V0-V9, the library uses its internal VKs automatically
-// For CURRENT_VERSION (V10), we pass the correct V10 VK from charms-lib
+// For versions V0-V10, the library uses its internal VKs automatically
+// For CURRENT_VERSION (V11), we pass the correct VK from charms-lib
 use charms_client::{V7, V10};
 
 /// Native charm parser using the charms-client crate
@@ -15,9 +15,9 @@ use charms_client::{V7, V10};
 pub struct NativeCharmParser;
 
 impl NativeCharmParser {
-    /// Spell verification key for CURRENT_VERSION (V10)
+    /// Spell verification key for CURRENT_VERSION (V11)
     /// Source: charms-lib SPELL_VK constant
-    /// The library uses this for V10 and falls back to hardcoded VKs for V0-V9
+    /// The library uses this for CURRENT_VERSION and falls back to hardcoded VKs for older versions
     pub const SPELL_VK: &'static str =
         "0x00ccf030317cae019a4cd3c8557b2c5b522050e7e562e3adf287cd5ad596511f";
 
@@ -71,7 +71,7 @@ impl NativeCharmParser {
         }
         spell.tx.ins = Some(tx_ins);
         if spell.version > V7 {
-            let mut coins = btc_tx.all_coin_outs();
+            let mut coins = btc_tx.all_coin_outs(&spell)?;
             coins.truncate(spell.tx.outs.len());
             spell.tx.coins = Some(coins);
         }
