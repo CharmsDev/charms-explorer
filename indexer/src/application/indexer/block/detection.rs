@@ -226,7 +226,29 @@ async fn build_asset_requests(
     }
 
     let metadata = extract_nft_metadata(analyzed);
-    let (name, symbol, description, image_url, decimals) = parse_metadata_fields(&metadata);
+    let (mut name, mut symbol, mut description, mut image_url, mut decimals) =
+        parse_metadata_fields(&metadata);
+
+    // Enrich beaming assets with Cardano token metadata
+    if analyzed.is_beaming && name.is_none() {
+        if let Some(cardano_meta) = fetch_cardano_metadata_for_beaming(analyzed).await {
+            if name.is_none() {
+                name = cardano_meta.name;
+            }
+            if symbol.is_none() {
+                symbol = cardano_meta.symbol;
+            }
+            if description.is_none() {
+                description = cardano_meta.description;
+            }
+            if image_url.is_none() {
+                image_url = cardano_meta.image_url;
+            }
+            if decimals.is_none() {
+                decimals = cardano_meta.decimals;
+            }
+        }
+    }
 
     analyzed
         .asset_infos
@@ -241,6 +263,9 @@ async fn build_asset_requests(
             let supply = net_change.max(0) as u64;
             let is_nft = asset.asset_type == "nft";
 
+            // For beaming: always populate metadata (NFTs AND tokens)
+            let use_metadata = is_nft || analyzed.is_beaming;
+
             Some((
                 asset.app_id.clone(),
                 analyzed.txid.clone(),
@@ -250,14 +275,31 @@ async fn build_asset_requests(
                 supply,
                 blockchain.to_string(),
                 network.to_string(),
-                if is_nft { name.clone() } else { None },
-                if is_nft { symbol.clone() } else { None },
-                if is_nft { description.clone() } else { None },
-                if is_nft { image_url.clone() } else { None },
-                if is_nft { decimals } else { None },
+                if use_metadata { name.clone() } else { None },
+                if use_metadata { symbol.clone() } else { None },
+                if use_metadata { description.clone() } else { None },
+                if use_metadata { image_url.clone() } else { None },
+                if use_metadata { decimals } else { None },
             ))
         })
         .collect()
+}
+
+/// Fetch Cardano token metadata for a beaming transaction.
+/// Parses the App from the asset's app_id, derives Cardano IDs, and fetches metadata.
+async fn fetch_cardano_metadata_for_beaming(
+    analyzed: &AnalyzedTx,
+) -> Option<crate::infrastructure::cardano::metadata::CardanoTokenMetadata> {
+    use crate::infrastructure::cardano::metadata;
+
+    let api_key = std::env::var("CARDANOSCAN_API_KEY").ok()?;
+    if api_key.is_empty() {
+        return None;
+    }
+
+    // Use the primary app_id to derive Cardano IDs
+    let app: charms_data::App = analyzed.app_id.parse().ok()?;
+    metadata::fetch_metadata(&app, &api_key).await
 }
 
 fn normalize_app_id(app_id: &str, asset_type: &str) -> String {

@@ -23,6 +23,7 @@ charms-client = "11.0.1"
 charms-data = "11.0.1"
 bitcoin = "0.32.7"
 anyhow = "1.0.99"
+cml-core = "6.2.0"
 
 # SeaORM dependencies
 sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono", "with-json", "with-rust_decimal"] }
