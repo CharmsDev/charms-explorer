@@ -165,6 +165,32 @@ const SECTIONS = [
 }`,
         note: 'Values in satoshis. Source: QuickNode (primary) → RPC (fallback).',
       },
+      {
+        method: 'POST',
+        path: '/v1/wallet/utxos/batch',
+        desc: 'Batch fetch UTXOs for multiple addresses (max 50)',
+        body: `{
+  "addresses": ["bc1q...", "bc1p...", "bc1q..."],
+  "network": "mainnet"
+}`,
+        response: `{
+  "results": {
+    "bc1q...": {
+      "address": "bc1q...",
+      "utxos": [
+        { "txid": "abc...", "vout": 0, "value": 50000, ... }
+      ],
+      "count": 1
+    },
+    "bc1p...": {
+      "address": "bc1p...",
+      "utxos": [],
+      "count": 0
+    }
+  }
+}`,
+        note: 'Max 50 addresses per request. All resolved concurrently. Failed addresses return { "utxos": [], "count": 0, "error": true }. Replaces N individual GET /wallet/utxos calls with 1 batch POST.',
+      },
       // ─── Unified Balance Endpoint ──────────────────────────────────
       // On-demand address monitoring:
       // The first time a new address is queried, the system seeds its
@@ -277,6 +303,28 @@ const SECTIONS = [
   "count": 1
 }`,
         note: 'Amounts are token units (not sats). hasOrderCharm: true if the UTXO also contains a DEX order charm (b/ prefix). allCharmAppIds: all charm app IDs on the same UTXO. mempoolSpent: true if this UTXO is being spent by an unconfirmed mempool transaction (do NOT use for new orders). available = confirmed + unconfirmed (usable). total = available + mempoolSpent.',
+      },
+      {
+        method: 'POST',
+        path: '/v1/wallet/charms/batch',
+        desc: 'Batch fetch charm balances for multiple addresses (max 50)',
+        body: `{
+  "addresses": ["bc1q...", "bc1p...", "bc1q..."],
+  "network": "mainnet"
+}`,
+        response: `{
+  "results": {
+    "bc1q...": {
+      "balances": [...],
+      "count": 2
+    },
+    "bc1p...": {
+      "balances": [],
+      "count": 0
+    }
+  }
+}`,
+        note: 'Max 50 addresses per request. All resolved concurrently. Same response shape per address as GET /wallet/charms/{address}. Failed addresses return { "balances": [], "count": 0, "error": true }.',
       },
       {
         method: 'GET',

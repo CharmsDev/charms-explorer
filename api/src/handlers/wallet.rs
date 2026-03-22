@@ -512,6 +512,88 @@ pub async fn get_wallet_charm_balances(
 ///
 /// This is the high-volume endpoint: 100 users × 10 addresses = 100 requests instead of 1000.
 /// All addresses are resolved concurrently using tokio::join_all with a shared DB pool.
+/// POST /wallet/utxos/batch
+/// Batch fetch UTXOs for multiple addresses in a single request (max 50)
+pub async fn get_wallet_utxos_batch(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = body
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mainnet")
+        .to_string();
+
+    let addresses: Vec<String> = body
+        .get("addresses")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .take(50)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if addresses.is_empty() {
+        return Ok(Json(serde_json::json!({ "results": {} })));
+    }
+
+    let qn = quicknode_url(&state).to_string();
+
+    let tasks: Vec<_> = addresses
+        .iter()
+        .map(|addr| {
+            let state = state.clone();
+            let address = addr.clone();
+            let network = network.clone();
+            let qn = qn.clone();
+            tokio::spawn(async move {
+                let result = if !qn.is_empty() {
+                    match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
+                        Ok(utxos) => Ok(utxos),
+                        Err(e) => {
+                            tracing::warn!("Batch UTXOs: QuickNode failed for {}, falling back to RPC: {}", address, e);
+                            WalletService::get_utxos(rpc_client(&state, &network), &address).await
+                        }
+                    }
+                } else {
+                    WalletService::get_utxos(rpc_client(&state, &network), &address).await
+                };
+                (address, result)
+            })
+        })
+        .collect();
+
+    let mut results = serde_json::Map::new();
+    for task in tasks {
+        match task.await {
+            Ok((addr, Ok(utxos))) => {
+                results.insert(
+                    addr.clone(),
+                    serde_json::json!({
+                        "address": addr,
+                        "utxos": utxos,
+                        "count": utxos.len(),
+                    }),
+                );
+            }
+            Ok((addr, Err(e))) => {
+                tracing::warn!("Batch UTXOs: failed for {}: {}", addr, e);
+                results.insert(
+                    addr,
+                    serde_json::json!({ "utxos": [], "count": 0, "error": true }),
+                );
+            }
+            Err(e) => {
+                tracing::warn!("Batch UTXOs: task join error: {:?}", e);
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "results": results })))
+}
+
 pub async fn get_wallet_charm_balances_batch(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
