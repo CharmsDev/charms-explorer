@@ -7,6 +7,7 @@ import { useParams } from 'next/navigation';
 import Link from 'next/link';
 import { fetchCharmsByAddress } from '../../../services/apiServices';
 import { fetchReferenceNftByHash, extractHashFromAppId } from '../../../services/api/referenceNft';
+import { fetchAssetByAppId } from '../../../services/api/assets';
 
 export default function AddressPage() {
     const params = useParams();
@@ -16,6 +17,7 @@ export default function AddressPage() {
     const [error, setError] = useState(null);
     const [groupedAssets, setGroupedAssets] = useState({});
     const [nftImages, setNftImages] = useState({});
+    const [assetMetadata, setAssetMetadata] = useState({});
 
     useEffect(() => {
         const loadCharms = async () => {
@@ -57,18 +59,35 @@ export default function AddressPage() {
 
                 setGroupedAssets(grouped);
 
-                // Fetch images for all unique hashes
+                // Fetch asset metadata (name, symbol, image) for each unique app_id
+                const metadata = {};
                 const images = {};
-                for (const hash of hashesToFetch) {
+                const uniqueAppIds = Object.keys(grouped);
+
+                await Promise.all(uniqueAppIds.map(async (appId) => {
                     try {
-                        const refNft = await fetchReferenceNftByHash(hash);
-                        if (refNft?.image_url) {
-                            images[hash] = refNft.image_url;
+                        const asset = await fetchAssetByAppId(appId);
+                        if (asset) {
+                            metadata[appId] = asset;
+                            if (asset.image_url) {
+                                const hash = extractHashFromAppId(appId);
+                                if (hash) images[hash] = asset.image_url;
+                            }
                         }
-                    } catch (e) {
-                        // Ignore image fetch errors
+                    } catch (_) {}
+
+                    // If no image yet, try reference NFT (BRO uses this pattern)
+                    const hash = extractHashFromAppId(appId);
+                    if (hash && !images[hash]) {
+                        try {
+                            const refNft = await fetchReferenceNftByHash(hash);
+                            if (refNft?.image_url) images[hash] = refNft.image_url;
+                            if (!metadata[appId] && refNft?.name) metadata[appId] = refNft;
+                        } catch (_) {}
                     }
-                }
+                }));
+
+                setAssetMetadata(metadata);
                 setNftImages(images);
 
             } catch (error) {
@@ -97,11 +116,11 @@ export default function AddressPage() {
         return hash ? nftImages[hash] : null;
     };
 
-    // Get asset name from app_id
+    // Get asset name from metadata or app_id
     const getAssetName = (appId) => {
-        if (appId?.includes('3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b')) {
-            return 'Bro';
-        }
+        const meta = assetMetadata[appId];
+        if (meta?.name) return meta.name;
+        if (meta?.symbol) return meta.symbol;
         return appId?.substring(0, 12) + '...';
     };
 
@@ -199,7 +218,7 @@ export default function AddressPage() {
                                                     <div className="grid grid-cols-2 gap-2 text-sm">
                                                         <div>
                                                             <div className="text-dark-400">Total Amount</div>
-                                                            <div className="text-white font-semibold">{formatAmount(group.total_amount)}</div>
+                                                            <div className="text-white font-semibold">{formatAmount(group.total_amount, assetMetadata[group.app_id]?.decimals ?? 8)}</div>
                                                         </div>
                                                         <div>
                                                             <div className="text-dark-400">UTXOs</div>
