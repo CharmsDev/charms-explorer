@@ -316,12 +316,31 @@ const classificationRules = [
     type: TRANSACTION_TYPES.SPELL,
   },
 
-  // BRO specific rules
+  // BRO specific rules — tag-based detection (works without rawData)
+  {
+    name: "BRO Mint (tag)",
+    priority: 12,
+    test: (tx) => {
+      const tags = tx.tags || "";
+      return tags.includes("bro-mint");
+    },
+    type: TRANSACTION_TYPES.BRO_MINT,
+  },
+  {
+    name: "BRO Transfer (tag)",
+    priority: 12,
+    test: (tx) => {
+      const tags = tx.tags || "";
+      return tags.includes("bro-transfer");
+    },
+    type: TRANSACTION_TYPES.TOKEN_TRANSFER,
+  },
+
+  // BRO fallback rules (rawData-based, for txs without tags)
   {
     name: "BRO Mining",
     priority: 20,
     test: (tx, spellData, rawData) => {
-      // Check for OP_RETURN at index 0 with 333 or 777 sats
       if (rawData?.vout) {
         const hasOpReturn = rawData.vout[0]?.scriptpubkey_type === "op_return";
         const has333or777 = rawData.vout.some(
@@ -337,7 +356,6 @@ const classificationRules = [
     name: "BRO Mint",
     priority: 20,
     test: (tx, spellData, rawData) => {
-      // Check for charm output with 330 or 1000 sats (typical mint amounts)
       if (rawData?.vout) {
         return rawData.vout.some((o) => o.value === 330 || o.value === 1000);
       }
