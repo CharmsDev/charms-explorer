@@ -109,17 +109,23 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
     }
 
     // $BRO token detection + classify mint vs transfer
+    // Mint: outputs have more charms than inputs (new tokens created from Bitcoin)
+    // Transfer: outputs redistribute existing charms (total unchanged)
+    // Detection: count how many spell outputs carry this token. If only 1 output
+    // and no other token outputs exist, it's likely a mint. Multi-output = transfer.
     let is_bro = dex::is_bro_token(&app_id)
         || asset_infos.iter().any(|a| dex::is_bro_token(&a.app_id));
     if is_bro {
         tag_list.push("bro".to_string());
-        // Mint = no charm inputs in spell (new tokens created)
-        // Transfer = has charm inputs (tokens moved between addresses)
-        let has_charm_inputs = spell.tx.ins.as_ref().map_or(false, |ins| !ins.is_empty());
-        if has_charm_inputs {
-            tag_list.push("bro-transfer".to_string());
-        } else {
+        let bro_output_count = asset_infos
+            .iter()
+            .filter(|a| dex::is_bro_token(&a.app_id))
+            .count();
+        // Single BRO output = mint (new tokens). Multiple BRO outputs = transfer (dest + change).
+        if bro_output_count <= 1 {
             tag_list.push("bro-mint".to_string());
+        } else {
+            tag_list.push("bro-transfer".to_string());
         }
     }
 
