@@ -1,5 +1,6 @@
 // Wallet API endpoint handlers
-// Strategy: RPC node (3s timeout) → QuickNode fallback
+// Strategy: Maestro (primary) → QuickNode (fallback) → RPC node (last resort)
+// Circuit breaker: 2 consecutive Maestro failures → bypass for 2 minutes
 
 use axum::{
     Json,
@@ -36,6 +37,11 @@ fn quicknode_url(state: &AppState) -> &str {
 /// Maestro API key (empty string = not configured)
 fn maestro_key(state: &AppState) -> &str {
     &state.config.maestro_api_key
+}
+
+/// Returns true if Maestro is available (configured + circuit breaker closed)
+fn maestro_available(state: &AppState) -> bool {
+    !state.config.maestro_api_key.is_empty() && !state.maestro_cb.is_open()
 }
 
 /// Try an RPC future with timeout; on failure, try QuickNode fallback
@@ -101,43 +107,30 @@ fn default_network() -> String {
 }
 
 /// GET /wallet/utxos/{address}
-/// Maestro first (primary) → QuickNode fallback → RPC fallback
+/// Maestro (primary, circuit-breakered) → QuickNode fallback → RPC fallback
 pub async fn get_wallet_utxos(
     State(state): State<AppState>,
     Path(address): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let mk = maestro_key(&state).to_string();
     let qn = quicknode_url(&state).to_string();
 
-    let result = if !mk.is_empty() {
+    // Try Maestro (if available and circuit breaker closed)
+    let result = if maestro_available(&state) {
+        let mk = maestro_key(&state).to_string();
         match maestro_service::get_utxos(&state.http_client, &mk, &address).await {
-            Ok(utxos) => Ok(utxos),
-            Err(e) => {
-                tracing::warn!("UTXOs: Maestro failed, trying QuickNode: {}", e);
-                if !qn.is_empty() {
-                    match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
-                        Ok(utxos) => Ok(utxos),
-                        Err(e2) => {
-                            tracing::warn!("UTXOs: QuickNode failed, falling back to RPC: {}", e2);
-                            WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
-                        }
-                    }
-                } else {
-                    WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
-                }
+            Ok(utxos) => {
+                state.maestro_cb.record_success();
+                Ok(utxos)
             }
-        }
-    } else if !qn.is_empty() {
-        match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
-            Ok(utxos) => Ok(utxos),
             Err(e) => {
-                tracing::warn!("UTXOs: QuickNode failed, falling back to RPC: {}", e);
-                WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
+                state.maestro_cb.record_failure();
+                tracing::warn!("UTXOs: Maestro failed, trying QuickNode: {}", e);
+                fallback_utxos(&state, &qn, &address, &params.network).await
             }
         }
     } else {
-        WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
+        fallback_utxos(&state, &qn, &address, &params.network).await
     };
 
     match result {
@@ -150,6 +143,26 @@ pub async fn get_wallet_utxos(
             tracing::error!("Wallet: failed to get UTXOs for {}: {}", address, e);
             Err(ExplorerError::InternalError(e))
         }
+    }
+}
+
+/// QuickNode → RPC fallback for UTXOs
+async fn fallback_utxos(
+    state: &AppState,
+    qn: &str,
+    address: &str,
+    network: &str,
+) -> Result<Vec<crate::services::wallet_service::Utxo>, String> {
+    if !qn.is_empty() {
+        match WalletService::get_utxos_quicknode(&state.http_client, qn, address).await {
+            Ok(utxos) => Ok(utxos),
+            Err(e) => {
+                tracing::warn!("UTXOs: QuickNode failed, falling back to RPC: {}", e);
+                WalletService::get_utxos(rpc_client(state, network), address).await
+            }
+        }
+    } else {
+        WalletService::get_utxos(rpc_client(state, network), address).await
     }
 }
 
@@ -330,6 +343,8 @@ pub async fn get_wallet_balance(
 }
 
 /// GET /wallet/tx/{txid}
+/// RPC (primary for verbose TX data) — Maestro esplora doesn't return the same verbose format
+/// TODO: Add Maestro esplora TX lookup when format normalization is implemented
 pub async fn get_wallet_transaction(
     State(state): State<AppState>,
     Path(txid): Path<String>,
@@ -350,13 +365,29 @@ pub async fn get_wallet_transaction(
 }
 
 /// POST /wallet/broadcast
+/// Maestro (primary) → QuickNode RPC (fallback) → local RPC (last resort)
 pub async fn broadcast_wallet_transaction(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
     Json(body): Json<BroadcastRequest>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let client = rpc_client(&state, &params.network);
+    // Try Maestro first
+    if maestro_available(&state) {
+        let mk = maestro_key(&state).to_string();
+        match maestro_service::broadcast_transaction(&state.http_client, &mk, &body.raw_tx).await {
+            Ok(txid) => {
+                state.maestro_cb.record_success();
+                return Ok(Json(serde_json::json!({ "txid": txid })));
+            }
+            Err(e) => {
+                state.maestro_cb.record_failure();
+                tracing::warn!("Broadcast: Maestro failed, trying RPC: {}", e);
+            }
+        }
+    }
 
+    // Fallback: local RPC node
+    let client = rpc_client(&state, &params.network);
     match WalletService::broadcast_transaction(client, &body.raw_tx).await {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
@@ -367,12 +398,30 @@ pub async fn broadcast_wallet_transaction(
 }
 
 /// GET /wallet/fee-estimate?blocks=6
+/// Maestro (primary) → RPC (fallback)
 pub async fn get_wallet_fee_estimate(
     State(state): State<AppState>,
     Query(params): Query<FeeEstimateQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let client = rpc_client(&state, &params.network);
+    let blocks = params.blocks.unwrap_or(6);
 
+    // Try Maestro first
+    if maestro_available(&state) {
+        let mk = maestro_key(&state).to_string();
+        match maestro_service::get_fee_estimate(&state.http_client, &mk, blocks).await {
+            Ok(estimate) => {
+                state.maestro_cb.record_success();
+                return Ok(Json(serde_json::json!(estimate)));
+            }
+            Err(e) => {
+                state.maestro_cb.record_failure();
+                tracing::warn!("FeeEstimate: Maestro failed, trying RPC: {}", e);
+            }
+        }
+    }
+
+    // Fallback: RPC
+    let client = rpc_client(&state, &params.network);
     match WalletService::get_fee_estimate(client, params.blocks).await {
         Ok(estimate) => Ok(Json(serde_json::json!(estimate))),
         Err(e) => {
@@ -816,19 +865,25 @@ async fn resolve_charm_balances_for_address(
 }
 
 /// GET /wallet/tip
-/// Maestro first → RPC fallback → QuickNode fallback
+/// Maestro (primary, circuit-breakered) → RPC fallback → QuickNode fallback
 pub async fn get_wallet_chain_tip(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let mk = maestro_key(&state).to_string();
     let http = state.http_client.clone();
 
     // Try Maestro first
-    if !mk.is_empty() {
+    if maestro_available(&state) {
+        let mk = maestro_key(&state).to_string();
         match maestro_service::get_chain_tip(&http, &mk).await {
-            Ok(tip) => return Ok(Json(serde_json::json!(tip))),
-            Err(e) => tracing::warn!("Tip: Maestro failed, trying RPC: {}", e),
+            Ok(tip) => {
+                state.maestro_cb.record_success();
+                return Ok(Json(serde_json::json!(tip)));
+            }
+            Err(e) => {
+                state.maestro_cb.record_failure();
+                tracing::warn!("Tip: Maestro failed, trying RPC: {}", e);
+            }
         }
     }
 

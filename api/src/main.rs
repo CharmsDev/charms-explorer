@@ -22,7 +22,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use config::ApiConfig;
 use db::DbPool;
 use handlers::{
-    AppState, broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
+    AppState, MaestroCircuitBreaker,
+    broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
     get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
     get_all_orders, get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset,
@@ -89,11 +90,14 @@ async fn main() {
 
     // Initialize application state with repositories and config
     let repositories = db_pool.repositories();
-    // HTTP client tuned for high-volume outbound calls (QuickNode, mempool.space)
-    // Connection pool: 100 idle per host, 30s idle timeout, 10s connect timeout
+    // HTTP client tuned for high-volume outbound calls (Maestro, QuickNode)
+    // Designed for 1000+ req/min throughput:
+    //   - 200 idle connections per host (Maestro + QuickNode)
+    //   - 10s connect timeout, 15s request timeout
+    //   - TCP keepalive avoids connection churn under load
     let http_client = reqwest::Client::builder()
-        .pool_max_idle_per_host(100)
-        .pool_idle_timeout(Duration::from_secs(30))
+        .pool_max_idle_per_host(200)
+        .pool_idle_timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .tcp_keepalive(Duration::from_secs(60))
@@ -108,6 +112,7 @@ async fn main() {
         http_client,
         rpc_mainnet,
         rpc_testnet4,
+        maestro_cb: Arc::new(MaestroCircuitBreaker::new()),
     };
 
     // Configure CORS policy
