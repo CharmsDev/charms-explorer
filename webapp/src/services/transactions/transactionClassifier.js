@@ -29,9 +29,6 @@ export const TRANSACTION_TYPES = {
   DEX_CANCEL: "dex_cancel",
   DEX_PARTIAL_FILL: "dex_partial_fill",
 
-  // eBTC
-  EBTC: "ebtc",
-
   // BRO specific
   BRO_MINING: "bro_mining",
   BRO_MINT: "bro_mint",
@@ -159,15 +156,6 @@ export const TRANSACTION_METADATA = {
     borderClass: "border-yellow-500/30",
     description: "Order partially filled",
   },
-  [TRANSACTION_TYPES.EBTC]: {
-    label: "eBTC",
-    icon: "₿",
-    color: "amber",
-    bgClass: "bg-amber-500/20",
-    textClass: "text-amber-400",
-    borderClass: "border-amber-500/30",
-    description: "Enchanted BTC transaction",
-  },
   [TRANSACTION_TYPES.BRO_MINING]: {
     label: "BRO Mining",
     icon: "⛏️",
@@ -230,14 +218,6 @@ export const TRANSACTION_METADATA = {
  */
 
 const classificationRules = [
-  // eBTC (priority 8 — before DEX and BRO)
-  {
-    name: "eBTC",
-    priority: 8,
-    test: (tx) => tx.tags?.includes("ebtc"),
-    type: TRANSACTION_TYPES.EBTC,
-  },
-
   // DEX Rules (highest priority - check tags first)
   {
     name: "DEX Create Ask",
@@ -389,20 +369,22 @@ const classificationRules = [
     type: TRANSACTION_TYPES.NFT_TRANSFER,
   },
 
-  // [RJJ-BEAMING] Beaming rule (detect beamed_outs in spell data or 'beaming' tag)
-  // TODO: [RJJ-UNBEAM] Add a separate rule for unbeam txs when they exist.
-  //       Unbeam txs will likely have 'unbeam' tag or `unbeamed_ins` in spell data.
-  //       Use a similar priority (e.g., 36) and map to TRANSACTION_TYPES.UNBEAM.
+  // Beaming: cross-chain (Cardano <-> Bitcoin) operations
+  // Priority 8: before DEX, BRO, and token rules since beaming is a distinct operation type
   {
     name: "Beaming",
-    priority: 35,
+    priority: 8,
     test: (tx, spellData) => {
-      // Check tags for 'beaming'
       const tags = tx.tags || "";
       if (tags.includes("beaming")) return true;
-      // Check spell data for beamed_outs
       const data = tx.data?.native_data || tx.charm?.native_data || tx.native_data || tx.data || tx.charm;
       if (data?.tx?.beamed_outs || data?.beamed_outs) return true;
+      // Detect c/ (contract) app alongside t/ token = cross-chain operation
+      const appInputs = data?.app_public_inputs;
+      if (appInputs) {
+        const keys = Object.keys(appInputs);
+        if (keys.some(k => k.startsWith("c/"))) return true;
+      }
       return false;
     },
     type: TRANSACTION_TYPES.BEAMING,
