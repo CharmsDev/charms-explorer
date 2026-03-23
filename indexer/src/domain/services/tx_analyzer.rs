@@ -107,15 +107,18 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         tag_list.push("beam-in".to_string());
     }
 
-    // $BRO token detection (check primary + all assets)
-    if dex::is_bro_token(&app_id) {
+    // $BRO token detection + classify mint vs transfer
+    let is_bro = dex::is_bro_token(&app_id)
+        || asset_infos.iter().any(|a| dex::is_bro_token(&a.app_id));
+    if is_bro {
         tag_list.push("bro".to_string());
-    } else {
-        for asset in &asset_infos {
-            if dex::is_bro_token(&asset.app_id) {
-                tag_list.push("bro".to_string());
-                break;
-            }
+        // Mint = no charm inputs in spell (new tokens created)
+        // Transfer = has charm inputs (tokens moved between addresses)
+        let has_charm_inputs = spell.tx.ins.as_ref().map_or(false, |ins| !ins.is_empty());
+        if has_charm_inputs {
+            tag_list.push("bro-transfer".to_string());
+        } else {
+            tag_list.push("bro-mint".to_string());
         }
     }
 
