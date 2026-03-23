@@ -89,10 +89,22 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         tag_list.push(result.operation.to_tag().to_string());
     }
 
-    // Beaming detection
-    let is_beaming = spell.tx.beamed_outs.is_some();
-    if is_beaming {
+    // Beaming detection:
+    // - beam-out: spell has beamed_outs (sending tokens TO Cardano)
+    // - beam-in/cross-chain: tx involves a c/ (contract) app alongside t/ tokens
+    //   This covers beam-in (receiving from Cardano) and cross-chain operations
+    let has_beamed_outs = spell.tx.beamed_outs.is_some();
+    let has_contract_app = spell
+        .app_public_inputs
+        .keys()
+        .any(|app| app.to_string().starts_with("c/"));
+    let is_beaming = has_beamed_outs || has_contract_app;
+    if has_beamed_outs {
         tag_list.push("beaming".to_string());
+        tag_list.push("beam-out".to_string());
+    } else if has_contract_app {
+        tag_list.push("beaming".to_string());
+        tag_list.push("beam-in".to_string());
     }
 
     // $BRO token detection (check primary + all assets)
