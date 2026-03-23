@@ -116,6 +116,8 @@ pub async fn get_wallet_utxos(
     let qn = quicknode_url(&state).to_string();
 
     // Try Maestro (if available and circuit breaker closed)
+    // Note: Maestro internally handles >1000 UTXO addresses via indexed fallback,
+    // so a success here may come from either esplora or indexed endpoint.
     let result = if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
         match maestro_service::get_utxos(&state.http_client, &mk, &address).await {
@@ -124,7 +126,11 @@ pub async fn get_wallet_utxos(
                 Ok(utxos)
             }
             Err(e) => {
-                state.maestro_cb.record_failure();
+                // Don't trigger circuit breaker for per-address errors (e.g. >1000 UTXOs)
+                // Only trigger for auth/rate-limit/server errors
+                if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
+                    state.maestro_cb.record_failure();
+                }
                 tracing::warn!("UTXOs: Maestro failed, trying QuickNode: {}", e);
                 fallback_utxos(&state, &qn, &address, &params.network).await
             }

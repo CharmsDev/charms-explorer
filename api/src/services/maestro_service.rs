@@ -9,18 +9,21 @@ use super::wallet_service::{AddressTxRecord, ChainTip, FeeEstimate, Utxo};
 
 const BASE_URL: &str = "https://xbt-mainnet.gomaestro-api.org/v0";
 
-/// Get UTXOs for an address via Maestro esplora endpoint.
-/// Uses /esplora/address/{addr}/utxo which is mempool-aware:
-///   - EXCLUDES UTXOs being spent by mempool txs
-///   - INCLUDES new unconfirmed outputs from mempool txs
-/// No pagination — returns all UTXOs in a single response.
+/// Get UTXOs for an address via Maestro.
+///
+/// Strategy:
+/// 1. Try esplora endpoint first (mempool-aware: excludes spent, includes unconfirmed)
+/// 2. If esplora returns 400 (>1000 UTXOs), fall back to indexed endpoint with pagination
+///
+/// The esplora endpoint is preferred because it reflects real-time mempool state.
+/// The indexed endpoint is used as fallback for addresses with many UTXOs (>1000).
 pub async fn get_utxos(
     http_client: &reqwest::Client,
     api_key: &str,
     address: &str,
 ) -> Result<Vec<Utxo>, String> {
+    // Try esplora first (mempool-aware, no pagination)
     let url = format!("{}/esplora/address/{}/utxo", BASE_URL, address);
-
     let resp = http_client
         .get(&url)
         .header("api-key", api_key)
@@ -29,35 +32,160 @@ pub async fn get_utxos(
         .map_err(|e| format!("Maestro request failed: {}", e))?;
 
     let status = resp.status();
-    if !status.is_success() {
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Maestro error {}: {}", status, body));
+    if status.is_success() {
+        let utxos_raw: Vec<Value> = resp
+            .json()
+            .await
+            .map_err(|e| format!("Maestro esplora parse failed: {}", e))?;
+
+        let utxos = utxos_raw
+            .iter()
+            .map(|u| {
+                let confirmed = u["status"]["confirmed"].as_bool().unwrap_or(false);
+                let block_height = u["status"]["block_height"].as_u64().unwrap_or(0);
+                let confirmations = if confirmed { block_height as u32 } else { 0 };
+                Utxo {
+                    txid: u["txid"].as_str().unwrap_or("").to_string(),
+                    vout: u["vout"].as_u64().unwrap_or(0) as u32,
+                    value: u["value"].as_u64().unwrap_or(0),
+                    script_pubkey: String::new(),
+                    confirmations,
+                }
+            })
+            .collect();
+        return Ok(utxos);
     }
 
-    let utxos_raw: Vec<Value> = resp
-        .json()
-        .await
-        .map_err(|e| format!("Maestro response parse failed: {}", e))?;
+    // If 400 (too many UTXOs), fall back to indexed endpoint with cursor pagination
+    let error_body = resp.text().await.unwrap_or_default();
+    if status.as_u16() == 400 && error_body.contains("Too many") {
+        tracing::info!(
+            "Maestro esplora >1000 UTXOs for {}, using indexed endpoint",
+            address
+        );
+        return get_utxos_indexed(http_client, api_key, address).await;
+    }
 
-    let utxos = utxos_raw
-        .iter()
-        .map(|u| {
-            let confirmed = u["status"]["confirmed"].as_bool().unwrap_or(false);
-            let block_height = u["status"]["block_height"].as_u64().unwrap_or(0);
-            // Use block_height as a proxy for confirmations (0 if unconfirmed)
-            let confirmations = if confirmed { block_height as u32 } else { 0 };
+    Err(format!("Maestro error {}: {}", status, error_body))
+}
 
-            Utxo {
+/// Fallback: indexed endpoint with cursor pagination for addresses with >1000 UTXOs.
+/// The indexed endpoint is NOT mempool-aware, so we supplement it with a mempool
+/// check via esplora to capture unconfirmed outputs and exclude spent UTXOs.
+async fn get_utxos_indexed(
+    http_client: &reqwest::Client,
+    api_key: &str,
+    address: &str,
+) -> Result<Vec<Utxo>, String> {
+    let mut all_utxos = Vec::new();
+    let mut cursor: Option<String> = None;
+
+    // 1. Fetch all confirmed UTXOs via indexed endpoint (paginated)
+    loop {
+        let mut url = format!("{}/addresses/{}/utxos?count=100", BASE_URL, address);
+        if let Some(ref c) = cursor {
+            url.push_str(&format!("&cursor={}", c));
+        }
+
+        let resp = http_client
+            .get(&url)
+            .header("api-key", api_key)
+            .send()
+            .await
+            .map_err(|e| format!("Maestro indexed request failed: {}", e))?;
+
+        let status = resp.status();
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("Maestro indexed parse failed: {}", e))?;
+
+        if !status.is_success() {
+            return Err(format!("Maestro indexed error {}: {}", status, body));
+        }
+
+        let empty = vec![];
+        let data = body["data"].as_array().unwrap_or(&empty);
+        for u in data {
+            let value: u64 = u["satoshis"]
+                .as_str()
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
+            all_utxos.push(Utxo {
                 txid: u["txid"].as_str().unwrap_or("").to_string(),
                 vout: u["vout"].as_u64().unwrap_or(0) as u32,
-                value: u["value"].as_u64().unwrap_or(0),
-                script_pubkey: String::new(), // esplora doesn't return this
-                confirmations,
-            }
-        })
-        .collect();
+                value,
+                script_pubkey: String::new(),
+                confirmations: u["confirmations"].as_u64().unwrap_or(0) as u32,
+            });
+        }
 
-    Ok(utxos)
+        cursor = body["next_cursor"].as_str().map(|s| s.to_string());
+        if cursor.is_none() || data.is_empty() {
+            break;
+        }
+    }
+
+    // 2. Fetch mempool transactions for this address to:
+    //    a) Add unconfirmed outputs sent TO this address
+    //    b) Remove confirmed UTXOs being spent by mempool txs
+    let mempool_url = format!(
+        "{}/esplora/address/{}/txs/mempool",
+        BASE_URL, address
+    );
+    if let Ok(resp) = http_client
+        .get(&mempool_url)
+        .header("api-key", api_key)
+        .send()
+        .await
+    {
+        if let Ok(mempool_txs) = resp.json::<Vec<Value>>().await {
+            // Collect spent outpoints (inputs from this address's UTXOs)
+            let mut spent_outpoints: std::collections::HashSet<(String, u32)> =
+                std::collections::HashSet::new();
+
+            for tx in &mempool_txs {
+                // Mark inputs as spent
+                if let Some(vins) = tx["vin"].as_array() {
+                    for vin in vins {
+                        let prev_txid = vin["txid"].as_str().unwrap_or("");
+                        let prev_vout = vin["vout"].as_u64().unwrap_or(0) as u32;
+                        spent_outpoints.insert((prev_txid.to_string(), prev_vout));
+                    }
+                }
+
+                // Add unconfirmed outputs sent to this address
+                let txid = tx["txid"].as_str().unwrap_or("");
+                if let Some(vouts) = tx["vout"].as_array() {
+                    for vout in vouts {
+                        if vout["scriptpubkey_address"].as_str() == Some(address) {
+                            let value = vout["value"].as_u64().unwrap_or(0);
+                            let n = vout["n"].as_u64().unwrap_or(0) as u32;
+                            // Only add if not already in the list
+                            let exists = all_utxos.iter().any(|u| u.txid == txid && u.vout == n);
+                            if !exists {
+                                all_utxos.push(Utxo {
+                                    txid: txid.to_string(),
+                                    vout: n,
+                                    value,
+                                    script_pubkey: String::new(),
+                                    confirmations: 0, // unconfirmed
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Remove UTXOs being spent by mempool txs
+            if !spent_outpoints.is_empty() {
+                all_utxos.retain(|u| !spent_outpoints.contains(&(u.txid.clone(), u.vout)));
+            }
+        }
+    }
+
+    Ok(all_utxos)
 }
 
 /// Get chain tip via Maestro esplora endpoints
