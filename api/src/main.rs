@@ -190,7 +190,7 @@ async fn main() {
     let app = Router::new()
         .nest("/v1", api_routes.clone())
         .merge(api_routes)
-        .layer(TimeoutLayer::new(Duration::from_secs(30)))
+        .layer(TimeoutLayer::new(Duration::from_secs(60)))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(app_state);

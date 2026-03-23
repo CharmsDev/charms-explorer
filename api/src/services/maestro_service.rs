@@ -60,19 +60,21 @@ pub async fn get_utxos(
     let error_body = resp.text().await.unwrap_or_default();
     if status.as_u16() == 400 && error_body.contains("Too many") {
         tracing::info!(
-            "Maestro esplora >1000 UTXOs for {}, using indexed endpoint",
+            "Maestro esplora >1000 UTXOs for {}, using indexed endpoint with pagination",
             address
         );
-        return get_utxos_indexed(http_client, api_key, address).await;
+        return get_utxos_indexed_with_mempool(http_client, api_key, address).await;
     }
 
     Err(format!("Maestro error {}: {}", status, error_body))
 }
 
-/// Fallback: indexed endpoint with cursor pagination for addresses with >1000 UTXOs.
-/// The indexed endpoint is NOT mempool-aware, so we supplement it with a mempool
-/// check via esplora to capture unconfirmed outputs and exclude spent UTXOs.
-async fn get_utxos_indexed(
+/// Indexed endpoint with cursor pagination + mempool supplement for >1000 UTXO addresses.
+/// ~400ms per page × N pages (sequential, cursor-dependent).
+/// After fetching all confirmed UTXOs, supplements with mempool data to:
+///   - Add unconfirmed outputs (new UTXOs from pending txs)
+///   - Remove UTXOs being spent by pending txs
+async fn get_utxos_indexed_with_mempool(
     http_client: &reqwest::Client,
     api_key: &str,
     address: &str,
@@ -80,7 +82,7 @@ async fn get_utxos_indexed(
     let mut all_utxos = Vec::new();
     let mut cursor: Option<String> = None;
 
-    // 1. Fetch all confirmed UTXOs via indexed endpoint (paginated)
+    // 1. Fetch all confirmed UTXOs via indexed endpoint (paginated, max 100/page)
     loop {
         let mut url = format!("{}/addresses/{}/utxos?count=100", BASE_URL, address);
         if let Some(ref c) = cursor {
@@ -127,13 +129,8 @@ async fn get_utxos_indexed(
         }
     }
 
-    // 2. Fetch mempool transactions for this address to:
-    //    a) Add unconfirmed outputs sent TO this address
-    //    b) Remove confirmed UTXOs being spent by mempool txs
-    let mempool_url = format!(
-        "{}/esplora/address/{}/txs/mempool",
-        BASE_URL, address
-    );
+    // 2. Supplement with mempool state
+    let mempool_url = format!("{}/esplora/address/{}/txs/mempool", BASE_URL, address);
     if let Ok(resp) = http_client
         .get(&mempool_url)
         .header("api-key", api_key)
@@ -141,12 +138,11 @@ async fn get_utxos_indexed(
         .await
     {
         if let Ok(mempool_txs) = resp.json::<Vec<Value>>().await {
-            // Collect spent outpoints (inputs from this address's UTXOs)
             let mut spent_outpoints: std::collections::HashSet<(String, u32)> =
                 std::collections::HashSet::new();
 
             for tx in &mempool_txs {
-                // Mark inputs as spent
+                // Track inputs being spent
                 if let Some(vins) = tx["vin"].as_array() {
                     for vin in vins {
                         let prev_txid = vin["txid"].as_str().unwrap_or("");
@@ -155,14 +151,13 @@ async fn get_utxos_indexed(
                     }
                 }
 
-                // Add unconfirmed outputs sent to this address
+                // Add unconfirmed outputs to this address
                 let txid = tx["txid"].as_str().unwrap_or("");
                 if let Some(vouts) = tx["vout"].as_array() {
                     for vout in vouts {
                         if vout["scriptpubkey_address"].as_str() == Some(address) {
                             let value = vout["value"].as_u64().unwrap_or(0);
                             let n = vout["n"].as_u64().unwrap_or(0) as u32;
-                            // Only add if not already in the list
                             let exists = all_utxos.iter().any(|u| u.txid == txid && u.vout == n);
                             if !exists {
                                 all_utxos.push(Utxo {
@@ -170,7 +165,7 @@ async fn get_utxos_indexed(
                                     vout: n,
                                     value,
                                     script_pubkey: String::new(),
-                                    confirmations: 0, // unconfirmed
+                                    confirmations: 0,
                                 });
                             }
                         }

@@ -126,12 +126,11 @@ pub async fn get_wallet_utxos(
                 Ok(utxos)
             }
             Err(e) => {
-                // Don't trigger circuit breaker for per-address errors (e.g. >1000 UTXOs)
-                // Only trigger for auth/rate-limit/server errors
+                // Only trigger circuit breaker for auth/rate-limit/server errors
                 if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
                     state.maestro_cb.record_failure();
                 }
-                tracing::warn!("UTXOs: Maestro failed, trying QuickNode: {}", e);
+                tracing::warn!("UTXOs: Maestro failed for {}, trying QuickNode: {}", address, e);
                 fallback_utxos(&state, &qn, &address, &params.network).await
             }
         }
@@ -643,7 +642,6 @@ pub async fn get_wallet_utxos_batch(
                             if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
                                 state.maestro_cb.record_failure();
                             }
-                            tracing::warn!("Batch UTXOs: Maestro failed for {}, trying QuickNode: {}", address, e);
                             fallback_utxos(&state, &qn, &address, &network).await
                         }
                     }
