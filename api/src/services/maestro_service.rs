@@ -9,70 +9,55 @@ use super::wallet_service::{AddressTxRecord, ChainTip, FeeEstimate, Utxo};
 
 const BASE_URL: &str = "https://xbt-mainnet.gomaestro-api.org/v0";
 
-/// Get UTXOs for an address via Maestro indexed endpoint (cursor-paginated, no 500 limit)
+/// Get UTXOs for an address via Maestro esplora endpoint.
+/// Uses /esplora/address/{addr}/utxo which is mempool-aware:
+///   - EXCLUDES UTXOs being spent by mempool txs
+///   - INCLUDES new unconfirmed outputs from mempool txs
+/// No pagination — returns all UTXOs in a single response.
 pub async fn get_utxos(
     http_client: &reqwest::Client,
     api_key: &str,
     address: &str,
 ) -> Result<Vec<Utxo>, String> {
-    let mut all_utxos = Vec::new();
-    let mut cursor: Option<String> = None;
+    let url = format!("{}/esplora/address/{}/utxo", BASE_URL, address);
 
-    loop {
-        let mut url = format!("{}/addresses/{}/utxos?count=100", BASE_URL, address);
-        if let Some(ref c) = cursor {
-            url.push_str(&format!("&cursor={}", c));
-        }
+    let resp = http_client
+        .get(&url)
+        .header("api-key", api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Maestro request failed: {}", e))?;
 
-        let resp = http_client
-            .get(&url)
-            .header("api-key", api_key)
-            .send()
-            .await
-            .map_err(|e| format!("Maestro request failed: {}", e))?;
-
-        let status = resp.status();
-        let body: Value = resp
-            .json()
-            .await
-            .map_err(|e| format!("Maestro response parse failed: {}", e))?;
-
-        if !status.is_success() {
-            return Err(format!(
-                "Maestro error {}: {}",
-                status,
-                body.get("message")
-                    .or_else(|| body.get("error"))
-                    .map(|v| v.to_string())
-                    .unwrap_or_else(|| body.to_string())
-            ));
-        }
-
-        let empty = vec![];
-        let data = body["data"].as_array().unwrap_or(&empty);
-        for u in data {
-            let value: u64 = u["satoshis"]
-                .as_str()
-                .unwrap_or("0")
-                .parse()
-                .unwrap_or(0);
-            all_utxos.push(Utxo {
-                txid: u["txid"].as_str().unwrap_or("").to_string(),
-                vout: u["vout"].as_u64().unwrap_or(0) as u32,
-                value,
-                script_pubkey: u["script_pubkey"].as_str().unwrap_or("").to_string(),
-                confirmations: u["confirmations"].as_u64().unwrap_or(0) as u32,
-            });
-        }
-
-        // Check for next cursor
-        cursor = body["next_cursor"].as_str().map(|s| s.to_string());
-        if cursor.is_none() || data.is_empty() {
-            break;
-        }
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("Maestro error {}: {}", status, body));
     }
 
-    Ok(all_utxos)
+    let utxos_raw: Vec<Value> = resp
+        .json()
+        .await
+        .map_err(|e| format!("Maestro response parse failed: {}", e))?;
+
+    let utxos = utxos_raw
+        .iter()
+        .map(|u| {
+            let confirmed = u["status"]["confirmed"].as_bool().unwrap_or(false);
+            let block_height = u["status"]["block_height"].as_u64().unwrap_or(0);
+            // Use block_height as a proxy for confirmations (0 if unconfirmed)
+            let confirmations = if confirmed { block_height as u32 } else { 0 };
+
+            Utxo {
+                txid: u["txid"].as_str().unwrap_or("").to_string(),
+                vout: u["vout"].as_u64().unwrap_or(0) as u32,
+                value: u["value"].as_u64().unwrap_or(0),
+                script_pubkey: String::new(), // esplora doesn't return this
+                confirmations,
+            }
+        })
+        .collect();
+
+    Ok(utxos)
 }
 
 /// Get chain tip via Maestro esplora endpoints
