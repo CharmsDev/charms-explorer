@@ -126,11 +126,10 @@ pub async fn get_wallet_utxos(
                 Ok(utxos)
             }
             Err(e) => {
-                // Only trigger circuit breaker for auth/rate-limit/server errors
                 if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
                     state.maestro_cb.record_failure();
                 }
-                tracing::warn!("UTXOs: Maestro failed for {}, trying QuickNode: {}", address, e);
+                tracing::warn!("UTXOs: Maestro failed for {}: {}", address, e);
                 fallback_utxos(&state, &qn, &address, &params.network).await
             }
         }
@@ -151,7 +150,7 @@ pub async fn get_wallet_utxos(
     }
 }
 
-/// QuickNode → RPC fallback for UTXOs
+/// QuickNode → RPC fallback for UTXOs (only when Maestro fails completely)
 async fn fallback_utxos(
     state: &AppState,
     qn: &str,

@@ -56,11 +56,11 @@ pub async fn get_utxos(
         return Ok(utxos);
     }
 
-    // If 400 (too many UTXOs), fall back to indexed endpoint with cursor pagination
+    // If 400 (too many UTXOs), fall back to indexed endpoint with mempool supplement
     let error_body = resp.text().await.unwrap_or_default();
     if status.as_u16() == 400 && error_body.contains("Too many") {
         tracing::info!(
-            "Maestro esplora >1000 UTXOs for {}, using indexed endpoint with pagination",
+            "Maestro esplora >1000 UTXOs for {}, using indexed + mempool",
             address
         );
         return get_utxos_indexed_with_mempool(http_client, api_key, address).await;
