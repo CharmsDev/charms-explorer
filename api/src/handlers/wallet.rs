@@ -631,16 +631,24 @@ pub async fn get_wallet_utxos_batch(
             let network = network.clone();
             let qn = qn.clone();
             tokio::spawn(async move {
-                let result = if !qn.is_empty() {
-                    match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
-                        Ok(utxos) => Ok(utxos),
+                // Maestro first (if available and circuit breaker closed)
+                let result = if maestro_available(&state) {
+                    let mk = maestro_key(&state).to_string();
+                    match maestro_service::get_utxos(&state.http_client, &mk, &address).await {
+                        Ok(utxos) => {
+                            state.maestro_cb.record_success();
+                            Ok(utxos)
+                        }
                         Err(e) => {
-                            tracing::warn!("Batch UTXOs: QuickNode failed for {}, falling back to RPC: {}", address, e);
-                            WalletService::get_utxos(rpc_client(&state, &network), &address).await
+                            if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
+                                state.maestro_cb.record_failure();
+                            }
+                            tracing::warn!("Batch UTXOs: Maestro failed for {}, trying QuickNode: {}", address, e);
+                            fallback_utxos(&state, &qn, &address, &network).await
                         }
                     }
                 } else {
-                    WalletService::get_utxos(rpc_client(&state, &network), &address).await
+                    fallback_utxos(&state, &qn, &address, &network).await
                 };
                 (address, result)
             })
