@@ -112,6 +112,8 @@ function TransactionPageContent() {
                             charm: txData.charm,
                             asset_type: txData.charm?.type || 'spell',
                             assets: txData.assets || [],
+                            tags: txData.tags,
+                            tx_type: txData.tx_type,
                             isTransactionView: true,
                         });
                         setError(null);
