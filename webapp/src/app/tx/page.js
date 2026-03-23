@@ -233,15 +233,19 @@ function TransactionPageContent() {
                     const spellTokenInfo = extractTokenFromSpell(charm.spell || charm.data);
                     const isBroTransfer = assets.some(a => a.app_id?.includes(VERIFIED_BRO_HASH)) || spellTokenInfo?.isBro;
 
-                    // Override type label for token transfers that classifier marks as generic "Spell"
+                    // Enrich header for BRO transactions (icon + description)
                     let headerType = analysis.type;
                     let headerLabel = null;
                     let headerDescription = null;
                     let headerIcon = null;
-                    if (isBroTransfer && analysis.type === TRANSACTION_TYPES.SPELL) {
+                    if (isBroTransfer && (analysis.type === TRANSACTION_TYPES.TOKEN_TRANSFER || analysis.type === TRANSACTION_TYPES.SPELL)) {
                         headerType = TRANSACTION_TYPES.TOKEN_TRANSFER;
                         headerLabel = 'BRO Transfer';
                         headerDescription = 'BRO token transfer on Bitcoin';
+                        headerIcon = '🟠';
+                    } else if (isBroTransfer && analysis.type === TRANSACTION_TYPES.BRO_MINT) {
+                        headerLabel = 'BRO Mint';
+                        headerDescription = 'New BRO tokens minted';
                         headerIcon = '🟠';
                     } else if (spellTokenInfo && !analysis.isDex && analysis.type === TRANSACTION_TYPES.SPELL) {
                         headerType = TRANSACTION_TYPES.TOKEN_TRANSFER;
