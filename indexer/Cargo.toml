@@ -19,8 +19,8 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "tls-native-tls", "postgr
 chrono = { version = "0.4", features = ["serde"] }
 
 # Charms integration
-charms-client = "11.0.1"
-charms-data = "11.0.1"
+charms-client = "12.0.0"
+charms-data = "12.0.0"
 bitcoin = "0.32.7"
 anyhow = "1.0.99"
 cml-core = "6.2.0"
