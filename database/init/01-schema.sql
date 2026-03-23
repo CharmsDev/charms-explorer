@@ -36,7 +36,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     status VARCHAR NOT NULL DEFAULT 'pending',
     confirmations INTEGER NOT NULL DEFAULT 0,
     blockchain VARCHAR NOT NULL DEFAULT 'Bitcoin',
-    network VARCHAR NOT NULL DEFAULT 'testnet4'
+    network VARCHAR NOT NULL DEFAULT 'testnet4',
+    mempool_detected_at TIMESTAMPTZ,
+    tags VARCHAR,
+    tx_type VARCHAR(30)
 );
 
 -- Create assets table (from migration m20250916_000001_create_assets_table)

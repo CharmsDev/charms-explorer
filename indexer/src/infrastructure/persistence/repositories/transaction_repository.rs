@@ -49,6 +49,7 @@ impl TransactionRepository {
             network: Set(transaction.network.clone()),
             mempool_detected_at: Set(None),
             tags: Set(None),
+            tx_type: Set(None),
         };
 
         // Try to insert the transaction, handle duplicate key violations gracefully
@@ -158,6 +159,8 @@ impl TransactionRepository {
             bool,
             String,
             String,
+            Option<String>,
+            Option<String>,
         )>,
     ) -> Result<(), DbError> {
         if transactions.is_empty() {
@@ -169,7 +172,6 @@ impl TransactionRepository {
         let now = chrono::Utc::now().naive_utc();
         let now_str = now.format("%Y-%m-%d %H:%M:%S").to_string();
 
-        // Build VALUES list for raw SQL INSERT ... ON CONFLICT DO UPDATE
         let values: Vec<String> = transactions
             .iter()
             .map(
@@ -183,6 +185,8 @@ impl TransactionRepository {
                     is_confirmed,
                     blockchain,
                     network,
+                    tags,
+                    tx_type,
                 )| {
                     let status = if *is_confirmed {
                         "confirmed"
@@ -192,9 +196,17 @@ impl TransactionRepository {
                     let raw_str = serde_json::to_string(raw).unwrap_or_else(|_| "{}".to_string());
                     let charm_str =
                         serde_json::to_string(charm).unwrap_or_else(|_| "{}".to_string());
+                    let tags_sql = match tags {
+                        Some(t) => format!("'{}'", t.replace('\'', "''")),
+                        None => "NULL".to_string(),
+                    };
+                    let tx_type_sql = match tx_type {
+                        Some(t) => format!("'{}'", t.replace('\'', "''")),
+                        None => "NULL".to_string(),
+                    };
 
                     format!(
-                        "('{}', {}, {}, '{}'::jsonb, '{}'::jsonb, '{}', '{}', {}, '{}', '{}')",
+                        "('{}', {}, {}, '{}'::jsonb, '{}'::jsonb, '{}', '{}', {}, '{}', '{}', {}, {})",
                         txid.replace('\'', "''"),
                         block_height,
                         ordinal,
@@ -205,13 +217,15 @@ impl TransactionRepository {
                         confirmations,
                         blockchain.replace('\'', "''"),
                         network.replace('\'', "''"),
+                        tags_sql,
+                        tx_type_sql,
                     )
                 },
             )
             .collect();
 
         let sql = format!(
-            "INSERT INTO transactions (txid, block_height, ordinal, raw, charm, updated_at, status, confirmations, blockchain, network) \
+            "INSERT INTO transactions (txid, block_height, ordinal, raw, charm, updated_at, status, confirmations, blockchain, network, tags, tx_type) \
              VALUES {} \
              ON CONFLICT (txid) DO UPDATE SET \
                block_height = COALESCE(EXCLUDED.block_height, transactions.block_height), \
@@ -219,7 +233,9 @@ impl TransactionRepository {
                confirmations = GREATEST(EXCLUDED.confirmations, transactions.confirmations), \
                updated_at = EXCLUDED.updated_at, \
                charm = CASE WHEN EXCLUDED.charm != '{{}}'::jsonb THEN EXCLUDED.charm ELSE transactions.charm END, \
-               raw = CASE WHEN EXCLUDED.raw != '{{}}'::jsonb THEN EXCLUDED.raw ELSE transactions.raw END",
+               raw = CASE WHEN EXCLUDED.raw != '{{}}'::jsonb THEN EXCLUDED.raw ELSE transactions.raw END, \
+               tags = COALESCE(EXCLUDED.tags, transactions.tags), \
+               tx_type = COALESCE(EXCLUDED.tx_type, transactions.tx_type)",
             values.join(", ")
         );
 

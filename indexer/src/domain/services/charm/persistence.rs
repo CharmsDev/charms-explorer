@@ -74,6 +74,8 @@ impl<'a> CharmPersistence<'a> {
             bool,              // is_confirmed
             String,            // blockchain
             String,            // network
+            Option<String>,    // tags
+            Option<String>,    // tx_type
         )>,
     ) -> Result<(), CharmError> {
         // Transactions are handled separately by TransactionRepository

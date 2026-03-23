@@ -133,6 +133,8 @@ pub async fn detect_charms(
             true,
             blockchain.to_string(),
             network.to_string(),
+            analyzed.tags.clone(),
+            Some(analyzed.tx_type.clone()),
         ));
 
         // Extract per-vout addresses (preserving index alignment, OP_RETURN outputs map to None)

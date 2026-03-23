@@ -29,6 +29,8 @@ pub struct Model {
     pub mempool_detected_at: Option<DateTimeWithTimeZone>,
     #[sea_orm(column_type = "Text", nullable)]
     pub tags: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub tx_type: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

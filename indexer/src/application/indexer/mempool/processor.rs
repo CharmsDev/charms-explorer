@@ -157,6 +157,7 @@ pub async fn process_tx_with_hex(
         network: Set(network.clone()),
         mempool_detected_at: Set(Some(now_tz)),
         tags: Set(analyzed.tags.clone()),
+        tx_type: Set(Some(analyzed.tx_type.clone())),
     };
     match tx_model.insert(db).await {
         Ok(_) => {}

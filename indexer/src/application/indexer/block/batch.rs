@@ -186,15 +186,17 @@ impl BatchProcessor {
 
 /// Transaction batch item for bulk operations
 pub type TransactionBatchItem = (
-    String, // txid
-    u64,    // height
-    i64,    // position
-    Value,  // raw_json
-    Value,  // charm_data
-    i32,    // confirmations
-    bool,   // is_confirmed
-    String, // blockchain
-    String, // network
+    String,         // txid
+    u64,            // height
+    i64,            // position
+    Value,          // raw_json
+    Value,          // charm_data
+    i32,            // confirmations
+    bool,           // is_confirmed
+    String,         // blockchain
+    String,         // network
+    Option<String>, // tags
+    Option<String>, // tx_type
 );
 
 /// Charm batch item for bulk operations

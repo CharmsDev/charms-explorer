@@ -122,6 +122,8 @@ impl CharmService {
             bool,
             String,
             String,
+            Option<String>,
+            Option<String>,
         )>,
     ) -> Result<(), CharmError> {
         let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);

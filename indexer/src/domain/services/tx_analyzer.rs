@@ -25,6 +25,7 @@ pub struct AnalyzedTx {
     pub asset_infos: Vec<AssetInfo>,
     pub is_beaming: bool,
     pub version: u32,
+    pub tx_type: String,
 }
 
 /// Pure analysis: parse raw tx hex → Option<AnalyzedTx>.
@@ -140,6 +141,30 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         Some(tag_list.join(","))
     };
 
+    // Compute tx_type from tags (single source of truth)
+    let tx_type = if tag_list.iter().any(|t| t == "create-ask") {
+        "dex_create_ask"
+    } else if tag_list.iter().any(|t| t == "create-bid") {
+        "dex_create_bid"
+    } else if tag_list.iter().any(|t| t == "fulfill-ask") {
+        "dex_fulfill_ask"
+    } else if tag_list.iter().any(|t| t == "fulfill-bid") {
+        "dex_fulfill_bid"
+    } else if tag_list.iter().any(|t| t == "cancel") {
+        "dex_cancel"
+    } else if tag_list.iter().any(|t| t == "partial-fill") {
+        "dex_partial_fill"
+    } else if is_beaming {
+        "beaming"
+    } else if tag_list.iter().any(|t| t == "bro-mint") {
+        "bro_mint"
+    } else if tag_list.iter().any(|t| t == "bro-transfer") {
+        "token_transfer"
+    } else {
+        "spell"
+    }
+    .to_string();
+
     Some(AnalyzedTx {
         txid: txid.to_string(),
         charm_json,
@@ -152,6 +177,7 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         asset_infos,
         is_beaming,
         version: spell.version,
+        tx_type,
     })
 }
 
