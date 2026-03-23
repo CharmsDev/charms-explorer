@@ -1,6 +1,7 @@
 use crate::db::repositories::{
     AddressTransactionsRepository, MonitoredAddressesRepository, UtxoRepository,
 };
+use crate::services::maestro_service;
 use crate::services::wallet_service::WalletService;
 
 /// Service for on-demand address monitoring.
@@ -30,6 +31,7 @@ impl AddressMonitorService {
         address_tx_repo: &AddressTransactionsRepository,
         http_client: &reqwest::Client,
         quicknode_url: &str,
+        maestro_api_key: &str,
         address: &str,
         network: &str,
     ) -> Result<bool, String> {
@@ -40,8 +42,8 @@ impl AddressMonitorService {
             return Ok(true);
         }
 
-        // 2. No QuickNode URL → cannot seed, skip silently
-        if quicknode_url.is_empty() {
+        // 2. No provider URL → cannot seed, skip silently
+        if quicknode_url.is_empty() && maestro_api_key.is_empty() {
             return Ok(false);
         }
 
@@ -59,23 +61,46 @@ impl AddressMonitorService {
             return Ok(true);
         }
 
-        // 5. Seed UTXOs + tx history from QuickNode (bb_getAddress)
-        let seed_result = Self::seed_from_quicknode(
-            utxo_repo,
-            address_tx_repo,
-            http_client,
-            quicknode_url,
-            address,
-            network,
-        )
-        .await;
+        // 5. Seed UTXOs + tx history: Maestro first → QuickNode fallback
+        let seed_result = if !maestro_api_key.is_empty() {
+            match Self::seed_from_maestro(
+                utxo_repo, address_tx_repo, http_client, maestro_api_key, address, network,
+            ).await {
+                Ok(r) => Ok(r),
+                Err(e) => {
+                    tracing::warn!("Seed: Maestro failed for {}, trying QuickNode: {}", address, e);
+                    if !quicknode_url.is_empty() {
+                        Self::seed_from_quicknode(
+                            utxo_repo, address_tx_repo, http_client, quicknode_url, address, network,
+                        ).await
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        } else {
+            Self::seed_from_quicknode(
+                utxo_repo, address_tx_repo, http_client, quicknode_url, address, network,
+            ).await
+        };
 
         // 6. Get current chain height for seed_height
-        let seed_height =
+        let seed_height = if !maestro_api_key.is_empty() {
+            match maestro_service::get_chain_tip(http_client, maestro_api_key).await {
+                Ok(tip) => tip.height as i32,
+                Err(_) => {
+                    match WalletService::get_chain_tip_quicknode(http_client, quicknode_url).await {
+                        Ok(tip) => tip.height as i32,
+                        Err(_) => 0,
+                    }
+                }
+            }
+        } else {
             match WalletService::get_chain_tip_quicknode(http_client, quicknode_url).await {
                 Ok(tip) => tip.height as i32,
                 Err(_) => 0,
-            };
+            }
+        };
 
         // 7. Register the address as monitored
         let _ = monitored_repo
@@ -106,6 +131,69 @@ impl AddressMonitorService {
                 Ok(false)
             }
         }
+    }
+
+    /// Fetch UTXOs and tx history from Maestro and insert into DB tables.
+    async fn seed_from_maestro(
+        utxo_repo: &UtxoRepository,
+        address_tx_repo: &AddressTransactionsRepository,
+        http_client: &reqwest::Client,
+        maestro_api_key: &str,
+        address: &str,
+        network: &str,
+    ) -> Result<(usize, usize), String> {
+        let (utxos, txs) =
+            maestro_service::get_address_info(http_client, maestro_api_key, address).await?;
+
+        // Insert UTXOs
+        let utxo_count = if !utxos.is_empty() {
+            let inserts: Vec<crate::db::repositories::utxo_repository::UtxoInsert> = utxos
+                .iter()
+                .map(|u| crate::db::repositories::utxo_repository::UtxoInsert {
+                    txid: u.txid.clone(),
+                    vout: u.vout as i32,
+                    address: address.to_string(),
+                    value: u.value as i64,
+                    script_pubkey: u.script_pubkey.clone(),
+                    block_height: 0,
+                    network: network.to_string(),
+                })
+                .collect();
+            let count = inserts.len();
+            utxo_repo.insert_batch(&inserts).await?;
+            count
+        } else {
+            0
+        };
+
+        // Insert transaction history
+        let tx_count = if !txs.is_empty() {
+            let tx_inserts: Vec<
+                crate::db::repositories::address_transactions_repository::AddressTxInsert,
+            > = txs
+                .iter()
+                .map(|t| {
+                    crate::db::repositories::address_transactions_repository::AddressTxInsert {
+                        txid: t.txid.clone(),
+                        address: address.to_string(),
+                        network: network.to_string(),
+                        direction: t.direction.clone(),
+                        amount: t.amount,
+                        fee: t.fee,
+                        block_height: t.block_height,
+                        block_time: t.block_time,
+                        confirmations: t.confirmations,
+                    }
+                })
+                .collect();
+            let count = tx_inserts.len();
+            address_tx_repo.insert_batch(&tx_inserts).await?;
+            count
+        } else {
+            0
+        };
+
+        Ok((utxo_count, tx_count))
     }
 
     /// Fetch UTXOs and tx history from QuickNode and insert into DB tables.

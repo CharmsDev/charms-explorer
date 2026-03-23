@@ -14,8 +14,8 @@ const DATA_SOURCES = [
     { data: 'Wallet Balance', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/wallet/balance/<addr>' },
     { data: 'Token Balances', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/wallet/charms/<addr>' },
     { data: 'Fee Estimates', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/wallet/fee-estimate' },
-    { data: 'Broadcast TX', source: 'Explorer → QuickNode → Mempool', badge: 'multi', endpoint: '/v1/wallet/broadcast (failover)' },
-    { data: 'TX Lookup', source: 'Explorer → QuickNode → Mempool', badge: 'multi', endpoint: '/v1/wallet/tx/<txid> (failover)' },
+    { data: 'Broadcast TX', source: 'Explorer → Maestro → QuickNode', badge: 'multi', endpoint: '/v1/wallet/broadcast (failover)' },
+    { data: 'TX Lookup', source: 'Explorer → Maestro → QuickNode', badge: 'multi', endpoint: '/v1/wallet/tx/<txid> (failover)' },
 ];
 
 function truncate(str, len = 20) {
@@ -124,17 +124,17 @@ export default function ConfigModal({ isOpen, onClose }) {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                                             </svg>
                                             <div className="min-w-0">
-                                                <span className="text-xs text-dark-400">Bitcoin Node (QuickNode)</span>
-                                                <span className="block text-xs font-mono text-dark-200 break-all">{hasQuickNode ? truncate(QUICKNODE_URL, 22) : '—'}</span>
+                                                <span className="text-xs text-dark-400">Maestro (primary)</span>
+                                                <span className="block text-xs font-mono text-dark-200">xbt-mainnet.gomaestro-api.org</span>
                                             </div>
                                         </div>
                                         <div className="flex items-start gap-3">
                                             <svg className="h-4 w-4 text-primary-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                                             </svg>
                                             <div className="min-w-0">
-                                                <span className="text-xs text-dark-400">Mempool.space (fallback)</span>
-                                                <span className="block text-xs font-mono text-dark-200">https://mempool.space/api</span>
+                                                <span className="text-xs text-dark-400">QuickNode (fallback)</span>
+                                                <span className="block text-xs font-mono text-dark-200 break-all">{hasQuickNode ? truncate(QUICKNODE_URL, 22) : '—'}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -183,8 +183,8 @@ export default function ConfigModal({ isOpen, onClose }) {
                                             </svg>
                                             <div>
                                                 <span className="text-xs text-dark-400">Bitcoin Blockchain</span>
-                                                <span className="block text-xs text-dark-200">QuickNode RPC (primary)</span>
-                                                <span className="block text-xs text-dark-300">Mempool.space API (fallback)</span>
+                                                <span className="block text-xs text-dark-200">Maestro API (primary)</span>
+                                                <span className="block text-xs text-dark-300">QuickNode RPC (fallback)</span>
                                             </div>
                                         </div>
                                     </div>

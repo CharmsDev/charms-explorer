@@ -15,6 +15,7 @@ use std::sync::Arc;
 use crate::error::{ExplorerError, ExplorerResult};
 use crate::handlers::AppState;
 use crate::services::address_monitor_service::AddressMonitorService;
+use crate::services::maestro_service;
 use crate::services::wallet_service::WalletService;
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(3);
@@ -30,6 +31,11 @@ fn rpc_client(state: &AppState, network: &str) -> Arc<Client> {
 /// QuickNode endpoint (empty string = not configured)
 fn quicknode_url(state: &AppState) -> &str {
     &state.config.bitcoin_mainnet_quicknode_endpoint
+}
+
+/// Maestro API key (empty string = not configured)
+fn maestro_key(state: &AppState) -> &str {
+    &state.config.maestro_api_key
 }
 
 /// Try an RPC future with timeout; on failure, try QuickNode fallback
@@ -95,15 +101,34 @@ fn default_network() -> String {
 }
 
 /// GET /wallet/utxos/{address}
-/// QuickNode first (indexed, instant) → RPC fallback (scantxoutset is slow)
+/// Maestro first (primary) → QuickNode fallback → RPC fallback
 pub async fn get_wallet_utxos(
     State(state): State<AppState>,
     Path(address): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
+    let mk = maestro_key(&state).to_string();
     let qn = quicknode_url(&state).to_string();
 
-    let result = if !qn.is_empty() {
+    let result = if !mk.is_empty() {
+        match maestro_service::get_utxos(&state.http_client, &mk, &address).await {
+            Ok(utxos) => Ok(utxos),
+            Err(e) => {
+                tracing::warn!("UTXOs: Maestro failed, trying QuickNode: {}", e);
+                if !qn.is_empty() {
+                    match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
+                        Ok(utxos) => Ok(utxos),
+                        Err(e2) => {
+                            tracing::warn!("UTXOs: QuickNode failed, falling back to RPC: {}", e2);
+                            WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
+                        }
+                    }
+                } else {
+                    WalletService::get_utxos(rpc_client(&state, &params.network), &address).await
+                }
+            }
+        }
+    } else if !qn.is_empty() {
         match WalletService::get_utxos_quicknode(&state.http_client, &qn, &address).await {
             Ok(utxos) => Ok(utxos),
             Err(e) => {
@@ -160,14 +185,16 @@ pub async fn get_wallet_balance(
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let network = params.network.as_str();
     let qn = quicknode_url(&state).to_string();
+    let mk = maestro_key(&state).to_string();
 
-    // Step 1: Ensure address is monitored (seeds from QuickNode if needed)
+    // Step 1: Ensure address is monitored (seeds from Maestro/QuickNode if needed)
     let monitored = AddressMonitorService::ensure_monitored(
         &state.repositories.monitored_addresses,
         &state.repositories.utxo,
         &state.repositories.address_transactions,
         &state.http_client,
         &qn,
+        &mk,
         &address,
         network,
     )
@@ -789,13 +816,25 @@ async fn resolve_charm_balances_for_address(
 }
 
 /// GET /wallet/tip
+/// Maestro first → RPC fallback → QuickNode fallback
 pub async fn get_wallet_chain_tip(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
+    let mk = maestro_key(&state).to_string();
+    let http = state.http_client.clone();
+
+    // Try Maestro first
+    if !mk.is_empty() {
+        match maestro_service::get_chain_tip(&http, &mk).await {
+            Ok(tip) => return Ok(Json(serde_json::json!(tip))),
+            Err(e) => tracing::warn!("Tip: Maestro failed, trying RPC: {}", e),
+        }
+    }
+
+    // Fallback: RPC → QuickNode
     let client = rpc_client(&state, &params.network);
     let qn = quicknode_url(&state).to_string();
-    let http = state.http_client.clone();
 
     let result = rpc_with_fallback(
         WalletService::get_chain_tip(client),
@@ -841,6 +880,7 @@ pub async fn get_wallet_transactions(
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let network = params.network.as_str();
     let qn = quicknode_url(&state).to_string();
+    let mk = maestro_key(&state).to_string();
 
     // Ensure address is monitored and seeded
     let _ = AddressMonitorService::ensure_monitored(
@@ -849,6 +889,7 @@ pub async fn get_wallet_transactions(
         &state.repositories.address_transactions,
         &state.http_client,
         &qn,
+        &mk,
         &address,
         network,
     )

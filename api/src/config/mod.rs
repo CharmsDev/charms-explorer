@@ -37,8 +37,11 @@ pub struct ApiConfig {
     #[allow(dead_code)] // Reserved for mainnet integration
     pub bitcoin_mainnet_rpc_password: String,
 
-    // QuickNode (mainnet UTXOs/balance)
+    // QuickNode (mainnet UTXOs/balance — secondary/fallback)
     pub bitcoin_mainnet_quicknode_endpoint: String,
+
+    // Maestro (mainnet — primary provider)
+    pub maestro_api_key: String,
 }
 
 impl ApiConfig {
@@ -91,6 +94,9 @@ impl ApiConfig {
         let bitcoin_mainnet_quicknode_endpoint =
             env::var("BITCOIN_MAINNET_QUICKNODE_ENDPOINT").unwrap_or_else(|_| String::new());
 
+        let maestro_api_key =
+            env::var("MAESTRO_API_KEY").unwrap_or_else(|_| String::new());
+
         Self {
             host,
             port,
@@ -107,6 +113,7 @@ impl ApiConfig {
             bitcoin_mainnet_rpc_username,
             bitcoin_mainnet_rpc_password,
             bitcoin_mainnet_quicknode_endpoint,
+            maestro_api_key,
         }
     }
 

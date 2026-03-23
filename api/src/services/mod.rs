@@ -8,4 +8,5 @@ pub mod diagnostic;
 pub mod health;
 pub mod stats_holders_service; // [RJJ-STATS-HOLDERS]
 pub mod transaction_service;
+pub mod maestro_service; // Maestro Bitcoin API provider (primary)
 pub mod wallet_service; // [RJJ-WALLET]
