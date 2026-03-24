@@ -123,9 +123,17 @@ async fn get_utxos_indexed_with_mempool(
             if let Some(min) = min_value {
                 if value < min { continue; }
             }
+            let txid_str = u["txid"].as_str().unwrap_or("").to_string();
+
+            // Maestro indexed returns vout:0 for all UTXOs (known bug).
+            // Resolve the real vout by looking up the TX via esplora.
+            let real_vout = resolve_vout_from_tx(
+                http_client, api_key, &txid_str, address, value
+            ).await.unwrap_or(u["vout"].as_u64().unwrap_or(0) as u32);
+
             all_utxos.push(Utxo {
-                txid: u["txid"].as_str().unwrap_or("").to_string(),
-                vout: u["vout"].as_u64().unwrap_or(0) as u32,
+                txid: txid_str,
+                vout: real_vout,
                 value,
                 script_pubkey: String::new(),
                 confirmations: u["confirmations"].as_u64().unwrap_or(0) as u32,
@@ -193,6 +201,42 @@ async fn get_utxos_indexed_with_mempool(
     }
 
     Ok(all_utxos)
+}
+
+/// Resolve the real vout for a UTXO by looking up the TX via esplora.
+/// Maestro indexed endpoint returns vout:0 for all UTXOs (known bug).
+/// Matches by address + value to find the correct output index.
+async fn resolve_vout_from_tx(
+    http_client: &reqwest::Client,
+    api_key: &str,
+    txid: &str,
+    address: &str,
+    value: u64,
+) -> Result<u32, String> {
+    let url = format!("{}/esplora/tx/{}", BASE_URL, txid);
+    let resp = http_client
+        .get(&url)
+        .header("api-key", api_key)
+        .send()
+        .await
+        .map_err(|e| format!("resolve_vout failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err("TX lookup failed".to_string());
+    }
+
+    let tx: Value = resp.json().await.map_err(|e| format!("parse failed: {}", e))?;
+    if let Some(vouts) = tx["vout"].as_array() {
+        for (i, vout) in vouts.iter().enumerate() {
+            let out_addr = vout["scriptpubkey_address"].as_str().unwrap_or("");
+            let out_value = vout["value"].as_u64().unwrap_or(0);
+            if out_addr == address && out_value == value {
+                return Ok(i as u32);
+            }
+        }
+    }
+
+    Err("vout not found".to_string())
 }
 
 /// Get chain tip via Maestro esplora endpoints
