@@ -21,6 +21,7 @@ pub async fn get_utxos(
     http_client: &reqwest::Client,
     api_key: &str,
     address: &str,
+    min_value: Option<u64>,
 ) -> Result<Vec<Utxo>, String> {
     // Try esplora first (mempool-aware, no pagination)
     let url = format!("{}/esplora/address/{}/utxo", BASE_URL, address);
@@ -40,17 +41,21 @@ pub async fn get_utxos(
 
         let utxos = utxos_raw
             .iter()
-            .map(|u| {
+            .filter_map(|u| {
+                let value = u["value"].as_u64().unwrap_or(0);
+                if let Some(min) = min_value {
+                    if value < min { return None; }
+                }
                 let confirmed = u["status"]["confirmed"].as_bool().unwrap_or(false);
                 let block_height = u["status"]["block_height"].as_u64().unwrap_or(0);
                 let confirmations = if confirmed { block_height as u32 } else { 0 };
-                Utxo {
+                Some(Utxo {
                     txid: u["txid"].as_str().unwrap_or("").to_string(),
                     vout: u["vout"].as_u64().unwrap_or(0) as u32,
-                    value: u["value"].as_u64().unwrap_or(0),
+                    value,
                     script_pubkey: String::new(),
                     confirmations,
-                }
+                })
             })
             .collect();
         return Ok(utxos);
@@ -63,7 +68,7 @@ pub async fn get_utxos(
             "Maestro esplora >1000 UTXOs for {}, using indexed + mempool",
             address
         );
-        return get_utxos_indexed_with_mempool(http_client, api_key, address).await;
+        return get_utxos_indexed_with_mempool(http_client, api_key, address, min_value).await;
     }
 
     Err(format!("Maestro error {}: {}", status, error_body))
@@ -78,6 +83,7 @@ async fn get_utxos_indexed_with_mempool(
     http_client: &reqwest::Client,
     api_key: &str,
     address: &str,
+    min_value: Option<u64>,
 ) -> Result<Vec<Utxo>, String> {
     let mut all_utxos = Vec::new();
     let mut cursor: Option<String> = None;
@@ -114,6 +120,9 @@ async fn get_utxos_indexed_with_mempool(
                 .unwrap_or("0")
                 .parse()
                 .unwrap_or(0);
+            if let Some(min) = min_value {
+                if value < min { continue; }
+            }
             all_utxos.push(Utxo {
                 txid: u["txid"].as_str().unwrap_or("").to_string(),
                 vout: u["vout"].as_u64().unwrap_or(0) as u32,
@@ -157,6 +166,9 @@ async fn get_utxos_indexed_with_mempool(
                     for vout in vouts {
                         if vout["scriptpubkey_address"].as_str() == Some(address) {
                             let value = vout["value"].as_u64().unwrap_or(0);
+                            if let Some(min) = min_value {
+                                if value < min { continue; }
+                            }
                             let n = vout["n"].as_u64().unwrap_or(0) as u32;
                             let exists = all_utxos.iter().any(|u| u.txid == txid && u.vout == n);
                             if !exists {
@@ -234,7 +246,7 @@ pub async fn get_address_info(
     address: &str,
 ) -> Result<(Vec<Utxo>, Vec<AddressTxRecord>), String> {
     // Get UTXOs
-    let utxos = get_utxos(http_client, api_key, address).await?;
+    let utxos = get_utxos(http_client, api_key, address, None).await?;
 
     // Get transaction history via esplora (paginated with after_txid)
     let mut all_txs: Vec<AddressTxRecord> = Vec::new();
