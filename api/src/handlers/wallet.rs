@@ -123,7 +123,7 @@ pub async fn get_wallet_utxos(
     // so a success here may come from either esplora or indexed endpoint.
     let result = if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::get_utxos(&state.http_client, &mk, &address, min_value).await {
+        match maestro_service::get_utxos(&state.http_client, &mk, &address, min_value, Some(&qn)).await {
             Ok(utxos) => {
                 state.maestro_cb.record_success();
                 Ok(utxos)
@@ -639,7 +639,7 @@ pub async fn get_wallet_utxos_batch(
                 // Maestro first (if available and circuit breaker closed)
                 let result = if maestro_available(&state) {
                     let mk = maestro_key(&state).to_string();
-                    match maestro_service::get_utxos(&state.http_client, &mk, &address, min_value).await {
+                    match maestro_service::get_utxos(&state.http_client, &mk, &address, min_value, Some(&qn)).await {
                         Ok(utxos) => {
                             state.maestro_cb.record_success();
                             Ok(utxos)

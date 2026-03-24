@@ -22,6 +22,7 @@ pub async fn get_utxos(
     api_key: &str,
     address: &str,
     min_value: Option<u64>,
+    quicknode_url: Option<&str>,
 ) -> Result<Vec<Utxo>, String> {
     // Try esplora first (mempool-aware, no pagination)
     let url = format!("{}/esplora/address/{}/utxo", BASE_URL, address);
@@ -61,13 +62,33 @@ pub async fn get_utxos(
         return Ok(utxos);
     }
 
-    // If 400 (too many UTXOs), fall back to indexed endpoint with mempool supplement
+    // If 400 (too many UTXOs):
+    //   - Try QuickNode first (returns all in ~0.9s, no pagination)
+    //   - Fall back to Maestro indexed + mempool (slow, ~13s for 3000+ UTXOs)
     let error_body = resp.text().await.unwrap_or_default();
     if status.as_u16() == 400 && error_body.contains("Too many") {
-        tracing::info!(
-            "Maestro esplora >1000 UTXOs for {}, using indexed + mempool",
-            address
-        );
+        // Try QuickNode (fast path for large addresses)
+        if let Some(qn_url) = quicknode_url {
+            if !qn_url.is_empty() {
+                tracing::info!("Maestro >1000 UTXOs for {}, trying QuickNode", address);
+                match super::wallet_service::WalletService::get_utxos_quicknode(
+                    http_client, qn_url, address
+                ).await {
+                    Ok(mut utxos) => {
+                        if let Some(min) = min_value {
+                            utxos.retain(|u| u.value >= min);
+                        }
+                        return Ok(utxos);
+                    }
+                    Err(e) => {
+                        tracing::warn!("QuickNode failed for {}, using indexed: {}", address, e);
+                    }
+                }
+            }
+        }
+
+        // Last resort: Maestro indexed with pagination
+        tracing::info!("Using Maestro indexed for {} (slow path)", address);
         return get_utxos_indexed_with_mempool(http_client, api_key, address, min_value).await;
     }
 
@@ -296,7 +317,7 @@ pub async fn get_address_info(
     address: &str,
 ) -> Result<(Vec<Utxo>, Vec<AddressTxRecord>), String> {
     // Get UTXOs
-    let utxos = get_utxos(http_client, api_key, address, None).await?;
+    let utxos = get_utxos(http_client, api_key, address, None, None).await?;
 
     // Get transaction history via esplora (paginated with after_txid)
     let mut all_txs: Vec<AddressTxRecord> = Vec::new();
