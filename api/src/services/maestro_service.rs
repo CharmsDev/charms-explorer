@@ -171,13 +171,13 @@ async fn get_utxos_indexed_with_mempool(
                 // Add unconfirmed outputs to this address
                 let txid = tx["txid"].as_str().unwrap_or("");
                 if let Some(vouts) = tx["vout"].as_array() {
-                    for vout in vouts {
+                    for (idx, vout) in vouts.iter().enumerate() {
                         if vout["scriptpubkey_address"].as_str() == Some(address) {
                             let value = vout["value"].as_u64().unwrap_or(0);
                             if let Some(min) = min_value {
                                 if value < min { continue; }
                             }
-                            let n = vout["n"].as_u64().unwrap_or(0) as u32;
+                            let n = idx as u32;
                             let exists = all_utxos.iter().any(|u| u.txid == txid && u.vout == n);
                             if !exists {
                                 all_utxos.push(Utxo {
