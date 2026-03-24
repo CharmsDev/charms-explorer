@@ -371,6 +371,103 @@ pub async fn get_wallet_transaction(
     }
 }
 
+/// GET /wallet/tx/{txid}/hex
+/// Returns raw transaction hex via Maestro → QuickNode fallback.
+/// Used by DEX order builders to construct prev_txs for spell proofs.
+pub async fn get_wallet_tx_hex(
+    State(state): State<AppState>,
+    Path(txid): Path<String>,
+    Query(_params): Query<NetworkQuery>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    // Try Maestro first
+    if maestro_available(&state) {
+        let mk = maestro_key(&state).to_string();
+        match maestro_service::get_tx_hex(&state.http_client, &mk, &txid).await {
+            Ok(hex) => {
+                state.maestro_cb.record_success();
+                return Ok(Json(serde_json::json!({ "txid": txid, "hex": hex })));
+            }
+            Err(e) => {
+                state.maestro_cb.record_failure();
+                tracing::warn!("TX hex: Maestro failed for {}: {}", txid, e);
+            }
+        }
+    }
+
+    // Fallback: RPC getrawtransaction (requires txindex)
+    Err(ExplorerError::NotFound(format!(
+        "Transaction {} hex not available",
+        txid
+    )))
+}
+
+/// POST /wallet/prev-txs
+/// Batch fetch raw transaction hex for multiple txids.
+/// Used by DEX to build prev_txs array for Scrolls spell signing.
+///
+/// Request:  { "txids": ["abc...", "def..."] }
+/// Response: { "transactions": { "abc...": "0200000001...", "def...": "0200000001..." } }
+pub async fn get_wallet_prev_txs(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let txids: Vec<String> = body
+        .get("txids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .take(10) // max 10 prev txs per request
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if txids.is_empty() {
+        return Ok(Json(serde_json::json!({ "transactions": {} })));
+    }
+
+    let mk = maestro_key(&state).to_string();
+    let has_maestro = maestro_available(&state) && !mk.is_empty();
+
+    // Fetch all TX hexes concurrently
+    let tasks: Vec<_> = txids
+        .iter()
+        .map(|txid| {
+            let state = state.clone();
+            let txid = txid.clone();
+            let mk = mk.clone();
+            tokio::spawn(async move {
+                if has_maestro {
+                    match maestro_service::get_tx_hex(&state.http_client, &mk, &txid).await {
+                        Ok(hex) => return (txid, Ok(hex)),
+                        Err(e) => {
+                            tracing::warn!("prev-txs: Maestro failed for {}: {}", txid, e);
+                        }
+                    }
+                }
+                (txid, Err("not available".to_string()))
+            })
+        })
+        .collect();
+
+    let mut transactions = serde_json::Map::new();
+    for task in tasks {
+        match task.await {
+            Ok((txid, Ok(hex))) => {
+                transactions.insert(txid, serde_json::json!(hex));
+            }
+            Ok((txid, Err(e))) => {
+                tracing::warn!("prev-txs: failed for {}: {}", txid, e);
+            }
+            Err(e) => {
+                tracing::warn!("prev-txs: task join error: {:?}", e);
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "transactions": transactions })))
+}
+
 /// POST /wallet/broadcast
 /// Maestro (primary) → QuickNode RPC (fallback) → local RPC (last resort)
 pub async fn broadcast_wallet_transaction(

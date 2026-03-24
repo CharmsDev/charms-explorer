@@ -500,3 +500,30 @@ pub async fn broadcast_transaction(
         Err(format!("Maestro broadcast error {}: {}", status, body))
     }
 }
+
+/// Get raw transaction hex via Maestro esplora
+pub async fn get_tx_hex(
+    http_client: &reqwest::Client,
+    api_key: &str,
+    txid: &str,
+) -> Result<String, String> {
+    let url = format!("{}/esplora/tx/{}/hex", BASE_URL, txid);
+    let resp = http_client
+        .get(&url)
+        .header("api-key", api_key)
+        .send()
+        .await
+        .map_err(|e| format!("Maestro tx hex failed: {}", e))?;
+
+    let status = resp.status();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("Maestro tx hex parse failed: {}", e))?;
+
+    if status.is_success() {
+        Ok(body.trim().to_string())
+    } else {
+        Err(format!("Maestro tx hex error {}: {}", status, body))
+    }
+}

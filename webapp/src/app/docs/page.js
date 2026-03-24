@@ -399,6 +399,31 @@ const SECTIONS = [
 }`,
         note: 'Amounts in satoshis. "direction": "in" = received, "out" = sent. block_height/block_time may be null for unconfirmed mempool transactions. Seeded lazily from Maestro/QuickNode on first request; Indexer keeps it current afterward.',
       },
+      {
+        method: 'GET',
+        path: '/v1/wallet/tx/{txid}/hex',
+        desc: 'Raw transaction hex (for DEX prev_txs)',
+        response: `{
+  "txid": "abc123...",
+  "hex": "020000000001..."
+}`,
+        note: 'Returns the raw serialized transaction. Source: Maestro (primary). Used by DEX order builders for prev_txs.',
+      },
+      {
+        method: 'POST',
+        path: '/v1/wallet/prev-txs',
+        desc: 'Batch fetch raw TX hex for multiple txids (max 10)',
+        body: `{
+  "txids": ["abc123...", "def456..."]
+}`,
+        response: `{
+  "transactions": {
+    "abc123...": "020000000001...",
+    "def456...": "020000000001..."
+  }
+}`,
+        note: 'Max 10 txids per request. All fetched concurrently via Maestro. Used by DEX to build prev_txs array for Scrolls spell signing. Replaces direct QuickNode/mempool.space calls from the frontend.',
+      },
     ],
   },
   {

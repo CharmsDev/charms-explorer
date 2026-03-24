@@ -30,7 +30,8 @@ use handlers::{
     get_orders_by_maker,
     get_reference_nft_by_hash, get_transaction_by_txid, get_transactions, get_wallet_balance,
     get_wallet_chain_tip, get_wallet_charm_balances, get_wallet_charm_balances_batch,
-    get_wallet_fee_estimate, get_wallet_transaction, get_wallet_transactions, get_wallet_utxos, get_wallet_utxos_batch,
+    get_wallet_fee_estimate, get_wallet_prev_txs, get_wallet_transaction, get_wallet_transactions,
+    get_wallet_tx_hex, get_wallet_utxos, get_wallet_utxos_batch,
     health_check, like_charm, unlike_charm,
 };
 
@@ -173,6 +174,8 @@ async fn main() {
         .route("/wallet/utxos/batch", post(get_wallet_utxos_batch))
         .route("/wallet/balance/{address}", get(get_wallet_balance))
         .route("/wallet/tx/{txid}", get(get_wallet_transaction))
+        .route("/wallet/tx/{txid}/hex", get(get_wallet_tx_hex))
+        .route("/wallet/prev-txs", post(get_wallet_prev_txs))
         .route("/wallet/broadcast", post(broadcast_wallet_transaction))
         .route("/wallet/fee-estimate", get(get_wallet_fee_estimate))
         .route("/wallet/tip", get(get_wallet_chain_tip))
