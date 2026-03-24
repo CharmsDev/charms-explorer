@@ -70,11 +70,13 @@ pub async fn get_utxos(
         // Try QuickNode (fast path for large addresses)
         if let Some(qn_url) = quicknode_url {
             if !qn_url.is_empty() {
-                tracing::info!("Maestro >1000 UTXOs for {}, trying QuickNode", address);
+                tracing::info!("Maestro >1000 UTXOs for {}, trying QuickNode + mempool", address);
                 match super::wallet_service::WalletService::get_utxos_quicknode(
                     http_client, qn_url, address
                 ).await {
                     Ok(mut utxos) => {
+                        // QuickNode doesn't include mempool UTXOs — supplement via Maestro
+                        supplement_with_mempool(http_client, api_key, address, &mut utxos).await;
                         if let Some(min) = min_value {
                             utxos.retain(|u| u.value >= min);
                         }
@@ -173,61 +175,81 @@ async fn get_utxos_indexed_with_mempool(
         }
     }
 
-    // 2. Supplement with mempool state
+    // 2. Supplement with mempool state (adds unconfirmed, removes spent)
+    supplement_with_mempool(http_client, api_key, address, &mut all_utxos).await;
+
+    // 3. Apply min_value filter after mempool supplement
+    if let Some(min) = min_value {
+        all_utxos.retain(|u| u.value >= min);
+    }
+
+    Ok(all_utxos)
+}
+
+/// Supplement a UTXO list with mempool state from Maestro esplora.
+/// Adds unconfirmed outputs and removes UTXOs being spent by mempool txs.
+async fn supplement_with_mempool(
+    http_client: &reqwest::Client,
+    api_key: &str,
+    address: &str,
+    utxos: &mut Vec<Utxo>,
+) {
     let mempool_url = format!("{}/esplora/address/{}/txs/mempool", BASE_URL, address);
-    if let Ok(resp) = http_client
+    let resp = match http_client
         .get(&mempool_url)
         .header("api-key", api_key)
         .send()
         .await
     {
-        if let Ok(mempool_txs) = resp.json::<Vec<Value>>().await {
-            let mut spent_outpoints: std::collections::HashSet<(String, u32)> =
-                std::collections::HashSet::new();
+        Ok(r) => r,
+        Err(_) => return,
+    };
 
-            for tx in &mempool_txs {
-                // Track inputs being spent
-                if let Some(vins) = tx["vin"].as_array() {
-                    for vin in vins {
-                        let prev_txid = vin["txid"].as_str().unwrap_or("");
-                        let prev_vout = vin["vout"].as_u64().unwrap_or(0) as u32;
-                        spent_outpoints.insert((prev_txid.to_string(), prev_vout));
-                    }
-                }
+    let mempool_txs: Vec<Value> = match resp.json().await {
+        Ok(t) => t,
+        Err(_) => return,
+    };
 
-                // Add unconfirmed outputs to this address
-                let txid = tx["txid"].as_str().unwrap_or("");
-                if let Some(vouts) = tx["vout"].as_array() {
-                    for (idx, vout) in vouts.iter().enumerate() {
-                        if vout["scriptpubkey_address"].as_str() == Some(address) {
-                            let value = vout["value"].as_u64().unwrap_or(0);
-                            if let Some(min) = min_value {
-                                if value < min { continue; }
-                            }
-                            let n = idx as u32;
-                            let exists = all_utxos.iter().any(|u| u.txid == txid && u.vout == n);
-                            if !exists {
-                                all_utxos.push(Utxo {
-                                    txid: txid.to_string(),
-                                    vout: n,
-                                    value,
-                                    script_pubkey: String::new(),
-                                    confirmations: 0,
-                                });
-                            }
-                        }
-                    }
-                }
+    if mempool_txs.is_empty() {
+        return;
+    }
+
+    let mut spent_outpoints: std::collections::HashSet<(String, u32)> =
+        std::collections::HashSet::new();
+
+    for tx in &mempool_txs {
+        if let Some(vins) = tx["vin"].as_array() {
+            for vin in vins {
+                let prev_txid = vin["txid"].as_str().unwrap_or("");
+                let prev_vout = vin["vout"].as_u64().unwrap_or(0) as u32;
+                spent_outpoints.insert((prev_txid.to_string(), prev_vout));
             }
+        }
 
-            // Remove UTXOs being spent by mempool txs
-            if !spent_outpoints.is_empty() {
-                all_utxos.retain(|u| !spent_outpoints.contains(&(u.txid.clone(), u.vout)));
+        let txid = tx["txid"].as_str().unwrap_or("");
+        if let Some(vouts) = tx["vout"].as_array() {
+            for (idx, vout) in vouts.iter().enumerate() {
+                if vout["scriptpubkey_address"].as_str() == Some(address) {
+                    let value = vout["value"].as_u64().unwrap_or(0);
+                    let n = idx as u32;
+                    let exists = utxos.iter().any(|u| u.txid == txid && u.vout == n);
+                    if !exists {
+                        utxos.push(Utxo {
+                            txid: txid.to_string(),
+                            vout: n,
+                            value,
+                            script_pubkey: String::new(),
+                            confirmations: 0,
+                        });
+                    }
+                }
             }
         }
     }
 
-    Ok(all_utxos)
+    if !spent_outpoints.is_empty() {
+        utxos.retain(|u| !spent_outpoints.contains(&(u.txid.clone(), u.vout)));
+    }
 }
 
 /// Resolve the real vout for a UTXO by looking up the TX via esplora.
