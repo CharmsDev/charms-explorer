@@ -124,12 +124,18 @@ async fn get_utxos_indexed_with_mempool(
                 if value < min { continue; }
             }
             let txid_str = u["txid"].as_str().unwrap_or("").to_string();
+            let indexed_vout = u["vout"].as_u64().unwrap_or(0) as u32;
 
             // Maestro indexed returns vout:0 for all UTXOs (known bug).
-            // Resolve the real vout by looking up the TX via esplora.
-            let real_vout = resolve_vout_from_tx(
-                http_client, api_key, &txid_str, address, value
-            ).await.unwrap_or(u["vout"].as_u64().unwrap_or(0) as u32);
+            // Only resolve real vout when min_value is set (few UTXOs to look up).
+            // Without min_value we'd be doing 3000+ TX lookups — unacceptable.
+            let real_vout = if min_value.is_some() {
+                resolve_vout_from_tx(
+                    http_client, api_key, &txid_str, address, value
+                ).await.unwrap_or(indexed_vout)
+            } else {
+                indexed_vout
+            };
 
             all_utxos.push(Utxo {
                 txid: txid_str,
