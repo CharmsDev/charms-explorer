@@ -30,6 +30,7 @@ use handlers::{
     get_orders_by_maker,
     get_reference_nft_by_hash, get_transaction_by_txid, get_transactions, get_wallet_balance,
     get_wallet_chain_tip, get_wallet_charm_balances, get_wallet_charm_balances_batch,
+    get_wallet_charm_balances_batch_indexed,
     get_wallet_fee_estimate, get_wallet_prev_txs, get_wallet_transaction, get_wallet_transactions,
     get_wallet_tx_hex, get_wallet_utxos, get_wallet_utxos_batch,
     health_check, like_charm, unlike_charm,
@@ -182,6 +183,10 @@ async fn main() {
         .route(
             "/wallet/charms/batch",
             post(get_wallet_charm_balances_batch),
+        )
+        .route(
+            "/wallet/charms/batch/indexed",
+            post(get_wallet_charm_balances_batch_indexed),
         )
         .route("/wallet/charms/{address}", get(get_wallet_charm_balances))
         .route(
