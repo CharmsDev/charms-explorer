@@ -19,7 +19,6 @@ impl AssetRepository {
     }
 
     /// Find assets with pagination and optional filtering
-    /// Note: Reference NFTs (is_reference_nft = true) are excluded from NFT listings
     pub async fn find_paginated(
         &self,
         asset_type: Option<&str>,
@@ -31,11 +30,6 @@ impl AssetRepository {
 
         if let Some(asset_type) = asset_type {
             query = query.filter(Column::AssetType.eq(asset_type));
-
-            // For NFT listings, exclude reference NFTs (they are hidden, only used for token metadata)
-            if asset_type == "nft" {
-                query = query.filter(Column::IsReferenceNft.eq(false));
-            }
         }
 
         if let Some(network) = network {
@@ -53,7 +47,6 @@ impl AssetRepository {
     }
 
     /// Count assets with optional filtering
-    /// Note: Reference NFTs are excluded from NFT counts
     pub async fn count_assets(
         &self,
         asset_type: Option<&str>,
@@ -63,11 +56,6 @@ impl AssetRepository {
 
         if let Some(asset_type) = asset_type {
             query = query.filter(Column::AssetType.eq(asset_type));
-
-            // For NFT counts, exclude reference NFTs
-            if asset_type == "nft" {
-                query = query.filter(Column::IsReferenceNft.eq(false));
-            }
         }
 
         if let Some(network) = network {
