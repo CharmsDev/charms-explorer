@@ -91,7 +91,7 @@ export default function ConfigModal({ isOpen, onClose }) {
                                             </svg>
                                             <div>
                                                 <span className="text-xs text-dark-400">Charms Version</span>
-                                                <span className="block text-sm font-semibold text-purple-400">v0.10.0</span>
+                                                <span className="block text-sm font-semibold text-purple-400">Spell v10–v12</span>
                                             </div>
                                         </div>
                                         <div className="flex items-start gap-3">
@@ -156,7 +156,7 @@ export default function ConfigModal({ isOpen, onClose }) {
                                         <div>
                                             <span className="text-xs text-dark-400">Token (BRO)</span>
                                             <span className="block text-xs font-mono text-dark-200 break-all">
-                                                {truncate('t/3d7fe7e4cea612190f03de417d5a8e14990f37ab16e37ded7b14ead8c8ce0300/c975d4e0c292fb95efbda5c13312d6ac1d8b5aeff7f0f1e5578645a2da70ff5f', 24)}
+                                                {truncate('t/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b/c975d4e0c292fb95efbda5c13312d6ac1d8b5aeff7f0f1e5578645a2da70ff5f', 24)}
                                             </span>
                                         </div>
                                     </div>
