@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { API_BASE_URL } from '../services/apiConfig';
+import { version as explorerVersion } from '../../package.json';
 
 const QUICKNODE_URL = process.env.NEXT_PUBLIC_QUICKNODE_BITCOIN_MAINNET_URL || '';
 
@@ -92,6 +93,15 @@ export default function ConfigModal({ isOpen, onClose }) {
                                             <div>
                                                 <span className="text-xs text-dark-400">Charms Version</span>
                                                 <span className="block text-sm font-semibold text-purple-400">v12</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-start gap-3">
+                                            <svg className="h-4 w-4 text-primary-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                                            </svg>
+                                            <div>
+                                                <span className="text-xs text-dark-400">Explorer Version</span>
+                                                <span className="block text-sm font-semibold text-emerald-400">v{explorerVersion}</span>
                                             </div>
                                         </div>
                                         <div className="flex items-start gap-3">
