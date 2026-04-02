@@ -2,13 +2,14 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import Pagination from '@/components/Pagination';
 import { fetchTransactions } from '@/services/apiServices';
 import { useNetwork } from '@/context/NetworkContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
-import { 
-    classifyTransaction, 
-    getTransactionLabel, 
-    getTransactionColors 
+import {
+    classifyTransaction,
+    getTransactionLabel,
+    getTransactionColors
 } from '@/services/transactions/transactionClassifier';
 
 export default function TransactionsPage() {
@@ -198,28 +199,13 @@ export default function TransactionsPage() {
                             </table>
                         </div>
 
-                        {/* Pagination */}
-                        {totalPages > 1 && (
-                            <div className="flex justify-center items-center gap-4 mt-6">
-                                <button
-                                    onClick={() => setPage(p => Math.max(1, p - 1))}
-                                    disabled={page === 1}
-                                    className="px-4 py-2 bg-dark-800 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-dark-700 transition-colors"
-                                >
-                                    Previous
-                                </button>
-                                <span className="text-dark-400">
-                                    Page {page} of {totalPages}
-                                </span>
-                                <button
-                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-                                    disabled={page === totalPages}
-                                    className="px-4 py-2 bg-dark-800 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-dark-700 transition-colors"
-                                >
-                                    Next
-                                </button>
-                            </div>
-                        )}
+                        <Pagination
+                            currentPage={page}
+                            totalPages={totalPages}
+                            totalItems={total}
+                            itemsPerPage={ITEMS_PER_PAGE}
+                            onPageChange={setPage}
+                        />
                     </>
                 )}
             </div>

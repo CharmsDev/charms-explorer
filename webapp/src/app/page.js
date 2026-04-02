@@ -30,15 +30,12 @@ function HomeContent() {
 
     const ITEMS_PER_PAGE = 12;
 
-    const loadData = useCallback(async (type = selectedType, page = currentPage, sort = sortOrder) => {
+    const loadData = useCallback(async (type, page, sort) => {
         try {
             setIsLoading(true);
-
-            // Get network param from context (mainnet, testnet4, or all)
             const networkParam = getNetworkParam();
             const apiNetworkParam = networkParam === 'all' ? null : networkParam;
 
-            // Fetch counts and assets in parallel
             const [countsData, response] = await Promise.all([
                 getAssetCounts(apiNetworkParam),
                 fetchAssetsByType(type, page, ITEMS_PER_PAGE, sort, apiNetworkParam),
@@ -51,26 +48,21 @@ function HomeContent() {
         } finally {
             setIsLoading(false);
         }
-    }, [selectedType, currentPage, sortOrder, getNetworkParam]);
+    }, [getNetworkParam]);
 
-    // Handle type change from FilterTabs - update URL
     const handleTypeChange = (type) => {
         setSelectedType(type);
-        setCurrentPage(1); // Reset to first page when changing type
-        
-        // Update URL with new type parameter
+        setCurrentPage(1);
         const params = new URLSearchParams(searchParams.toString());
         params.set('type', type);
         router.push(`/?${params.toString()}`, { scroll: false });
-        
         loadData(type, 1, sortOrder);
     };
 
-    // Handle sort order change
     const handleSortChange = (event) => {
         const newSort = event.target.value;
         setSortOrder(newSort);
-        setCurrentPage(1); // Reset to first page when sorting changes
+        setCurrentPage(1);
         loadData(selectedType, 1, newSort);
     };
 
@@ -104,16 +96,16 @@ function HomeContent() {
         router.push(`/address/${query}`);
     };
 
-    // Handle pagination
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
         loadData(selectedType, newPage, sortOrder);
     };
 
-    // Load data when hydrated (localStorage loaded) or when network changes
+    // Load data when hydrated or network changes — always reset to page 1
     useEffect(() => {
         if (isHydrated) {
-            loadData();
+            setCurrentPage(1);
+            loadData(selectedType, 1, sortOrder);
         }
     }, [isHydrated, getNetworkParam]);
 
