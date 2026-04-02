@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Pagination from '@/components/Pagination';
 import { fetchTransactions } from '@/services/apiServices';
 import { useNetwork } from '@/context/NetworkContext';
@@ -12,15 +13,30 @@ import {
     getTransactionColors
 } from '@/services/transactions/transactionClassifier';
 
-export default function TransactionsPage() {
+function TransactionsContent() {
+    const router = useRouter();
+    const searchParams = useSearchParams();
     const { getNetworkParam, isHydrated } = useNetwork();
+    const initialPage = parseInt(searchParams.get('page') || '1', 10) || 1;
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const [page, setPage] = useState(1);
+    const [page, setPage] = useState(initialPage);
     const [totalPages, setTotalPages] = useState(1);
     const [total, setTotal] = useState(0);
     const ITEMS_PER_PAGE = 50;
+
+    const updateUrl = useCallback((p) => {
+        const params = new URLSearchParams();
+        if (p > 1) params.set('page', p.toString());
+        const qs = params.toString();
+        router.replace(`/transactions${qs ? '?' + qs : ''}`, { scroll: false });
+    }, [router]);
+
+    const handlePageChange = (newPage) => {
+        setPage(newPage);
+        updateUrl(newPage);
+    };
 
     const loadTransactions = useCallback(async () => {
         try {
@@ -204,11 +220,23 @@ export default function TransactionsPage() {
                             totalPages={totalPages}
                             totalItems={total}
                             itemsPerPage={ITEMS_PER_PAGE}
-                            onPageChange={setPage}
+                            onPageChange={handlePageChange}
                         />
                     </>
                 )}
             </div>
         </div>
+    );
+}
+
+export default function TransactionsPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex justify-center items-center py-20">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+            </div>
+        }>
+            <TransactionsContent />
+        </Suspense>
     );
 }

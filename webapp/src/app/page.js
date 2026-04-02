@@ -14,21 +14,31 @@ function HomeContent() {
     const searchParams = useSearchParams();
     const { getNetworkParam, isHydrated } = useNetwork();
     
-    // Read initial type from URL query params, default to 'nft'
+    // Read initial state from URL query params
     const initialType = searchParams.get('type') || 'nft';
+    const initialPage = parseInt(searchParams.get('page') || '1', 10) || 1;
+    const initialSort = searchParams.get('sort') || 'newest';
     const validTypes = ['nft', 'token', 'dapp'];
     const safeInitialType = validTypes.includes(initialType) ? initialType : 'nft';
-    
+
     const [assets, setAssets] = useState([]);
     const [counts, setCounts] = useState({ total: 0, nft: 0, token: 0, dapp: 0 });
     const [isLoading, setIsLoading] = useState(true);
-    const [currentPage, setCurrentPage] = useState(1);
+    const [currentPage, setCurrentPage] = useState(initialPage);
     const [totalPages, setTotalPages] = useState(1);
     const [searchQuery, setSearchQuery] = useState('');
-    const [sortOrder, setSortOrder] = useState('newest');
+    const [sortOrder, setSortOrder] = useState(initialSort);
     const [selectedType, setSelectedType] = useState(safeInitialType);
 
     const ITEMS_PER_PAGE = 12;
+
+    const updateUrl = useCallback((type, page, sort) => {
+        const params = new URLSearchParams();
+        params.set('type', type);
+        if (page > 1) params.set('page', page.toString());
+        if (sort !== 'newest') params.set('sort', sort);
+        router.replace(`/?${params.toString()}`, { scroll: false });
+    }, [router]);
 
     const loadData = useCallback(async (type, page, sort) => {
         try {
@@ -53,9 +63,7 @@ function HomeContent() {
     const handleTypeChange = (type) => {
         setSelectedType(type);
         setCurrentPage(1);
-        const params = new URLSearchParams(searchParams.toString());
-        params.set('type', type);
-        router.push(`/?${params.toString()}`, { scroll: false });
+        updateUrl(type, 1, sortOrder);
         loadData(type, 1, sortOrder);
     };
 
@@ -63,6 +71,7 @@ function HomeContent() {
         const newSort = event.target.value;
         setSortOrder(newSort);
         setCurrentPage(1);
+        updateUrl(selectedType, 1, newSort);
         loadData(selectedType, 1, newSort);
     };
 
@@ -98,6 +107,7 @@ function HomeContent() {
 
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
+        updateUrl(selectedType, newPage, sortOrder);
         loadData(selectedType, newPage, sortOrder);
     };
 
