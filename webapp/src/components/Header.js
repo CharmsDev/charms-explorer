@@ -3,10 +3,17 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { NetworkSelector, MobileMenu } from './header/index';
+import { useNetwork } from '@/context/NetworkContext';
 
 export default function Header() {
     const [isScrolled, setIsScrolled] = useState(false);
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+    const { getNetworkParam } = useNetwork();
+
+    const logoHref = () => {
+        const net = getNetworkParam();
+        return net !== 'all' ? `/?network=${net}` : '/';
+    };
 
     useEffect(() => {
         const handleScroll = () => {
@@ -27,7 +34,7 @@ export default function Header() {
                 <div className="grid grid-cols-3 items-center">
                     {/* Left section - Logo and site name */}
                     <div className="flex items-center space-x-3">
-                        <Link href="/">
+                        <Link href={logoHref()}>
                             <div className="flex items-center group">
                                 <div className={`relative transition-all duration-300 ${isScrolled ? 'scale-90' : 'scale-100'}`}>
                                     <img

@@ -59,13 +59,12 @@ export default function CastDexPage() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
 
-    const updateUrl = useCallback(() => {
+    const updateUrl = useCallback((net) => {
         const params = new URLSearchParams();
-        const net = getNetworkParam();
-        if (net !== 'all') params.set('network', net);
+        if (net && net !== 'all') params.set('network', net);
         const qs = params.toString();
         router.replace(`/cast-dex${qs ? '?' + qs : ''}`, { scroll: false });
-    }, [router, getNetworkParam]);
+    }, [router]);
 
     const loadCastTransactions = useCallback(async () => {
         try {
@@ -106,7 +105,7 @@ export default function CastDexPage() {
     useEffect(() => {
         if (isHydrated) {
             loadCastTransactions();
-            setTimeout(() => updateUrl(), 0);
+            updateUrl(getNetworkParam());
         }
     }, [isHydrated, getNetworkParam]);
 

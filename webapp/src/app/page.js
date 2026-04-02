@@ -31,15 +31,14 @@ function HomeContent() {
 
     const ITEMS_PER_PAGE = 12;
 
-    const updateUrl = useCallback((type, page, sort) => {
+    const updateUrl = useCallback((type, page, sort, net) => {
         const params = new URLSearchParams();
         params.set('type', type);
         if (page > 1) params.set('page', page.toString());
         if (sort !== 'newest') params.set('sort', sort);
-        const net = getNetworkParam();
-        if (net !== 'all') params.set('network', net);
+        if (net && net !== 'all') params.set('network', net);
         router.replace(`/?${params.toString()}`, { scroll: false });
-    }, [router, getNetworkParam]);
+    }, [router]);
 
     const loadData = useCallback(async (type, page, sort) => {
         try {
@@ -64,7 +63,8 @@ function HomeContent() {
     const handleTypeChange = (type) => {
         setSelectedType(type);
         setCurrentPage(1);
-        updateUrl(type, 1, sortOrder);
+        const net = getNetworkParam();
+        updateUrl(type, 1, sortOrder, net);
         loadData(type, 1, sortOrder);
     };
 
@@ -72,13 +72,15 @@ function HomeContent() {
         const newSort = event.target.value;
         setSortOrder(newSort);
         setCurrentPage(1);
-        updateUrl(selectedType, 1, newSort);
+        const net = getNetworkParam();
+        updateUrl(selectedType, 1, newSort, net);
         loadData(selectedType, 1, newSort);
     };
 
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
-        updateUrl(selectedType, newPage, sortOrder);
+        const net = getNetworkParam();
+        updateUrl(selectedType, newPage, sortOrder, net);
         loadData(selectedType, newPage, sortOrder);
     };
 
@@ -86,16 +88,16 @@ function HomeContent() {
     const initialLoadDone = useRef(false);
     useEffect(() => {
         if (!isHydrated) return;
+        const net = getNetworkParam();
         if (!initialLoadDone.current) {
-            // First load: use page from URL, sync URL to include all params
             initialLoadDone.current = true;
             loadData(selectedType, currentPage, sortOrder);
-            setTimeout(() => updateUrl(selectedType, currentPage, sortOrder), 0);
+            updateUrl(selectedType, currentPage, sortOrder, net);
         } else {
             // Network changed: reset to page 1
             setCurrentPage(1);
             loadData(selectedType, 1, sortOrder);
-            setTimeout(() => updateUrl(selectedType, 1, sortOrder), 0);
+            updateUrl(selectedType, 1, sortOrder, net);
         }
     }, [isHydrated, getNetworkParam]);
 

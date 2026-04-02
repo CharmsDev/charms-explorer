@@ -3,16 +3,23 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { useNetwork } from '@/context/NetworkContext';
 
 const TABS = [
-    { href: '/', label: 'Charms', key: 'charms' },
-    { href: '/transactions', label: 'Transactions', key: 'transactions' },
-    { href: '/cast-dex', label: 'Cast Dex', key: 'cast-dex' },
+    { base: '/', label: 'Charms', key: 'charms' },
+    { base: '/transactions', label: 'Transactions', key: 'transactions' },
+    { base: '/cast-dex', label: 'Cast Dex', key: 'cast-dex' },
 ];
 
 export default function SectionNav({ active, rightSlot }) {
     const router = useRouter();
+    const { getNetworkParam } = useNetwork();
     const [query, setQuery] = useState('');
+
+    const networkSuffix = () => {
+        const net = getNetworkParam();
+        return net !== 'all' ? `?network=${net}` : '';
+    };
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -33,7 +40,7 @@ export default function SectionNav({ active, rightSlot }) {
                         {TABS.map((tab) => (
                             <Link
                                 key={tab.key}
-                                href={tab.href}
+                                href={`${tab.base}${networkSuffix()}`}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                                     active === tab.key
                                         ? 'bg-primary-600 text-white'

@@ -27,18 +27,18 @@ function TransactionsContent() {
     const [total, setTotal] = useState(0);
     const ITEMS_PER_PAGE = 50;
 
-    const updateUrl = useCallback((p) => {
+    const updateUrl = useCallback((p, net) => {
         const params = new URLSearchParams();
         if (p > 1) params.set('page', p.toString());
-        const net = getNetworkParam();
-        if (net !== 'all') params.set('network', net);
+        if (net && net !== 'all') params.set('network', net);
         const qs = params.toString();
         router.replace(`/transactions${qs ? '?' + qs : ''}`, { scroll: false });
-    }, [router, getNetworkParam]);
+    }, [router]);
 
     const handlePageChange = (newPage) => {
         setPage(newPage);
-        updateUrl(newPage);
+        const net = getNetworkParam();
+        updateUrl(newPage, net);
         loadTransactions(newPage);
     };
 
@@ -89,15 +89,15 @@ function TransactionsContent() {
     const initialLoadDone = useRef(false);
     useEffect(() => {
         if (!isHydrated) return;
+        const net = getNetworkParam();
         if (!initialLoadDone.current) {
             initialLoadDone.current = true;
             loadTransactions(page);
-            setTimeout(() => updateUrl(page), 0);
+            updateUrl(page, net);
         } else {
-            // Network changed: reset to page 1
             setPage(1);
             loadTransactions(1);
-            setTimeout(() => updateUrl(1), 0);
+            updateUrl(1, net);
         }
     }, [isHydrated, getNetworkParam]);
 
