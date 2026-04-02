@@ -87,14 +87,14 @@ function HomeContent() {
     useEffect(() => {
         if (!isHydrated) return;
         if (!initialLoadDone.current) {
-            // First load: use page from URL
+            // First load: use page from URL, sync URL to include all params
             initialLoadDone.current = true;
             loadData(selectedType, currentPage, sortOrder);
+            setTimeout(() => updateUrl(selectedType, currentPage, sortOrder), 0);
         } else {
-            // Network changed: reset to page 1, update URL with new network
+            // Network changed: reset to page 1
             setCurrentPage(1);
             loadData(selectedType, 1, sortOrder);
-            // Delay updateUrl so getNetworkParam reflects new state
             setTimeout(() => updateUrl(selectedType, 1, sortOrder), 0);
         }
     }, [isHydrated, getNetworkParam]);

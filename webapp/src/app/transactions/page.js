@@ -39,14 +39,15 @@ function TransactionsContent() {
     const handlePageChange = (newPage) => {
         setPage(newPage);
         updateUrl(newPage);
+        loadTransactions(newPage);
     };
 
-    const loadTransactions = useCallback(async () => {
+    const loadTransactions = useCallback(async (p) => {
         try {
             setLoading(true);
             const networkParam = getNetworkParam();
             const apiNetworkParam = networkParam === 'all' ? null : networkParam;
-            const result = await fetchTransactions(page, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
+            const result = await fetchTransactions(p, ITEMS_PER_PAGE, 'newest', apiNetworkParam);
             setTransactions(result.transactions || []);
             setTotal(result.total || 0);
             setTotalPages(result.totalPages || 1);
@@ -56,7 +57,7 @@ function TransactionsContent() {
         } finally {
             setLoading(false);
         }
-    }, [page, getNetworkParam]);
+    }, [getNetworkParam]);
 
     // Silent refresh: fetch page 1 and prepend any new transactions
     const transactionsRef = useRef(transactions);
@@ -85,11 +86,20 @@ function TransactionsContent() {
     // Only auto-refresh when viewing page 1 (newest first)
     useAutoRefresh(silentRefresh, { enabled: isHydrated && !loading && page === 1 });
 
+    const initialLoadDone = useRef(false);
     useEffect(() => {
-        if (isHydrated) {
-            loadTransactions();
+        if (!isHydrated) return;
+        if (!initialLoadDone.current) {
+            initialLoadDone.current = true;
+            loadTransactions(page);
+            setTimeout(() => updateUrl(page), 0);
+        } else {
+            // Network changed: reset to page 1
+            setPage(1);
+            loadTransactions(1);
+            setTimeout(() => updateUrl(1), 0);
         }
-    }, [isHydrated, loadTransactions]);
+    }, [isHydrated, getNetworkParam]);
 
     const getMempoolUrl = (txid, network) => {
         return network === 'mainnet'
