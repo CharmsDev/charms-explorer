@@ -91,7 +91,7 @@ export default function ConfigModal({ isOpen, onClose }) {
                                             </svg>
                                             <div>
                                                 <span className="text-xs text-dark-400">Charms Version</span>
-                                                <span className="block text-sm font-semibold text-purple-400">Spell v10–v12</span>
+                                                <span className="block text-sm font-semibold text-purple-400">v12</span>
                                             </div>
                                         </div>
                                         <div className="flex items-start gap-3">
