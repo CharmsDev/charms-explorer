@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import SectionNav from '@/components/SectionNav';
 import { fetchAllDexOrders } from '@/services/api/dex';
@@ -53,18 +52,10 @@ const formatPrice = (order) => {
 };
 
 export default function CastDexPage() {
-    const router = useRouter();
     const { getNetworkParam, isHydrated } = useNetwork();
     const [transactions, setTransactions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-
-    const updateUrl = useCallback((net) => {
-        const params = new URLSearchParams();
-        if (net && net !== 'all') params.set('network', net);
-        const qs = params.toString();
-        router.replace(`/cast-dex${qs ? '?' + qs : ''}`, { scroll: false });
-    }, [router]);
 
     const loadCastTransactions = useCallback(async () => {
         try {
@@ -105,9 +96,8 @@ export default function CastDexPage() {
     useEffect(() => {
         if (isHydrated) {
             loadCastTransactions();
-            updateUrl(getNetworkParam());
         }
-    }, [isHydrated, getNetworkParam]);
+    }, [isHydrated, loadCastTransactions]);
 
     const getMempoolUrl = (txid, network) => {
         if (!txid) return null;

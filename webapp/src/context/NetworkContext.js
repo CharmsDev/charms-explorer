@@ -67,6 +67,19 @@ const networkParamToState = (param) => {
     }
 };
 
+// Sync network param into current URL without touching other params
+const syncNetworkToUrl = (networks) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    const net = computeNetworkParam(networks);
+    if (net !== 'all') {
+        url.searchParams.set('network', net);
+    } else {
+        url.searchParams.delete('network');
+    }
+    window.history.replaceState({}, '', url.toString());
+};
+
 export function NetworkProvider({ children, onNetworkChange }) {
     const [selectedNetworks, setSelectedNetworks] = useState(DEFAULT_NETWORKS);
     const [isHydrated, setIsHydrated] = useState(false);
@@ -76,12 +89,16 @@ export function NetworkProvider({ children, onNetworkChange }) {
         const urlParams = new URLSearchParams(window.location.search);
         const urlNetwork = urlParams.get('network');
         const fromUrl = urlNetwork ? networkParamToState(urlNetwork) : null;
+        let resolved;
         if (fromUrl) {
-            setSelectedNetworks(fromUrl);
+            resolved = fromUrl;
             saveToStorage(fromUrl);
         } else {
-            setSelectedNetworks(loadFromStorage());
+            resolved = loadFromStorage();
         }
+        setSelectedNetworks(resolved);
+        // Sync URL to reflect the resolved network (adds param if missing)
+        syncNetworkToUrl(resolved);
         setIsHydrated(true);
     }, []);
 
@@ -96,22 +113,23 @@ export function NetworkProvider({ children, onNetworkChange }) {
         if (network === 'cardanoMainnet' || network === 'cardanoPreprod') {
             return;
         }
-        
+
         setSelectedNetworks(prev => {
             const newNetworks = {
                 ...prev,
                 [network]: !prev[network]
             };
-            
-            // Save to localStorage
+
+            // Save to localStorage + sync URL
             saveToStorage(newNetworks);
-            
+            syncNetworkToUrl(newNetworks);
+
             // Notify callback if Bitcoin networks changed
             if ((network === 'bitcoinMainnet' || network === 'bitcoinTestnet4') && onNetworkChangeRef.current) {
                 const networkParam = computeNetworkParam(newNetworks);
                 onNetworkChangeRef.current(networkParam);
             }
-            
+
             return newNetworks;
         });
     }, []);

@@ -10,10 +10,8 @@ export default function Header() {
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
     const { getNetworkParam } = useNetwork();
 
-    const logoHref = () => {
-        const net = getNetworkParam();
-        return net !== 'all' ? `/?network=${net}` : '/';
-    };
+    const net = getNetworkParam();
+    const logoHref = net !== 'all' ? `/?network=${net}` : '/';
 
     useEffect(() => {
         const handleScroll = () => {
@@ -34,7 +32,7 @@ export default function Header() {
                 <div className="grid grid-cols-3 items-center">
                     {/* Left section - Logo and site name */}
                     <div className="flex items-center space-x-3">
-                        <Link href={logoHref()}>
+                        <Link href={logoHref}>
                             <div className="flex items-center group">
                                 <div className={`relative transition-all duration-300 ${isScrolled ? 'scale-90' : 'scale-100'}`}>
                                     <img

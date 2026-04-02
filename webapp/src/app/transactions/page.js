@@ -27,18 +27,16 @@ function TransactionsContent() {
     const [total, setTotal] = useState(0);
     const ITEMS_PER_PAGE = 50;
 
-    const updateUrl = useCallback((p, net) => {
-        const params = new URLSearchParams();
-        if (p > 1) params.set('page', p.toString());
-        if (net && net !== 'all') params.set('network', net);
-        const qs = params.toString();
-        router.replace(`/transactions${qs ? '?' + qs : ''}`, { scroll: false });
+    const updateUrl = useCallback((p) => {
+        const url = new URL(window.location.href);
+        if (p > 1) url.searchParams.set('page', p.toString());
+        else url.searchParams.delete('page');
+        router.replace(url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : ''), { scroll: false });
     }, [router]);
 
     const handlePageChange = (newPage) => {
         setPage(newPage);
-        const net = getNetworkParam();
-        updateUrl(newPage, net);
+        updateUrl(newPage);
         loadTransactions(newPage);
     };
 
@@ -89,15 +87,13 @@ function TransactionsContent() {
     const initialLoadDone = useRef(false);
     useEffect(() => {
         if (!isHydrated) return;
-        const net = getNetworkParam();
         if (!initialLoadDone.current) {
             initialLoadDone.current = true;
             loadTransactions(page);
-            updateUrl(page, net);
         } else {
             setPage(1);
             loadTransactions(1);
-            updateUrl(1, net);
+            updateUrl(1);
         }
     }, [isHydrated, getNetworkParam]);
 

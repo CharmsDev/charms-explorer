@@ -16,10 +16,8 @@ export default function SectionNav({ active, rightSlot }) {
     const { getNetworkParam } = useNetwork();
     const [query, setQuery] = useState('');
 
-    const networkSuffix = () => {
-        const net = getNetworkParam();
-        return net !== 'all' ? `?network=${net}` : '';
-    };
+    const net = getNetworkParam();
+    const networkSuffix = net !== 'all' ? `?network=${net}` : '';
 
     const handleSearch = (e) => {
         e.preventDefault();
@@ -40,7 +38,7 @@ export default function SectionNav({ active, rightSlot }) {
                         {TABS.map((tab) => (
                             <Link
                                 key={tab.key}
-                                href={`${tab.base}${networkSuffix()}`}
+                                href={`${tab.base}${networkSuffix}`}
                                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                                     active === tab.key
                                         ? 'bg-primary-600 text-white'
