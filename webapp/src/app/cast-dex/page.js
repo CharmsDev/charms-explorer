@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import SectionNav from '@/components/SectionNav';
 import { fetchAllDexOrders } from '@/services/api/dex';
 import { useNetwork } from '@/context/NetworkContext';
