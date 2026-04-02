@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
+import SectionNav from '@/components/SectionNav';
 import { fetchAllDexOrders } from '@/services/api/dex';
 import { useNetwork } from '@/context/NetworkContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
@@ -113,44 +113,10 @@ export default function CastDexPage() {
 
     return (
         <div className="min-h-screen">
-            {/* Navigation tabs */}
-            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
-                <div className="container mx-auto px-4 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                            <Link
-                                href="/"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
-                            >
-                                Charms
-                            </Link>
-                            <Link
-                                href="/transactions"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
-                            >
-                                Transactions
-                            </Link>
-                            <Link
-                                href="/cast-dex"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white transition-all"
-                            >
-                                Cast Dex
-                            </Link>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <span className="text-dark-400">
-                                <span className="text-primary-400 font-semibold">{transactions.length}</span> events
-                            </span>
-                            <span
-                                className="px-3 py-1.5 bg-dark-700/50 text-dark-500 rounded-lg text-sm font-medium cursor-default"
-                                title="Coming soon"
-                            >
-                                Order Book →
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <SectionNav
+                active="cast-dex"
+                rightSlot={<><span className="text-primary-400 font-semibold">{transactions.length}</span> events</>}
+            />
 
             {/* Activity Feed */}
             <div className="container mx-auto px-4 py-6">

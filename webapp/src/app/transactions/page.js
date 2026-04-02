@@ -1,9 +1,10 @@
 'use client';
 
 import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import Pagination from '@/components/Pagination';
+import SectionNav from '@/components/SectionNav';
 import { fetchTransactions } from '@/services/apiServices';
 import { useNetwork } from '@/context/NetworkContext';
 import { useAutoRefresh } from '@/hooks/useAutoRefresh';
@@ -102,36 +103,10 @@ function TransactionsContent() {
 
     return (
         <div className="min-h-screen">
-            {/* Navigation tabs */}
-            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
-                <div className="container mx-auto px-4 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-2">
-                            <Link 
-                                href="/"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
-                            >
-                                Charms
-                            </Link>
-                            <Link 
-                                href="/transactions"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white transition-all"
-                            >
-                                Transactions
-                            </Link>
-                            <Link
-                                href="/cast-dex"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
-                            >
-                                Cast Dex
-                            </Link>
-                        </div>
-                        <div className="text-dark-400">
-                            <span className="text-primary-400 font-semibold">{total.toLocaleString()}</span> transactions
-                        </div>
-                    </div>
-                </div>
-            </div>
+            <SectionNav
+                active="transactions"
+                rightSlot={<><span className="text-primary-400 font-semibold">{total.toLocaleString()}</span> transactions</>}
+            />
 
             {/* Transactions Table */}
             <div className="container mx-auto px-4 py-6">

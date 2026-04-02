@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import AssetGrid from '../components/AssetGrid';
 import Pagination from '../components/Pagination';
+import SectionNav from '../components/SectionNav';
 import { fetchAssetsByType, getAssetCounts } from '../services/api';
 import { useNetwork } from '../context/NetworkContext';
 
@@ -26,7 +26,6 @@ function HomeContent() {
     const [isLoading, setIsLoading] = useState(true);
     const [currentPage, setCurrentPage] = useState(initialPage);
     const [totalPages, setTotalPages] = useState(1);
-    const [searchQuery, setSearchQuery] = useState('');
     const [sortOrder, setSortOrder] = useState(initialSort);
     const [selectedType, setSelectedType] = useState(safeInitialType);
 
@@ -75,46 +74,24 @@ function HomeContent() {
         loadData(selectedType, 1, newSort);
     };
 
-    // Handle search
-    const handleSearch = (e) => {
-        e.preventDefault();
-        const query = searchQuery.trim();
-        if (!query) return;
-
-        // TXID: 64 hex characters
-        if (/^[a-fA-F0-9]{64}$/.test(query)) {
-            router.push(`/tx?txid=${query}`);
-            return;
-        }
-        // Bitcoin address
-        if (/^(bc1|tb1|1|3|m|n)[a-zA-Z0-9]{25,62}$/.test(query)) {
-            router.push(`/address/${query}`);
-            return;
-        }
-        // Charm ID (txid:vout)
-        if (/^[a-fA-F0-9]{64}:\d+$/.test(query)) {
-            router.push(`/tx?txid=${query.split(':')[0]}`);
-            return;
-        }
-        // App ID (t/..., n/..., b/...)
-        if (/^[tnb]\//.test(query)) {
-            router.push(`/asset/${encodeURIComponent(query)}`);
-            return;
-        }
-        // Default: try as address
-        router.push(`/address/${query}`);
-    };
-
     const handlePageChange = (newPage) => {
         setCurrentPage(newPage);
         updateUrl(selectedType, newPage, sortOrder);
         loadData(selectedType, newPage, sortOrder);
     };
 
-    // Load data when hydrated or network changes — always reset to page 1
+    // Load initial data on hydration, preserving page from URL
+    const initialLoadDone = useRef(false);
     useEffect(() => {
-        if (isHydrated) {
+        if (!isHydrated) return;
+        if (!initialLoadDone.current) {
+            // First load: use page from URL
+            initialLoadDone.current = true;
+            loadData(selectedType, currentPage, sortOrder);
+        } else {
+            // Network changed: reset to page 1
             setCurrentPage(1);
+            updateUrl(selectedType, 1, sortOrder);
             loadData(selectedType, 1, sortOrder);
         }
     }, [isHydrated, getNetworkParam]);
@@ -128,58 +105,7 @@ function HomeContent() {
 
     return (
         <div>
-            {/* Toolbar: Transactions, Cast Decks, Search */}
-            <div className="bg-dark-900/95 backdrop-blur-sm border-b border-dark-800 sticky top-16 z-40">
-                <div className="container mx-auto px-4 py-3">
-                    <div className="flex items-center justify-between gap-4">
-                        {/* Navigation tabs - left */}
-                        <div className="flex items-center gap-2">
-                            <Link 
-                                href="/"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-primary-600 text-white transition-all"
-                            >
-                                Charms
-                            </Link>
-                            <Link 
-                                href="/transactions"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
-                            >
-                                Transactions
-                            </Link>
-                            <Link
-                                href="/cast-dex"
-                                className="px-4 py-2 rounded-lg text-sm font-medium bg-dark-800 text-dark-300 hover:bg-dark-700 hover:text-white transition-all"
-                            >
-                                Cast Dex
-                            </Link>
-                        </div>
-
-                        {/* Search bar - right */}
-                        <form onSubmit={handleSearch} className="w-96">
-                            <div className="relative">
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="Search TXID, address, charm..."
-                                    className="w-full bg-dark-800 border border-dark-700 text-white rounded-lg py-2.5 px-4 pl-11 pr-20 focus:outline-none focus:border-primary-500 transition-all"
-                                />
-                                <div className="absolute left-4 top-1/2 -translate-y-1/2 text-dark-400">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                                    </svg>
-                                </div>
-                                <button
-                                    type="submit"
-                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-primary-600 hover:bg-primary-500 text-white text-sm font-medium rounded-md transition-colors"
-                                >
-                                    Search
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            </div>
+            <SectionNav active="charms" />
 
             {/* Filter tabs row: tabs left, count center-right, sort far right */}
             <div className="container mx-auto px-4 py-3">
