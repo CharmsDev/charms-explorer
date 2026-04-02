@@ -27,11 +27,17 @@ function TransactionsContent() {
     const [total, setTotal] = useState(0);
     const ITEMS_PER_PAGE = 50;
 
+    // Keep a ref to always have the latest network value
+    const networkRef = useRef('all');
+    useEffect(() => { networkRef.current = getNetworkParam(); }, [getNetworkParam]);
+
     const updateUrl = useCallback((p) => {
-        const url = new URL(window.location.href);
-        if (p > 1) url.searchParams.set('page', p.toString());
-        else url.searchParams.delete('page');
-        router.replace(url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : ''), { scroll: false });
+        const params = new URLSearchParams();
+        if (p > 1) params.set('page', p.toString());
+        const net = networkRef.current;
+        if (net !== 'all') params.set('network', net);
+        const qs = params.toString();
+        router.replace(`/transactions${qs ? '?' + qs : ''}`, { scroll: false });
     }, [router]);
 
     const handlePageChange = (newPage) => {
@@ -87,9 +93,11 @@ function TransactionsContent() {
     const initialLoadDone = useRef(false);
     useEffect(() => {
         if (!isHydrated) return;
+        networkRef.current = getNetworkParam();
         if (!initialLoadDone.current) {
             initialLoadDone.current = true;
             loadTransactions(page);
+            updateUrl(page);
         } else {
             setPage(1);
             loadTransactions(1);

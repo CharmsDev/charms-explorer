@@ -13,7 +13,7 @@ function HomeContent() {
     const router = useRouter();
     const searchParams = useSearchParams();
     const { getNetworkParam, isHydrated } = useNetwork();
-    
+
     // Read initial state from URL query params
     const initialType = searchParams.get('type') || 'nft';
     const initialPage = parseInt(searchParams.get('page') || '1', 10) || 1;
@@ -31,14 +31,21 @@ function HomeContent() {
 
     const ITEMS_PER_PAGE = 12;
 
+    // Keep a ref to always have the latest network value
+    const networkRef = useRef('all');
+    useEffect(() => { networkRef.current = getNetworkParam(); }, [getNetworkParam]);
+
+    const buildUrl = (type, page, sort, net) => {
+        const params = new URLSearchParams();
+        params.set('type', type);
+        if (page > 1) params.set('page', page.toString());
+        if (sort !== 'newest') params.set('sort', sort);
+        if (net !== 'all') params.set('network', net);
+        return '/?' + params.toString();
+    };
+
     const updateUrl = useCallback((type, page, sort) => {
-        const url = new URL(window.location.href);
-        url.searchParams.set('type', type);
-        if (page > 1) url.searchParams.set('page', page.toString());
-        else url.searchParams.delete('page');
-        if (sort !== 'newest') url.searchParams.set('sort', sort);
-        else url.searchParams.delete('sort');
-        router.replace(url.pathname + '?' + url.searchParams.toString(), { scroll: false });
+        router.replace(buildUrl(type, page, sort, networkRef.current), { scroll: false });
     }, [router]);
 
     const loadData = useCallback(async (type, page, sort) => {
@@ -86,6 +93,8 @@ function HomeContent() {
     const initialLoadDone = useRef(false);
     useEffect(() => {
         if (!isHydrated) return;
+        // Update ref immediately so updateUrl reads the hydrated value
+        networkRef.current = getNetworkParam();
         if (!initialLoadDone.current) {
             initialLoadDone.current = true;
             loadData(selectedType, currentPage, sortOrder);
