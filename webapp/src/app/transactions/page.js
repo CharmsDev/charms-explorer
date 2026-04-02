@@ -30,9 +30,11 @@ function TransactionsContent() {
     const updateUrl = useCallback((p) => {
         const params = new URLSearchParams();
         if (p > 1) params.set('page', p.toString());
+        const net = getNetworkParam();
+        if (net !== 'all') params.set('network', net);
         const qs = params.toString();
         router.replace(`/transactions${qs ? '?' + qs : ''}`, { scroll: false });
-    }, [router]);
+    }, [router, getNetworkParam]);
 
     const handlePageChange = (newPage) => {
         setPage(newPage);

@@ -55,14 +55,33 @@ const saveToStorage = (networks) => {
     }
 };
 
+// Convert a URL network param to network state
+const networkParamToState = (param) => {
+    switch (param) {
+        case 'mainnet':
+            return { ...DEFAULT_NETWORKS, bitcoinMainnet: true, bitcoinTestnet4: false };
+        case 'testnet4':
+            return { ...DEFAULT_NETWORKS, bitcoinMainnet: false, bitcoinTestnet4: true };
+        default:
+            return null; // 'all' or invalid — use stored/default
+    }
+};
+
 export function NetworkProvider({ children, onNetworkChange }) {
     const [selectedNetworks, setSelectedNetworks] = useState(DEFAULT_NETWORKS);
     const [isHydrated, setIsHydrated] = useState(false);
 
-    // Hydrate from localStorage on mount (client-side only)
+    // Hydrate: URL ?network= overrides localStorage
     useEffect(() => {
-        const stored = loadFromStorage();
-        setSelectedNetworks(stored);
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlNetwork = urlParams.get('network');
+        const fromUrl = urlNetwork ? networkParamToState(urlNetwork) : null;
+        if (fromUrl) {
+            setSelectedNetworks(fromUrl);
+            saveToStorage(fromUrl);
+        } else {
+            setSelectedNetworks(loadFromStorage());
+        }
         setIsHydrated(true);
     }, []);
 

@@ -36,8 +36,10 @@ function HomeContent() {
         params.set('type', type);
         if (page > 1) params.set('page', page.toString());
         if (sort !== 'newest') params.set('sort', sort);
+        const net = getNetworkParam();
+        if (net !== 'all') params.set('network', net);
         router.replace(`/?${params.toString()}`, { scroll: false });
-    }, [router]);
+    }, [router, getNetworkParam]);
 
     const loadData = useCallback(async (type, page, sort) => {
         try {
@@ -89,10 +91,11 @@ function HomeContent() {
             initialLoadDone.current = true;
             loadData(selectedType, currentPage, sortOrder);
         } else {
-            // Network changed: reset to page 1
+            // Network changed: reset to page 1, update URL with new network
             setCurrentPage(1);
-            updateUrl(selectedType, 1, sortOrder);
             loadData(selectedType, 1, sortOrder);
+            // Delay updateUrl so getNetworkParam reflects new state
+            setTimeout(() => updateUrl(selectedType, 1, sortOrder), 0);
         }
     }, [isHydrated, getNetworkParam]);
 
