@@ -181,7 +181,7 @@ export const TRANSACTION_METADATA = {
     bgClass: "bg-cyan-500/20",
     textClass: "text-cyan-400",
     borderClass: "border-cyan-500/30",
-    description: "Cross-address token transfer via beaming",
+    description: "Token transfer via hash-locked beaming (recipient claims with preimage)",
   },
   [TRANSACTION_TYPES.SPELL]: {
     label: "Spell",

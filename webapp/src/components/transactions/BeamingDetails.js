@@ -2,21 +2,20 @@
 
 /**
  * Beaming Details Component
- * Displays detailed information about Beaming transactions (cross-address token transfers).
- * 
- * Beaming txs transfer tokens from one address to another via the `beamed_outs` field
- * in the spell data. Each beamed_out maps an output index to a destination commitment hash.
+ * Displays detailed information about Beaming transactions (hash-locked token transfers).
  *
- * [RJJ-BEAMING] This component handles the "beam" direction (sending tokens).
+ * Beaming is a mechanism for transferring tokens between addresses without revealing
+ * the recipient upfront. The sender locks tokens to a commitment hash. The recipient
+ * later claims them by providing the matching preimage in an "unbeam" transaction.
+ *
+ * Flow: Sender → Lock tokens to hash → Recipient provides preimage → Tokens released
+ *
+ * [RJJ-BEAMING] This component handles the "beam" direction (sending/locking tokens).
  * TODO: [RJJ-UNBEAM] In the future, "unbeam" transactions will reverse this process.
- *       Unbeam txs will likely have a different spell structure (e.g., `unbeamed_ins`).
- *       When implementing unbeam, consider:
- *       - Adding an UnbeamDetails component or extending this one with a `direction` prop
- *       - Showing the source commitment hash being redeemed
- *       - Displaying the receiving address and claimed amount
  */
 
 const TOKEN_DECIMALS = 8;
+const VERIFIED_BRO_HASH = '3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b';
 
 const formatTokenAmount = (rawAmount) => {
     if (rawAmount === undefined || rawAmount === null) return '-';
@@ -27,10 +26,25 @@ const formatTokenAmount = (rawAmount) => {
     });
 };
 
-const shortenHash = (hash, chars = 8) => {
-    if (!hash || hash.length <= chars * 2 + 3) return hash || '-';
-    return `${hash.substring(0, chars)}...${hash.substring(hash.length - chars)}`;
-};
+/**
+ * Detect which token is being beamed from app_public_inputs keys.
+ * Returns { name, appId } or null.
+ */
+function detectBeamedToken(nativeData) {
+    const appInputs = nativeData?.app_public_inputs;
+    if (!appInputs) return null;
+
+    for (const key of Object.keys(appInputs)) {
+        if (key.startsWith('t/')) {
+            // Check if this is BRO
+            if (key.includes(VERIFIED_BRO_HASH)) {
+                return { name: 'BRO', appId: key };
+            }
+            return { name: 'Token', appId: key };
+        }
+    }
+    return null;
+}
 
 /**
  * Extract beaming details from charm/spell data.
@@ -46,18 +60,21 @@ function extractBeamingData(charm) {
 
     // Parse outputs: each entry in `outs` is { "asset_index": amount }
     const outs = tx.outs || [];
-    
+
     // Parse coins: BTC outputs with {amount, dest} for address info
     const coins = tx.coins || [];
 
     // Parse inputs
     const ins = tx.ins || [];
 
+    // Detect which token is being beamed
+    const token = detectBeamedToken(nativeData);
+
     // Build beaming entries
     const beamEntries = Object.entries(beamedOuts).map(([outIndex, destHash]) => {
         const idx = parseInt(outIndex);
         const outData = outs[idx];
-        
+
         // Extract token amounts from the output (format: {"0": amount})
         let tokenAmounts = [];
         if (outData && typeof outData === 'object') {
@@ -69,7 +86,7 @@ function extractBeamingData(charm) {
 
         // Get the corresponding coin (BTC output) for address info
         const coin = coins[idx];
-        
+
         return {
             outputIndex: idx,
             destinationHash: destHash,
@@ -78,11 +95,21 @@ function extractBeamingData(charm) {
         };
     });
 
+    // Calculate total tokens being beamed
+    let totalTokens = 0;
+    for (const entry of beamEntries) {
+        for (const ta of entry.tokenAmounts) {
+            totalTokens += ta.amount;
+        }
+    }
+
     return {
         beamEntries,
         inputs: ins,
         totalOutputs: outs.length,
-        version: nativeData.version
+        version: nativeData.version,
+        token,
+        totalTokens,
     };
 }
 
@@ -90,18 +117,46 @@ export default function BeamingDetails({ charm, copyToClipboard }) {
     const beamingData = extractBeamingData(charm);
     if (!beamingData) return null;
 
-    const { beamEntries, inputs } = beamingData;
+    const { beamEntries, inputs, token, totalTokens } = beamingData;
+    const tokenLabel = token?.name || 'tokens';
 
     return (
         <div className="bg-dark-800/50 rounded-lg p-4 border border-cyan-500/30">
-            <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2">
                 <span>📡</span>
                 <span>Beaming Details</span>
-                {/* TODO: [RJJ-UNBEAM] Show direction indicator: "Beam Out" vs "Unbeam In" */}
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 ml-2">
                     Beam Out
                 </span>
             </h3>
+
+            {/* Summary: what's being beamed */}
+            <div className="mb-4 bg-dark-900/50 rounded-lg p-3 border border-dark-700/50">
+                <p className="text-sm text-dark-300">
+                    <span className="text-cyan-400 font-semibold">{formatTokenAmount(totalTokens)} {tokenLabel}</span>
+                    {' '}locked to {beamEntries.length === 1 ? 'a commitment hash' : `${beamEntries.length} commitment hashes`}.
+                    The recipient claims the tokens by revealing the matching preimage in an unbeam transaction.
+                </p>
+            </div>
+
+            {/* Flow diagram */}
+            <div className="mb-4 flex items-center gap-3 text-xs text-dark-400">
+                <span className="bg-dark-900/50 rounded px-2 py-1 border border-dark-700/50">
+                    Sender UTXO
+                </span>
+                <span className="text-cyan-500">→</span>
+                <span className="bg-cyan-900/30 rounded px-2 py-1 border border-cyan-500/30 text-cyan-400">
+                    Lock {formatTokenAmount(totalTokens)} {tokenLabel}
+                </span>
+                <span className="text-cyan-500">→</span>
+                <span className="bg-dark-900/50 rounded px-2 py-1 border border-dark-700/50">
+                    Hash commitment
+                </span>
+                <span className="text-dark-500">→</span>
+                <span className="bg-dark-900/50 rounded px-2 py-1 border border-dark-700/50 opacity-50">
+                    Unbeam (recipient)
+                </span>
+            </div>
 
             {/* Source Input */}
             {inputs.length > 0 && (
@@ -147,7 +202,7 @@ export default function BeamingDetails({ charm, copyToClipboard }) {
                                     {entry.tokenAmounts.map((ta, taIdx) => (
                                         <p key={taIdx} className="text-cyan-400 font-mono text-sm font-semibold">
                                             {formatTokenAmount(ta.amount)}
-                                            <span className="text-dark-400 text-xs ml-1">tokens</span>
+                                            <span className="text-dark-400 text-xs ml-1">{tokenLabel}</span>
                                         </p>
                                     ))}
                                     {entry.btcAmount && (
@@ -181,15 +236,6 @@ export default function BeamingDetails({ charm, copyToClipboard }) {
                         </div>
                     ))}
                 </div>
-            </div>
-
-            {/* Info note */}
-            <div className="mt-4 pt-3 border-t border-dark-700/50">
-                <p className="text-xs text-dark-500 italic">
-                    Beaming transfers tokens to a destination commitment hash. The recipient 
-                    can claim the tokens by providing the matching preimage in an unbeam transaction.
-                </p>
-                {/* TODO: [RJJ-UNBEAM] Add link to the corresponding unbeam tx if known */}
             </div>
         </div>
     );
