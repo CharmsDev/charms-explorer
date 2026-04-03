@@ -485,58 +485,121 @@ function TransactionPageContent() {
                                 </div>
                             </div>
                         ) : (() => {
-                            // Use assets[] from API if available (has address, amount, symbol)
                             const assets = charm.assets || [];
                             const tokenInfo = extractTokenFromSpell(charm.spell || charm.data);
+                            const tags = (charm.tags || '').split(',').map(t => t.trim()).filter(Boolean);
+                            const isBeaming = tags.includes('beaming') || tags.includes('beam-in');
 
-                            // If we have assets from the API, show token transfer details
+                            // Classify assets by role using spell outs data
+                            const nativeData = charm.data?.native_data || charm.charm?.native_data || charm.data;
+                            const appKeys = nativeData?.app_public_inputs ? Object.keys(nativeData.app_public_inputs) : [];
+                            const spellOuts = nativeData?.tx?.outs || [];
+
+                            const classifyAsset = (asset) => {
+                                if (asset.asset_type === 'token' && asset.amount > 0) return 'output';
+                                if (asset.app_id?.startsWith('c/')) return 'contract';
+                                // Check spell outs: if the asset's vout has a null value, it's consumed
+                                const outEntry = spellOuts[asset.vout];
+                                if (outEntry) {
+                                    const values = Object.values(outEntry);
+                                    if (values.length > 0 && values.every(v => v === null)) return 'input';
+                                }
+                                if (asset.amount === 0 && !asset.name) return 'contract';
+                                return 'output';
+                            };
+
+                            const getAssetIcon = (asset) => {
+                                if (asset.app_id?.includes(VERIFIED_BRO_HASH)) return '🟠';
+                                if (asset.asset_type === 'token') return '🪙';
+                                if (asset.app_id?.startsWith('c/')) return '📜';
+                                return '⚡';
+                            };
+
+                            const getRoleBadge = (role) => {
+                                switch (role) {
+                                    case 'output': return { label: 'Output', cls: 'bg-green-500/20 text-green-400 border-green-500/30' };
+                                    case 'input': return { label: 'Input', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
+                                    case 'contract': return { label: 'Contract', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
+                                    default: return { label: role, cls: 'bg-dark-700 text-dark-300 border-dark-600' };
+                                }
+                            };
+
                             if (assets.length > 0) {
-                                const firstAsset = assets[0];
-                                const isBro = firstAsset.app_id?.includes(VERIFIED_BRO_HASH);
-                                const decimals = 8; // BRO uses 8 decimals (1 BRO = 10^8 raw units)
-                                const symbol = firstAsset.symbol || (isBro ? 'BRO' : null);
-                                const name = firstAsset.name || (isBro ? '$BRO Token' : 'Token');
-                                const icon = isBro ? '🟠' : '🪙';
-
                                 return (
                                     <div className="card p-6">
-                                        <h2 className="text-lg font-semibold text-white mb-4">Token Outputs</h2>
+                                        <h2 className="text-lg font-semibold text-white mb-4">Assets ({assets.length})</h2>
 
-                                        {/* Token identity */}
-                                        <div className="flex items-center gap-3 mb-4 pb-3 border-b border-dark-800/50">
-                                            <span className="text-2xl">{icon}</span>
-                                            <div>
-                                                <div className="text-white font-semibold">{name}</div>
-                                                {symbol && <div className="text-dark-400 text-xs">{symbol}</div>}
+                                        {/* Beaming source chain badge */}
+                                        {isBeaming && (
+                                            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
+                                                <span className="text-sm">🌉</span>
+                                                <span className="text-cyan-400 text-xs font-medium">Beamed from Cardano</span>
                                             </div>
+                                        )}
+
+                                        <div className="space-y-3">
+                                            {assets.map((asset, idx) => {
+                                                const role = classifyAsset(asset);
+                                                const badge = getRoleBadge(role);
+                                                const icon = getAssetIcon(asset);
+                                                const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
+                                                const decimals = 8;
+                                                const displayName = asset.name || (isBro ? 'Bro' : asset.app_id?.startsWith('c/') ? 'Contract' : 'Unknown');
+                                                const displaySymbol = asset.symbol || (isBro ? 'BRO' : null);
+
+                                                return (
+                                                    <div key={idx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
+                                                        {/* Header: icon + name + role badge */}
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-lg">{icon}</span>
+                                                                <div>
+                                                                    <span className="text-white text-sm font-medium">{displayName}</span>
+                                                                    {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
+                                                                <span className="text-dark-500 text-xs font-mono">vout:{asset.vout}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Amount (only for tokens with amount > 0) */}
+                                                        {asset.asset_type === 'token' && asset.amount > 0 && (
+                                                            <div className="flex justify-between items-center mb-1.5">
+                                                                <span className="text-dark-400 text-xs">Amount</span>
+                                                                <span className="text-white font-mono text-sm">
+                                                                    {(asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })}
+                                                                    {displaySymbol && <span className="text-dark-400 ml-1 text-xs">{displaySymbol}</span>}
+                                                                </span>
+                                                            </div>
+                                                        )}
+
+                                                        {/* Address */}
+                                                        {asset.address && (
+                                                            <div className="text-dark-300 font-mono text-xs break-all mt-1">
+                                                                {asset.address}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Type badge */}
+                                                        <div className="flex items-center gap-2 mt-1.5">
+                                                            <span className="text-dark-500 text-xs">{asset.asset_type}</span>
+                                                            {asset.verified && <span className="text-green-500 text-xs">✓ verified</span>}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
 
-                                        {/* Each output */}
-                                        <div className="space-y-3">
-                                            {assets.map((asset, idx) => (
-                                                <div key={idx} className="bg-dark-900/50 rounded-lg p-3">
-                                                    <div className="flex justify-between items-center mb-1">
-                                                        <span className="text-dark-400 text-xs">Output #{asset.vout}</span>
-                                                        <span className="text-white font-mono text-sm">
-                                                            {(asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 9 })}
-                                                            {symbol && <span className="text-dark-400 ml-1">{symbol}</span>}
-                                                        </span>
-                                                    </div>
-                                                    {asset.address && (
-                                                        <div className="text-dark-300 font-mono text-xs break-all">
-                                                            {asset.address}
-                                                        </div>
-                                                    )}
+                                        {/* App IDs */}
+                                        <div className="mt-4 pt-3 border-t border-dark-800/50 space-y-2">
+                                            {assets.filter(a => a.asset_type === 'token' && a.amount > 0).map((asset, idx) => (
+                                                <div key={idx}>
+                                                    <div className="text-dark-400 text-xs mb-0.5">App ID</div>
+                                                    <div className="text-dark-300 font-mono text-xs break-all">{asset.app_id}</div>
                                                 </div>
                                             ))}
-                                        </div>
-
-                                        {/* App ID */}
-                                        <div className="mt-4 pt-3 border-t border-dark-800/50">
-                                            <div className="text-dark-400 text-xs mb-1">App ID</div>
-                                            <div className="text-dark-300 font-mono text-xs break-all">
-                                                {firstAsset.app_id}
-                                            </div>
                                         </div>
                                     </div>
                                 );
