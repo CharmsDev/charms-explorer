@@ -201,3 +201,25 @@ async fn fetch_total_supply(
     let asset = data.first()?;
     asset.get("total_supply")?.as_str()?.parse().ok()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn print_cardano_ids() {
+        let tokens = [
+            ("BRO", "t/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b/c975d4e0c292fb95efbda5c13312d6ac1d8b5aeff7f0f1e5578645a2da70ff5f"),
+            ("eBTC", "t/0796f63ed48144b4ec69fb794fbc2290ae63acf945fb035d5474648b50ee43b6/fd0cac892e457454be0212fa7d9a0e1517d5bd6a33aa7c66a1f10f55e375c290"),
+        ];
+        for (name, app_id) in tokens {
+            let app: charms_data::App = app_id.parse().expect("parse");
+            let (pid, aname) = derive_cardano_ids(&app);
+            let fp = compute_fingerprint(&pid, &aname);
+            println!("\n=== {} ===", name);
+            println!("policy_id: {}", pid);
+            println!("asset_name: {}", aname);
+            println!("fingerprint: {}", fp);
+        }
+    }
+}
