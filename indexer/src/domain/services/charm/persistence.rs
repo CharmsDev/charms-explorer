@@ -101,6 +101,9 @@ impl<'a> CharmPersistence<'a> {
             Option<String>, // description
             Option<String>, // image_url
             Option<u8>,     // decimals
+            Option<String>, // cardano_policy_id
+            Option<String>, // cardano_asset_name
+            Option<String>, // cardano_fingerprint
         )>,
     ) -> Result<(), CharmError> {
         if batch.is_empty() {
@@ -135,6 +138,9 @@ impl<'a> CharmPersistence<'a> {
                     description,
                     image_url,
                     decimals,
+                    cardano_policy_id,
+                    cardano_asset_name,
+                    cardano_fingerprint,
                 )| {
                     // Build data JSON with supply and metadata
                     let mut data = serde_json::json!({"supply": supply});
@@ -152,6 +158,15 @@ impl<'a> CharmPersistence<'a> {
                     }
                     if let Some(dec) = decimals {
                         data["decimals"] = serde_json::json!(dec);
+                    }
+                    if let Some(pid) = cardano_policy_id {
+                        data["cardano_policy_id"] = serde_json::json!(pid);
+                    }
+                    if let Some(aname) = cardano_asset_name {
+                        data["cardano_asset_name"] = serde_json::json!(aname);
+                    }
+                    if let Some(fp) = cardano_fingerprint {
+                        data["cardano_fingerprint"] = serde_json::json!(fp);
                     }
 
                     (

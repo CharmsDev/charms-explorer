@@ -73,6 +73,9 @@ impl AssetRepository {
                     total_supply: Set(Some(Decimal::from(amount))),
                     decimals: Set(8),
                     is_reference_nft: Set(false),
+                    cardano_policy_id: Set(None),
+                    cardano_asset_name: Set(None),
+                    cardano_fingerprint: Set(None),
                     created_at: Set(Utc::now().into()),
                     updated_at: Set(Utc::now().into()),
                 };

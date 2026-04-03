@@ -938,8 +938,10 @@ version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bech32 0.11.0",
  "bitcoin 0.32.8",
  "bitcoincore-rpc",
+ "blake2",
  "charms-client",
  "charms-data",
  "chrono",

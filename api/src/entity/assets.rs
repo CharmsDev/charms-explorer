@@ -26,6 +26,9 @@ pub struct Model {
     pub total_supply: Option<Decimal>,
     pub decimals: i16, // [RJJ-DECIMALS] Dynamic decimal precision (default: 8)
     pub is_reference_nft: bool, // True if this NFT is a reference for tokens (should be hidden from NFT list)
+    pub cardano_policy_id: Option<String>,
+    pub cardano_asset_name: Option<String>,
+    pub cardano_fingerprint: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

@@ -232,23 +232,23 @@ async fn build_asset_requests(
         parse_metadata_fields(&metadata);
 
     // Enrich beaming assets with Cardano token metadata
-    if analyzed.is_beaming && name.is_none() {
+    let mut cardano_policy_id: Option<String> = None;
+    let mut cardano_asset_name: Option<String> = None;
+    let mut cardano_fingerprint: Option<String> = None;
+
+    if analyzed.is_beaming {
         if let Some(cardano_meta) = fetch_cardano_metadata_for_beaming(analyzed).await {
-            if name.is_none() {
-                name = cardano_meta.name;
-            }
-            if symbol.is_none() {
-                symbol = cardano_meta.symbol;
-            }
-            if description.is_none() {
-                description = cardano_meta.description;
-            }
-            if image_url.is_none() {
-                image_url = cardano_meta.image_url;
-            }
-            if decimals.is_none() {
-                decimals = cardano_meta.decimals;
-            }
+            // Always store Cardano IDs for beaming transactions
+            cardano_policy_id = Some(cardano_meta.policy_id);
+            cardano_asset_name = Some(cardano_meta.asset_name_hex);
+            cardano_fingerprint = Some(cardano_meta.fingerprint);
+
+            // Fill metadata gaps from Cardano (don't overwrite existing)
+            if name.is_none() { name = cardano_meta.name; }
+            if symbol.is_none() { symbol = cardano_meta.symbol; }
+            if description.is_none() { description = cardano_meta.description; }
+            if image_url.is_none() { image_url = cardano_meta.image_url; }
+            if decimals.is_none() { decimals = cardano_meta.decimals; }
         }
     }
 
@@ -282,6 +282,9 @@ async fn build_asset_requests(
                 if use_metadata { description.clone() } else { None },
                 if use_metadata { image_url.clone() } else { None },
                 if use_metadata { decimals } else { None },
+                cardano_policy_id.clone(),
+                cardano_asset_name.clone(),
+                cardano_fingerprint.clone(),
             ))
         })
         .collect()
@@ -294,14 +297,8 @@ async fn fetch_cardano_metadata_for_beaming(
 ) -> Option<crate::infrastructure::cardano::metadata::CardanoTokenMetadata> {
     use crate::infrastructure::cardano::metadata;
 
-    let api_key = std::env::var("CARDANOSCAN_API_KEY").ok()?;
-    if api_key.is_empty() {
-        return None;
-    }
-
-    // Use the primary app_id to derive Cardano IDs
     let app: charms_data::App = analyzed.app_id.parse().ok()?;
-    metadata::fetch_metadata(&app, &api_key).await
+    metadata::fetch_metadata(&app).await
 }
 
 fn normalize_app_id(app_id: &str, asset_type: &str) -> String {

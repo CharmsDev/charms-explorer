@@ -188,11 +188,21 @@ pub struct TransactionAsset {
     pub app_id: String,
     pub name: Option<String>,
     pub symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_url: Option<String>,
     pub amount: i64,
     pub asset_type: String,
     pub vout: i32,
     pub address: Option<String>,
     pub verified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_policy_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_asset_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_fingerprint: Option<String>,
 }
 
 /// Transaction data structure for API responses

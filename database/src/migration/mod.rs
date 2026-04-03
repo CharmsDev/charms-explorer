@@ -13,6 +13,7 @@ mod m20250619_000001_create_likes_table;
 mod m20250916_000001_create_assets_table;
 mod m20250919_101700_add_address_to_charms;
 mod m20260218_000001_create_address_utxos_table;
+mod m20260402_000001_add_cardano_fields_to_assets;
 
 pub struct Migrator;
 
@@ -33,6 +34,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20250204_000001_add_amount_to_charms::Migration),
             Box::new(m20250204_000002_add_decimals_to_assets::Migration),
             Box::new(m20260218_000001_create_address_utxos_table::Migration),
+            Box::new(m20260402_000001_add_cardano_fields_to_assets::Migration),
         ]
     }
 }

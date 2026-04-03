@@ -229,4 +229,7 @@ pub type AssetBatchItem = (
     Option<String>, // description
     Option<String>, // image_url
     Option<u8>,     // decimals
+    Option<String>, // cardano_policy_id
+    Option<String>, // cardano_asset_name
+    Option<String>, // cardano_fingerprint
 );

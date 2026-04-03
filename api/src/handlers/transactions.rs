@@ -83,11 +83,16 @@ pub async fn get_transaction_by_txid(
                         app_id: charm.app_id.clone(),
                         name: meta.and_then(|m| m.name.clone()),
                         symbol: meta.and_then(|m| m.symbol.clone()),
+                        description: meta.and_then(|m| m.description.clone()),
+                        image_url: meta.and_then(|m| m.image_url.clone()),
                         amount: charm.amount,
                         asset_type: charm.asset_type.clone(),
                         vout: charm.vout,
                         address: charm.address.clone(),
                         verified: charm.verified,
+                        cardano_policy_id: meta.and_then(|m| m.cardano_policy_id.clone()),
+                        cardano_asset_name: meta.and_then(|m| m.cardano_asset_name.clone()),
+                        cardano_fingerprint: meta.and_then(|m| m.cardano_fingerprint.clone()),
                     }
                 })
                 .collect();

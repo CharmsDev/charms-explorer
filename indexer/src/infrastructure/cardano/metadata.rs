@@ -2,6 +2,9 @@
 //! Reads CIP-68 inline datum from the reference NFT to extract name, symbol, image, decimals.
 
 use crate::utils::logging;
+use blake2::digest::{Update, VariableOutput};
+use blake2::Blake2bVar;
+use bech32::{Bech32, Hrp};
 use charms_client::cardano_tx;
 use charms_data::App;
 use cml_core::serialization::RawBytesEncoding;
@@ -21,6 +24,19 @@ pub struct CardanoTokenMetadata {
     pub total_supply: Option<u64>,
     pub policy_id: String,
     pub asset_name_hex: String,
+    pub fingerprint: String,
+}
+
+/// Compute CIP-14 asset fingerprint: bech32("asset", blake2b_160(policy_id || asset_name))
+pub fn compute_fingerprint(policy_id_hex: &str, asset_name_hex: &str) -> String {
+    let combined = hex::decode(format!("{}{}", policy_id_hex, asset_name_hex))
+        .unwrap_or_default();
+    let mut hasher = Blake2bVar::new(20).expect("valid output size");
+    hasher.update(&combined);
+    let mut hash = [0u8; 20];
+    hasher.finalize_variable(&mut hash).expect("correct length");
+    let hrp = Hrp::parse("asset").expect("valid hrp");
+    bech32::encode::<Bech32>(hrp, &hash).expect("valid bech32")
 }
 
 /// Derive Cardano policy_id and asset_name from a charms App struct.
@@ -30,8 +46,8 @@ pub fn derive_cardano_ids(app: &App) -> (String, String) {
     (hex::encode(pid.to_raw_bytes()), hex::encode(aname.to_raw_bytes()))
 }
 
-/// Fetch metadata for a Cardano token. No API key needed (uses Koios).
-pub async fn fetch_metadata(app: &App, _api_key: &str) -> Option<CardanoTokenMetadata> {
+/// Fetch metadata for a Cardano token. Uses Koios (free, no API key).
+pub async fn fetch_metadata(app: &App) -> Option<CardanoTokenMetadata> {
     let (policy_id_hex, asset_name_hex) = derive_cardano_ids(app);
     let cache_key = format!("{}{}", policy_id_hex, asset_name_hex);
 
@@ -149,6 +165,8 @@ async fn fetch_cip68_metadata(
         name, symbol, decimals, total_supply
     ));
 
+    let fingerprint = compute_fingerprint(policy_id_hex, asset_name_hex);
+
     Some(CardanoTokenMetadata {
         name,
         symbol,
@@ -158,6 +176,7 @@ async fn fetch_cip68_metadata(
         total_supply,
         policy_id: policy_id_hex.to_string(),
         asset_name_hex: asset_name_hex.to_string(),
+        fingerprint,
     })
 }
 

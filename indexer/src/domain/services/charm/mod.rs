@@ -147,6 +147,9 @@ impl CharmService {
             Option<String>, // description
             Option<String>, // image_url
             Option<u8>,     // decimals
+            Option<String>, // cardano_policy_id
+            Option<String>, // cardano_asset_name
+            Option<String>, // cardano_fingerprint
         )>,
     ) -> Result<(), CharmError> {
         let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);

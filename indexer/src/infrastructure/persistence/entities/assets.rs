@@ -30,6 +30,9 @@ pub struct Model {
     pub decimals: i16,
     /// True if this NFT is a reference NFT for a token (should be hidden from NFT list)
     pub is_reference_nft: bool,
+    pub cardano_policy_id: Option<String>,
+    pub cardano_asset_name: Option<String>,
+    pub cardano_fingerprint: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

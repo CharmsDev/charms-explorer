@@ -11,6 +11,14 @@ use crate::domain::models::Asset;
 use crate::infrastructure::persistence::entities::{assets, charms, prelude::*};
 use crate::infrastructure::persistence::error::DbError;
 
+/// Extract Cardano fields from data JSON
+fn extract_cardano_fields(data: &serde_json::Value) -> (Option<String>, Option<String>, Option<String>) {
+    let policy_id = data.get("cardano_policy_id").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let asset_name = data.get("cardano_asset_name").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let fingerprint = data.get("cardano_fingerprint").and_then(|v| v.as_str()).map(|s| s.to_string());
+    (policy_id, asset_name, fingerprint)
+}
+
 /// [RJJ-SUPPLY] Save or update asset with correct supply logic
 /// [RJJ-DECIMALS] Extract and store decimals from NFT metadata
 ///
@@ -67,7 +75,10 @@ pub async fn save_or_update_asset(
                     image_url: Set(metadata.image_url),
                     total_supply: Set(Some(Decimal::ZERO)), // NFT supply starts at 0
                     decimals: Set(metadata.decimals as i16), // [RJJ-DECIMALS]
-                    is_reference_nft: Set(false), // Will be set to true when a token is found
+                    is_reference_nft: Set(false),
+                    cardano_policy_id: Set(extract_cardano_fields(&asset.data).0),
+                    cardano_asset_name: Set(extract_cardano_fields(&asset.data).1),
+                    cardano_fingerprint: Set(extract_cardano_fields(&asset.data).2),
                     created_at: Set(Utc::now().into()),
                     updated_at: Set(Utc::now().into()),
                 };
@@ -183,10 +194,13 @@ pub async fn save_or_update_asset(
                         name: Set(name),               // Inherit from parent NFT
                         symbol: Set(symbol),           // Inherit from parent NFT
                         description: Set(description), // Inherit from parent NFT
-                        image_url: Set(None), // NOT inherited - fetch from reference NFT on demand
+                        image_url: Set(asset.data.get("image_url").and_then(|v| v.as_str()).map(|s| s.to_string())),
                         total_supply: Set(Some(Decimal::from(amount))),
-                        decimals: Set(decimals), // [RJJ-DECIMALS] Use parent NFT's decimals or default
-                        is_reference_nft: Set(false), // Tokens are never reference NFTs
+                        decimals: Set(decimals),
+                        is_reference_nft: Set(false),
+                        cardano_policy_id: Set(extract_cardano_fields(&asset.data).0),
+                        cardano_asset_name: Set(extract_cardano_fields(&asset.data).1),
+                        cardano_fingerprint: Set(extract_cardano_fields(&asset.data).2),
                         created_at: Set(Utc::now().into()),
                         updated_at: Set(Utc::now().into()),
                     };
@@ -257,8 +271,11 @@ pub async fn save_or_update_asset(
                         description: Set(None),
                         image_url: Set(None),
                         total_supply: Set(Some(Decimal::from(amount))),
-                        decimals: Set(DEFAULT_DECIMALS as i16), // [RJJ-DECIMALS] Default for other types
+                        decimals: Set(DEFAULT_DECIMALS as i16),
                         is_reference_nft: Set(false),
+                        cardano_policy_id: Set(None),
+                        cardano_asset_name: Set(None),
+                        cardano_fingerprint: Set(None),
                         created_at: Set(Utc::now().into()),
                         updated_at: Set(Utc::now().into()),
                     };
@@ -350,6 +367,7 @@ pub async fn save_batch(
     {
         let metadata = AssetMetadata::from_nft_data(&data);
 
+        let (c_pid, c_aname, c_fp) = extract_cardano_fields(&data);
         let active_model = assets::ActiveModel {
             id: NotSet,
             app_id: Set(app_id),
@@ -366,9 +384,12 @@ pub async fn save_batch(
             symbol: Set(metadata.symbol),
             description: Set(metadata.description),
             image_url: Set(metadata.image_url),
-            total_supply: Set(Some(Decimal::ZERO)), // NFTs start with 0 supply
+            total_supply: Set(Some(Decimal::ZERO)),
             decimals: Set(metadata.decimals as i16),
             is_reference_nft: Set(false),
+            cardano_policy_id: Set(c_pid),
+            cardano_asset_name: Set(c_aname),
+            cardano_fingerprint: Set(c_fp),
             created_at: Set(now.into()),
             updated_at: Set(now.into()),
         };
@@ -453,6 +474,8 @@ pub async fn save_batch(
                 (None, None, None, DEFAULT_DECIMALS as i16)
             };
 
+            let (c_pid, c_aname, c_fp) = extract_cardano_fields(&data);
+            let img_url = data.get("image_url").and_then(|v| v.as_str()).map(|s| s.to_string());
             let active_model = assets::ActiveModel {
                 id: NotSet,
                 app_id: Set(app_id),
@@ -468,10 +491,13 @@ pub async fn save_batch(
                 name: Set(name),
                 symbol: Set(symbol),
                 description: Set(description),
-                image_url: Set(None),
+                image_url: Set(img_url),
                 total_supply: Set(Some(mint_amount)),
                 decimals: Set(decimals),
                 is_reference_nft: Set(false),
+                cardano_policy_id: Set(c_pid),
+                cardano_asset_name: Set(c_aname),
+                cardano_fingerprint: Set(c_fp),
                 created_at: Set(now.into()),
                 updated_at: Set(now.into()),
             };

@@ -28,3 +28,5 @@ cml-core = "6.2.0"
 # SeaORM dependencies
 sea-orm = { version = "0.12", features = ["sqlx-postgres", "runtime-tokio-native-tls", "macros", "with-chrono", "with-json", "with-rust_decimal"] }
 rust_decimal = "1.32"
+blake2 = "0.10"
+bech32 = "0.11"
