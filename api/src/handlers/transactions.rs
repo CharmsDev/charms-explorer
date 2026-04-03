@@ -59,44 +59,119 @@ pub async fn get_transaction_by_txid(
 
     let mut data = TransactionData::from(model);
 
+    // Parse spell's app_public_inputs to get ALL involved app_ids (including consumed inputs)
+    let spell_app_ids: Vec<String> = data
+        .charm
+        .pointer("/native_data/app_public_inputs")
+        .and_then(|v| v.as_object())
+        .map(|obj| obj.keys().cloned().collect())
+        .unwrap_or_default();
+
+    // Parse spell outs to know which app indices have outputs
+    let spell_outs: Vec<serde_json::Value> = data
+        .charm
+        .pointer("/native_data/tx/outs")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
     // Enrich with asset metadata if this transaction has charms
     if let Ok(charms) = state.repositories.charm.get_by_txids(&[txid]).await {
-        if !charms.is_empty() {
-            let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-
-            // Lookup asset metadata (name, symbol) from assets table
-            let assets_meta = state
-                .repositories
-                .asset_repository
-                .find_by_app_ids(app_ids)
-                .await
-                .unwrap_or_default();
-
-            let meta_map: std::collections::HashMap<String, &crate::entity::assets::Model> =
-                assets_meta.iter().map(|a| (a.app_id.clone(), a)).collect();
-
-            data.assets = charms
-                .iter()
-                .map(|charm| {
-                    let meta = meta_map.get(&charm.app_id);
-                    TransactionAsset {
-                        app_id: charm.app_id.clone(),
-                        name: meta.and_then(|m| m.name.clone()),
-                        symbol: meta.and_then(|m| m.symbol.clone()),
-                        description: meta.and_then(|m| m.description.clone()),
-                        image_url: meta.and_then(|m| m.image_url.clone()),
-                        amount: charm.amount,
-                        asset_type: charm.asset_type.clone(),
-                        vout: charm.vout,
-                        address: charm.address.clone(),
-                        verified: charm.verified,
-                        cardano_policy_id: meta.and_then(|m| m.cardano_policy_id.clone()),
-                        cardano_asset_name: meta.and_then(|m| m.cardano_asset_name.clone()),
-                        cardano_fingerprint: meta.and_then(|m| m.cardano_fingerprint.clone()),
-                    }
-                })
-                .collect();
+        // Collect all app_ids: from charms + from spell app_public_inputs
+        let mut all_app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+        for app_id in &spell_app_ids {
+            if !all_app_ids.contains(app_id) {
+                all_app_ids.push(app_id.clone());
+            }
         }
+
+        // Lookup asset metadata for ALL involved app_ids
+        let assets_meta = state
+            .repositories
+            .asset_repository
+            .find_by_app_ids(all_app_ids)
+            .await
+            .unwrap_or_default();
+
+        let meta_map: std::collections::HashMap<String, &crate::entity::assets::Model> =
+            assets_meta.iter().map(|a| (a.app_id.clone(), a)).collect();
+
+        // Build output assets from charms table
+        let charm_app_ids: std::collections::HashSet<String> =
+            charms.iter().map(|c| c.app_id.clone()).collect();
+
+        let mut assets: Vec<TransactionAsset> = charms
+            .iter()
+            .map(|charm| {
+                let meta = meta_map.get(&charm.app_id);
+                let role = if charm.app_id.starts_with("c/") {
+                    "contract".to_string()
+                } else if charm.amount > 0 {
+                    "output".to_string()
+                } else {
+                    "output".to_string()
+                };
+                TransactionAsset {
+                    app_id: charm.app_id.clone(),
+                    name: meta.and_then(|m| m.name.clone()),
+                    symbol: meta.and_then(|m| m.symbol.clone()),
+                    description: meta.and_then(|m| m.description.clone()),
+                    image_url: meta.and_then(|m| m.image_url.clone()),
+                    amount: charm.amount,
+                    asset_type: charm.asset_type.clone(),
+                    role,
+                    vout: charm.vout,
+                    address: charm.address.clone(),
+                    verified: charm.verified,
+                    cardano_policy_id: meta.and_then(|m| m.cardano_policy_id.clone()),
+                    cardano_asset_name: meta.and_then(|m| m.cardano_asset_name.clone()),
+                    cardano_fingerprint: meta.and_then(|m| m.cardano_fingerprint.clone()),
+                }
+            })
+            .collect();
+
+        // Add consumed input tokens from spell that aren't in charms table
+        // These are tokens in app_public_inputs that have no output in spell outs
+        for (app_idx, app_id) in spell_app_ids.iter().enumerate() {
+            if charm_app_ids.contains(app_id) || app_id.starts_with("c/") {
+                continue; // Already in charms or is a contract
+            }
+            // Check if this app index appears in any output
+            let has_output = spell_outs.iter().any(|out| {
+                out.as_object()
+                    .map(|obj| obj.contains_key(&app_idx.to_string()))
+                    .unwrap_or(false)
+            });
+            if !has_output {
+                // This is a consumed input token
+                let meta = meta_map.get(app_id);
+                let asset_type = if app_id.starts_with("t/") {
+                    "token"
+                } else if app_id.starts_with("n/") {
+                    "nft"
+                } else {
+                    "unknown"
+                };
+                assets.push(TransactionAsset {
+                    app_id: app_id.clone(),
+                    name: meta.and_then(|m| m.name.clone()),
+                    symbol: meta.and_then(|m| m.symbol.clone()),
+                    description: meta.and_then(|m| m.description.clone()),
+                    image_url: meta.and_then(|m| m.image_url.clone()),
+                    amount: 0,
+                    asset_type: asset_type.to_string(),
+                    role: "input".to_string(),
+                    vout: -1,
+                    address: None,
+                    verified: meta.is_some(),
+                    cardano_policy_id: meta.and_then(|m| m.cardano_policy_id.clone()),
+                    cardano_asset_name: meta.and_then(|m| m.cardano_asset_name.clone()),
+                    cardano_fingerprint: meta.and_then(|m| m.cardano_fingerprint.clone()),
+                });
+            }
+        }
+
+        data.assets = assets;
     }
 
     Ok(Json(data))

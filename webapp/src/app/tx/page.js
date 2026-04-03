@@ -495,15 +495,11 @@ function TransactionPageContent() {
                             const appKeys = nativeData?.app_public_inputs ? Object.keys(nativeData.app_public_inputs) : [];
                             const spellOuts = nativeData?.tx?.outs || [];
 
+                            // Use role from API if available, fallback to client-side classification
                             const classifyAsset = (asset) => {
+                                if (asset.role) return asset.role;
                                 if (asset.asset_type === 'token' && asset.amount > 0) return 'output';
                                 if (asset.app_id?.startsWith('c/')) return 'contract';
-                                // Check spell outs: if the asset's vout has a null value, it's consumed
-                                const outEntry = spellOuts[asset.vout];
-                                if (outEntry) {
-                                    const values = Object.values(outEntry);
-                                    if (values.length > 0 && values.every(v => v === null)) return 'input';
-                                }
                                 if (asset.amount === 0 && !asset.name) return 'contract';
                                 return 'output';
                             };

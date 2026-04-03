@@ -194,6 +194,8 @@ pub struct TransactionAsset {
     pub image_url: Option<String>,
     pub amount: i64,
     pub asset_type: String,
+    /// "output", "input", or "contract"
+    pub role: String,
     pub vout: i32,
     pub address: Option<String>,
     pub verified: bool,
