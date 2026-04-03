@@ -549,10 +549,13 @@ function TransactionPageContent() {
 
                                                 return (
                                                     <div key={idx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
-                                                        {/* Header: icon + name + role badge */}
+                                                        {/* Header: icon/image + name + role badge */}
                                                         <div className="flex items-center justify-between mb-2">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="text-lg">{icon}</span>
+                                                                {asset.image_url ? (
+                                                                    <img src={asset.image_url} alt={displayName} className="w-7 h-7 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }} />
+                                                                ) : null}
+                                                                <span className="text-lg" style={asset.image_url ? {display:'none'} : {}}>{icon}</span>
                                                                 <div>
                                                                     <span className="text-white text-sm font-medium">{displayName}</span>
                                                                     {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
@@ -587,6 +590,23 @@ function TransactionPageContent() {
                                                             <span className="text-dark-500 text-xs">{asset.asset_type}</span>
                                                             {asset.verified && <span className="text-green-500 text-xs">✓ verified</span>}
                                                         </div>
+
+                                                        {/* Cardano origin info */}
+                                                        {asset.cardano_fingerprint && (
+                                                            <div className="mt-2 pt-2 border-t border-dark-800/30">
+                                                                <div className="flex items-center justify-between">
+                                                                    <code className="text-xs text-cyan-400 font-mono">{asset.cardano_fingerprint}</code>
+                                                                    <a
+                                                                        href={`https://cardanoscan.io/token/${asset.cardano_fingerprint}`}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-cyan-400 hover:text-cyan-300 text-xs flex-shrink-0 ml-2"
+                                                                    >
+                                                                        Cardanoscan
+                                                                    </a>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
