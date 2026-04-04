@@ -136,11 +136,10 @@ pub async fn get_transaction_by_txid(
                 } else {
                     "output".to_string()
                 };
-                // Contract inherits name from matching token (e.g. "eBTC Contract")
+                // Contract gets a generic label — it's the proxy validator for beaming
                 let effective_name = meta.and_then(|m| m.name.clone())
-                    .or_else(|| contract_meta.and_then(|m| m.name.as_ref().map(|n| format!("{} Contract", n))));
-                let effective_symbol = meta.and_then(|m| m.symbol.clone())
-                    .or_else(|| contract_meta.and_then(|m| m.symbol.clone()));
+                    .or_else(|| if contract_meta.is_some() { Some("Beaming Proxy".to_string()) } else { None });
+                let effective_symbol = meta.and_then(|m| m.symbol.clone());
                 TransactionAsset {
                     app_id: charm.app_id.clone(),
                     name: effective_name,
