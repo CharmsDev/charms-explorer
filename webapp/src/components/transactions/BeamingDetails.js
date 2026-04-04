@@ -2,16 +2,13 @@
 
 /**
  * Beaming Details Component
- * Displays detailed information about Beaming transactions (hash-locked token transfers).
+ * Displays details for Beam Out transactions (Bitcoin → Cardano cross-chain transfers).
  *
- * Beaming is a mechanism for transferring tokens between addresses without revealing
- * the recipient upfront. The sender locks tokens to a commitment hash. The recipient
- * later claims them by providing the matching preimage in an "unbeam" transaction.
+ * Beam Out: tokens on Bitcoin are beamed to Cardano via a commitment hash.
+ * The commitment is the SHA256 of a placeholder UTXO on Cardano.
+ * Once finality is proven, proxy CNTs are minted on Cardano.
  *
- * Flow: Sender → Lock tokens to hash → Recipient provides preimage → Tokens released
- *
- * [RJJ-BEAMING] This component handles the "beam" direction (sending/locking tokens).
- * TODO: [RJJ-UNBEAM] In the future, "unbeam" transactions will reverse this process.
+ * Flow: Bitcoin → Beam tokens → Commitment hash → Cardano (mint proxy CNTs)
  */
 
 const TOKEN_DECIMALS = 8;
@@ -130,31 +127,31 @@ export default function BeamingDetails({ charm, copyToClipboard }) {
                 </span>
             </h3>
 
-            {/* Summary: what's being beamed */}
+            {/* Summary */}
             <div className="mb-4 bg-dark-900/50 rounded-lg p-3 border border-dark-700/50">
                 <p className="text-sm text-dark-300">
                     <span className="text-cyan-400 font-semibold">{formatTokenAmount(totalTokens)} {tokenLabel}</span>
-                    {' '}locked to {beamEntries.length === 1 ? 'a commitment hash' : `${beamEntries.length} commitment hashes`}.
-                    The recipient claims the tokens by revealing the matching preimage in an unbeam transaction.
+                    {' '}beamed to Cardano via {beamEntries.length === 1 ? 'a commitment hash' : `${beamEntries.length} commitment hashes`}.
+                    Tokens are minted as proxy CNTs on Cardano.
                 </p>
             </div>
 
             {/* Flow diagram */}
-            <div className="mb-4 flex items-center gap-3 text-xs text-dark-400">
+            <div className="mb-4 flex items-center gap-3 text-xs text-dark-400 flex-wrap">
                 <span className="bg-dark-900/50 rounded px-2 py-1 border border-dark-700/50">
-                    Sender UTXO
+                    Bitcoin
                 </span>
                 <span className="text-cyan-500">→</span>
                 <span className="bg-cyan-900/30 rounded px-2 py-1 border border-cyan-500/30 text-cyan-400">
-                    Lock {formatTokenAmount(totalTokens)} {tokenLabel}
+                    Beam {formatTokenAmount(totalTokens)} {tokenLabel}
                 </span>
                 <span className="text-cyan-500">→</span>
                 <span className="bg-dark-900/50 rounded px-2 py-1 border border-dark-700/50">
-                    Hash commitment
+                    Commitment hash
                 </span>
-                <span className="text-dark-500">→</span>
-                <span className="bg-dark-900/50 rounded px-2 py-1 border border-dark-700/50 opacity-50">
-                    Unbeam (recipient)
+                <span className="text-cyan-500">→</span>
+                <span className="bg-purple-900/30 rounded px-2 py-1 border border-purple-500/30 text-purple-400">
+                    Cardano
                 </span>
             </div>
 

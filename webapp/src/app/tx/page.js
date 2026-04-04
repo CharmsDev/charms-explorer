@@ -515,7 +515,7 @@ function TransactionPageContent() {
                                 switch (role) {
                                     case 'output': return { label: 'Output', cls: 'bg-green-500/20 text-green-400 border-green-500/30' };
                                     case 'input': return { label: 'Input', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
-                                    case 'burned': return { label: 'Burned', cls: 'bg-red-500/20 text-red-400 border-red-500/30' };
+                                    case 'beamed': return { label: 'Beamed', cls: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' };
                                     case 'contract': return { label: 'Contract', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
                                     default: return { label: role, cls: 'bg-dark-700 text-dark-300 border-dark-600' };
                                 }

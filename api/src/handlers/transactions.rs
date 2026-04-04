@@ -132,7 +132,7 @@ pub async fn get_transaction_by_txid(
                 let role = if charm.app_id.starts_with("c/") {
                     "contract".to_string()
                 } else if beamed_out_indices.contains(&charm.vout.to_string()) {
-                    "burned".to_string()
+                    "beamed".to_string()
                 } else {
                     "output".to_string()
                 };

@@ -199,7 +199,7 @@ export const TRANSACTION_METADATA = {
     bgClass: "bg-cyan-500/20",
     textClass: "text-cyan-400",
     borderClass: "border-cyan-500/30",
-    description: "Tokens burned on Bitcoin, minted on Cardano",
+    description: "Tokens beamed from Bitcoin to Cardano",
   },
   [TRANSACTION_TYPES.SPELL]: {
     label: "Spell",
