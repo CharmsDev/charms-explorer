@@ -160,8 +160,10 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         "dex_cancel"
     } else if tag_list.iter().any(|t| t == "partial-fill") {
         "dex_partial_fill"
-    } else if is_beaming {
-        "beaming"
+    } else if has_beamed_outs {
+        "beam_out"
+    } else if has_contract_app {
+        "beam_in"
     } else if tag_list.iter().any(|t| t == "bro-mint") {
         "bro_mint"
     } else if tag_list.iter().any(|t| t == "bro-transfer") {

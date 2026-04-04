@@ -33,10 +33,10 @@ export const TRANSACTION_TYPES = {
   BRO_MINING: "bro_mining",
   BRO_MINT: "bro_mint",
 
-  // Beaming (cross-address token transfer)
+  // Beaming (cross-chain token transfer)
   BEAMING: "beaming",
-  // TODO: [RJJ-UNBEAM] Add UNBEAM type when unbeam transactions are supported
-  // UNBEAM: 'unbeam',
+  BEAM_IN: "beam_in",
+  BEAM_OUT: "beam_out",
 
   // Generic
   SPELL: "spell",
@@ -181,7 +181,25 @@ export const TRANSACTION_METADATA = {
     bgClass: "bg-cyan-500/20",
     textClass: "text-cyan-400",
     borderClass: "border-cyan-500/30",
-    description: "Token transfer via hash-locked beaming (recipient claims with preimage)",
+    description: "Cross-chain token transfer via beaming",
+  },
+  [TRANSACTION_TYPES.BEAM_IN]: {
+    label: "Beam In",
+    icon: "📥",
+    color: "cyan",
+    bgClass: "bg-cyan-500/20",
+    textClass: "text-cyan-400",
+    borderClass: "border-cyan-500/30",
+    description: "Tokens received from Cardano to Bitcoin",
+  },
+  [TRANSACTION_TYPES.BEAM_OUT]: {
+    label: "Beam Out",
+    icon: "📤",
+    color: "cyan",
+    bgClass: "bg-cyan-500/20",
+    textClass: "text-cyan-400",
+    borderClass: "border-cyan-500/30",
+    description: "Tokens burned on Bitcoin, minted on Cardano",
   },
   [TRANSACTION_TYPES.SPELL]: {
     label: "Spell",
@@ -387,17 +405,29 @@ const classificationRules = [
     type: TRANSACTION_TYPES.NFT_TRANSFER,
   },
 
-  // Beaming: cross-chain (Cardano <-> Bitcoin) operations
-  // Priority 8: before DEX, BRO, and token rules since beaming is a distinct operation type
+  // Beam Out: tokens burned on Bitcoin, sent to Cardano
   {
-    name: "Beaming",
+    name: "Beam Out",
+    priority: 7,
+    test: (tx, spellData) => {
+      const tags = tx.tags || "";
+      if (tags.includes("beam-out")) return true;
+      if (tx.tx_type === "beam_out") return true;
+      const data = tx.data?.native_data || tx.charm?.native_data || tx.native_data || tx.data || tx.charm;
+      if (data?.tx?.beamed_outs || data?.beamed_outs) return true;
+      return false;
+    },
+    type: TRANSACTION_TYPES.BEAM_OUT,
+  },
+  // Beam In: tokens received from Cardano to Bitcoin
+  {
+    name: "Beam In",
     priority: 8,
     test: (tx, spellData) => {
       const tags = tx.tags || "";
-      if (tags.includes("beaming")) return true;
+      if (tags.includes("beam-in")) return true;
+      if (tx.tx_type === "beam_in") return true;
       const data = tx.data?.native_data || tx.charm?.native_data || tx.native_data || tx.data || tx.charm;
-      if (data?.tx?.beamed_outs || data?.beamed_outs) return true;
-      // Detect c/ (contract) app alongside t/ token = cross-chain operation
       const appInputs = data?.app_public_inputs;
       if (appInputs) {
         const keys = Object.keys(appInputs);
@@ -405,7 +435,7 @@ const classificationRules = [
       }
       return false;
     },
-    type: TRANSACTION_TYPES.BEAMING,
+    type: TRANSACTION_TYPES.BEAM_IN,
   },
 
   // Token rules
@@ -599,11 +629,10 @@ export function isNftTransaction(type) {
 }
 
 /**
- * Check if transaction is a beaming transaction
- * TODO: [RJJ-UNBEAM] Add isUnbeamTransaction() when unbeam type is supported
+ * Check if transaction is a beaming transaction (any direction)
  */
 export function isBeamingTransaction(type) {
-  return type === TRANSACTION_TYPES.BEAMING;
+  return [TRANSACTION_TYPES.BEAMING, TRANSACTION_TYPES.BEAM_IN, TRANSACTION_TYPES.BEAM_OUT].includes(type);
 }
 
 /**

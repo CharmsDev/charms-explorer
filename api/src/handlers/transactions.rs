@@ -75,6 +75,14 @@ pub async fn get_transaction_by_txid(
         .cloned()
         .unwrap_or_default();
 
+    // Parse beamed_outs to know which outputs are burned (beam-out to Cardano)
+    let beamed_out_indices: std::collections::HashSet<String> = data
+        .charm
+        .pointer("/native_data/tx/beamed_outs")
+        .and_then(|v| v.as_object())
+        .map(|obj| obj.keys().cloned().collect())
+        .unwrap_or_default();
+
     // Enrich with asset metadata if this transaction has charms
     if let Ok(charms) = state.repositories.charm.get_by_txids(&[txid]).await {
         // Collect all app_ids: from charms + from spell app_public_inputs
@@ -100,25 +108,48 @@ pub async fn get_transaction_by_txid(
         let charm_app_ids: std::collections::HashSet<String> =
             charms.iter().map(|c| c.app_id.clone()).collect();
 
+        // Build lookup for contract name inheritance: c/{hash} → t/{hash} metadata
+        let contract_token_map: std::collections::HashMap<String, &crate::entity::assets::Model> =
+            meta_map
+                .iter()
+                .filter(|(k, _)| k.starts_with("t/"))
+                .map(|(k, v)| {
+                    let contract_id = format!("c/{}", &k[2..]);
+                    (contract_id, *v)
+                })
+                .collect();
+
         let mut assets: Vec<TransactionAsset> = charms
             .iter()
             .map(|charm| {
                 let meta = meta_map.get(&charm.app_id);
+                // For contracts, inherit name from matching token
+                let contract_meta = if charm.app_id.starts_with("c/") {
+                    contract_token_map.get(&charm.app_id)
+                } else {
+                    None
+                };
                 let role = if charm.app_id.starts_with("c/") {
                     "contract".to_string()
-                } else if charm.amount > 0 {
-                    "output".to_string()
+                } else if beamed_out_indices.contains(&charm.vout.to_string()) {
+                    "burned".to_string()
                 } else {
                     "output".to_string()
                 };
+                // Contract inherits name from matching token (e.g. "eBTC Bridge")
+                let effective_name = meta.and_then(|m| m.name.clone())
+                    .or_else(|| contract_meta.and_then(|m| m.name.as_ref().map(|n| format!("{} Bridge", n))));
+                let effective_symbol = meta.and_then(|m| m.symbol.clone())
+                    .or_else(|| contract_meta.and_then(|m| m.symbol.clone()));
                 TransactionAsset {
                     app_id: charm.app_id.clone(),
-                    name: meta.and_then(|m| m.name.clone()),
-                    symbol: meta.and_then(|m| m.symbol.clone()),
+                    name: effective_name,
+                    symbol: effective_symbol,
                     description: meta.and_then(|m| m.description.clone()),
-                    image_url: meta.and_then(|m| m.image_url.clone()),
+                    image_url: meta.and_then(|m| m.image_url.clone())
+                        .or_else(|| contract_meta.and_then(|m| m.image_url.clone())),
                     amount: charm.amount,
-                    asset_type: charm.asset_type.clone(),
+                    asset_type: if contract_meta.is_some() && charm.asset_type == "unknown" { "contract".to_string() } else { charm.asset_type.clone() },
                     role,
                     vout: charm.vout,
                     address: charm.address.clone(),
