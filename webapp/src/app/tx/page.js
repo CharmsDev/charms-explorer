@@ -608,15 +608,6 @@ function TransactionPageContent() {
                                             })}
                                         </div>
 
-                                        {/* App IDs */}
-                                        <div className="mt-4 pt-3 border-t border-dark-800/50 space-y-2">
-                                            {assets.filter(a => a.asset_type === 'token' && a.amount > 0).map((asset, idx) => (
-                                                <div key={idx}>
-                                                    <div className="text-dark-400 text-xs mb-0.5">App ID</div>
-                                                    <div className="text-dark-300 font-mono text-xs break-all">{asset.app_id}</div>
-                                                </div>
-                                            ))}
-                                        </div>
                                     </div>
                                 );
                             }
