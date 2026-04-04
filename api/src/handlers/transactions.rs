@@ -136,9 +136,9 @@ pub async fn get_transaction_by_txid(
                 } else {
                     "output".to_string()
                 };
-                // Contract inherits name from matching token (e.g. "eBTC Bridge")
+                // Contract inherits name from matching token (e.g. "eBTC Contract")
                 let effective_name = meta.and_then(|m| m.name.clone())
-                    .or_else(|| contract_meta.and_then(|m| m.name.as_ref().map(|n| format!("{} Bridge", n))));
+                    .or_else(|| contract_meta.and_then(|m| m.name.as_ref().map(|n| format!("{} Contract", n))));
                 let effective_symbol = meta.and_then(|m| m.symbol.clone())
                     .or_else(|| contract_meta.and_then(|m| m.symbol.clone()));
                 TransactionAsset {
