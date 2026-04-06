@@ -253,6 +253,13 @@ function TransactionPageContent() {
                         headerType = TRANSACTION_TYPES.TOKEN_TRANSFER;
                         headerLabel = 'Token Transfer';
                         headerDescription = 'Charms token transfer';
+                    } else if (analysis.isBeaming) {
+                        const isBeamOut = analysis.type === TRANSACTION_TYPES.BEAM_OUT;
+                        headerIcon = isBeamOut ? '📤' : '📥';
+                        headerLabel = isBeamOut ? 'Beam Out' : 'Beam In';
+                        headerDescription = isBeamOut
+                            ? 'Tokens beamed from Bitcoin to Cardano'
+                            : 'Tokens received from Cardano to Bitcoin';
                     }
                     return (
                         <div className="mb-6">
@@ -327,9 +334,11 @@ function TransactionPageContent() {
                             {/* TODO: [RJJ-UNBEAM] Add unbeam details section when unbeam txs are supported */}
                             {analysis.isBeaming && (
                                 <div className="mt-6">
-                                    <BeamingDetails 
+                                    <BeamingDetails
                                         charm={charm}
                                         copyToClipboard={(text) => navigator.clipboard.writeText(text)}
+                                        beamDirection={analysis.type}
+                                        assets={assets}
                                     />
                                 </div>
                             )}

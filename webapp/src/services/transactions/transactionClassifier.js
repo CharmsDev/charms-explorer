@@ -190,7 +190,7 @@ export const TRANSACTION_METADATA = {
     bgClass: "bg-cyan-500/20",
     textClass: "text-cyan-400",
     borderClass: "border-cyan-500/30",
-    description: "Tokens received from Cardano to Bitcoin",
+    description: "Tokens received from Cardano to Bitcoin via beaming claim",
   },
   [TRANSACTION_TYPES.BEAM_OUT]: {
     label: "Beam Out",
@@ -199,7 +199,7 @@ export const TRANSACTION_METADATA = {
     bgClass: "bg-cyan-500/20",
     textClass: "text-cyan-400",
     borderClass: "border-cyan-500/30",
-    description: "Tokens beamed from Bitcoin to Cardano",
+    description: "Tokens beamed from Bitcoin to Cardano (locked to commitment hash)",
   },
   [TRANSACTION_TYPES.SPELL]: {
     label: "Spell",
@@ -615,7 +615,6 @@ export function isTokenTransaction(type) {
     TRANSACTION_TYPES.TOKEN_BURN,
     TRANSACTION_TYPES.BRO_MINING,
     TRANSACTION_TYPES.BRO_MINT,
-    TRANSACTION_TYPES.BEAMING,
   ].includes(type);
 }
 
