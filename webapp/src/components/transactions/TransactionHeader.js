@@ -63,17 +63,17 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
                                         {/* Beam Out: Placeholder(small) → Bitcoin(main) → Cardano */}
 
                                         {/* Curved dashed line: placeholder to Cardano (above) */}
-                                        <path d="M 30 24 Q 140 -12 250 24" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" fill="none" opacity="0.3" />
-                                        <text x="140" y="6" textAnchor="middle" fill="#475569" fontSize="7" fontFamily="monospace">placeholder link</text>
+                                        <path d="M 30 24 Q 140 -12 250 24" stroke="#06b6d4" strokeWidth="2" strokeDasharray="6 4" fill="none" opacity="0.8" />
+                                        <text x="140" y="6" textAnchor="middle" fill="#06b6d4" fontSize="7" fontFamily="monospace" opacity="0.6">placeholder link</text>
 
                                         {/* Placeholder circle (small, dashed) */}
-                                        <circle cx="30" cy="36" r="13" fill="rgba(59,130,246,0.06)" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="3 2" filter="url(#glowPh)" />
-                                        <text x="30" y="40" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui" opacity="0.7">₳</text>
-                                        <text x="30" y="58" textAnchor="middle" fill="#475569" fontSize="7" fontFamily="system-ui">placeholder</text>
+                                        <circle cx="30" cy="36" r="13" fill="rgba(6,182,212,0.08)" stroke="#06b6d4" strokeWidth="2" strokeDasharray="5 3" filter="url(#glowPh)" opacity="0.8" />
+                                        <text x="30" y="40" textAnchor="middle" fill="#06b6d4" fontSize="9" fontWeight="600" fontFamily="system-ui" opacity="0.8">₳</text>
+                                        <text x="30" y="58" textAnchor="middle" fill="#06b6d4" fontSize="7" fontFamily="system-ui" opacity="0.6">placeholder</text>
 
                                         {/* Dashed arrow: placeholder → Bitcoin */}
-                                        <line x1="45" y1="36" x2="96" y2="36" stroke="#475569" strokeWidth="1" strokeDasharray="3 2" />
-                                        <polygon points="96,33.5 101,36 96,38.5" fill="#475569" />
+                                        <line x1="45" y1="36" x2="96" y2="36" stroke="#06b6d4" strokeWidth="2" strokeDasharray="6 4" opacity="0.8" />
+                                        <polygon points="96,33 101,36 96,39" fill="#06b6d4" opacity="0.8" />
 
                                         {/* Bitcoin circle (main) — clickable */}
                                         {btcLink ? (
