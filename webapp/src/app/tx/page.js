@@ -272,7 +272,7 @@ function TransactionPageContent() {
                                     label={headerLabel}
                                     description={headerDescription}
                                     icon={headerIcon}
-                                    beamFlow={analysis.isBeaming ? { isBeamOut: analysis.type === TRANSACTION_TYPES.BEAM_OUT } : null}
+                                    beamFlow={analysis.isBeaming ? { isBeamOut: analysis.type === TRANSACTION_TYPES.BEAM_OUT, txid, network: charm.network } : null}
                                 />
                             </div>
 

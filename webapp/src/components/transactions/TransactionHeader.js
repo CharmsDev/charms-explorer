@@ -41,70 +41,95 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
                 </div>
 
                 {/* Right: SVG beam flow diagram */}
-                <div className="flex-shrink-0">
-                    <svg width="280" height="72" viewBox="0 0 280 72" fill="none" xmlns="http://www.w3.org/2000/svg">
-                        <defs>
-                            <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                                <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.3" />
-                                <stop offset="100%" stopColor="#06b6d4" stopOpacity="0.8" />
-                            </linearGradient>
-                            <filter id="glowBtc"><feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#f97316" floodOpacity="0.4" /></filter>
-                            <filter id="glowAda"><feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#3b82f6" floodOpacity="0.4" /></filter>
-                            <filter id="glowPlaceholder"><feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#3b82f6" floodOpacity="0.2" /></filter>
-                        </defs>
+                {(() => {
+                    const mempoolBase = beamFlow.network === 'testnet4' ? 'https://mempool.space/testnet4' : 'https://mempool.space';
+                    const btcLink = beamFlow.txid ? `${mempoolBase}/tx/${beamFlow.txid}` : null;
 
-                        {isBO ? (
-                            <>
-                                {/* Beam Out: Placeholder(small) -> Bitcoin(main) -> Cardano */}
+                    return (
+                        <div className="flex-shrink-0">
+                            <svg width="280" height="72" viewBox="0 0 280 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <defs>
+                                    <linearGradient id="beamGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                        <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.4" />
+                                        <stop offset="100%" stopColor="#06b6d4" stopOpacity="1" />
+                                    </linearGradient>
+                                    <filter id="glowBtc"><feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#f97316" floodOpacity="0.4" /></filter>
+                                    <filter id="glowAda"><feDropShadow dx="0" dy="0" stdDeviation="3" floodColor="#3b82f6" floodOpacity="0.4" /></filter>
+                                    <filter id="glowPh"><feDropShadow dx="0" dy="0" stdDeviation="2" floodColor="#3b82f6" floodOpacity="0.2" /></filter>
+                                </defs>
 
-                                {/* Curved line from placeholder to Cardano destination (above) */}
-                                <path d="M 30 26 Q 140 -10 250 26" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" fill="none" opacity="0.35" />
-                                <text x="140" y="8" textAnchor="middle" fill="#64748b" fontSize="8" fontFamily="monospace">placeholder link</text>
+                                {isBO ? (
+                                    <>
+                                        {/* Beam Out: Placeholder(small) → Bitcoin(main) → Cardano */}
 
-                                {/* Placeholder circle (small, muted, left) */}
-                                <circle cx="30" cy="36" r="14" fill="rgba(59,130,246,0.08)" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="3 2" filter="url(#glowPlaceholder)" />
-                                <text x="30" y="40" textAnchor="middle" fill="#3b82f6" fontSize="10" fontWeight="600" fontFamily="system-ui">₳</text>
-                                <text x="30" y="58" textAnchor="middle" fill="#475569" fontSize="8" fontFamily="system-ui">placeholder</text>
+                                        {/* Curved dashed line: placeholder to Cardano (above) */}
+                                        <path d="M 30 24 Q 140 -12 250 24" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" fill="none" opacity="0.3" />
+                                        <text x="140" y="6" textAnchor="middle" fill="#475569" fontSize="7" fontFamily="monospace">placeholder link</text>
 
-                                {/* Arrow: placeholder -> Bitcoin (dashed) */}
-                                <line x1="46" y1="36" x2="96" y2="36" stroke="#64748b" strokeWidth="1" strokeDasharray="3 2" />
-                                <polygon points="96,33 102,36 96,39" fill="#64748b" />
+                                        {/* Placeholder circle (small, dashed) */}
+                                        <circle cx="30" cy="36" r="13" fill="rgba(59,130,246,0.06)" stroke="#3b82f6" strokeWidth="1.5" strokeDasharray="3 2" filter="url(#glowPh)" />
+                                        <text x="30" y="40" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui" opacity="0.7">₳</text>
+                                        <text x="30" y="58" textAnchor="middle" fill="#475569" fontSize="7" fontFamily="system-ui">placeholder</text>
 
-                                {/* Bitcoin circle (main, prominent) */}
-                                <circle cx="120" cy="36" r="20" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="2" filter="url(#glowBtc)" />
-                                <text x="120" y="41" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="700" fontFamily="system-ui">₿</text>
-                                <text x="120" y="66" textAnchor="middle" fill="#f97316" fontSize="9" fontWeight="600" fontFamily="system-ui">Bitcoin</text>
+                                        {/* Dashed arrow: placeholder → Bitcoin */}
+                                        <line x1="45" y1="36" x2="96" y2="36" stroke="#475569" strokeWidth="1" strokeDasharray="3 2" />
+                                        <polygon points="96,33.5 101,36 96,38.5" fill="#475569" />
 
-                                {/* Arrow: Bitcoin -> Cardano (solid gradient) */}
-                                <line x1="142" y1="36" x2="226" y2="36" stroke="url(#beamGrad)" strokeWidth="2" />
-                                <polygon points="226,32 234,36 226,40" fill="#06b6d4" />
+                                        {/* Bitcoin circle (main) — clickable */}
+                                        {btcLink ? (
+                                            <a href={btcLink} target="_blank" rel="noopener noreferrer">
+                                                <circle cx="120" cy="36" r="20" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="2" filter="url(#glowBtc)" className="cursor-pointer hover:opacity-80" />
+                                                <text x="120" y="41" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="700" fontFamily="system-ui" className="pointer-events-none">₿</text>
+                                            </a>
+                                        ) : (
+                                            <>
+                                                <circle cx="120" cy="36" r="20" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="2" filter="url(#glowBtc)" />
+                                                <text x="120" y="41" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="700" fontFamily="system-ui">₿</text>
+                                            </>
+                                        )}
+                                        <text x="120" y="66" textAnchor="middle" fill="#f97316" fontSize="9" fontWeight="600" fontFamily="system-ui">Bitcoin</text>
 
-                                {/* Cardano circle (destination) */}
-                                <circle cx="250" cy="36" r="18" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" strokeWidth="2" filter="url(#glowAda)" />
-                                <text x="250" y="41" textAnchor="middle" fill="#3b82f6" fontSize="13" fontWeight="700" fontFamily="system-ui">₳</text>
-                                <text x="250" y="66" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui">Cardano</text>
-                            </>
-                        ) : (
-                            <>
-                                {/* Beam In: Cardano(source) -> Bitcoin(main) */}
+                                        {/* Solid arrow: Bitcoin → Cardano */}
+                                        <line x1="142" y1="36" x2="226" y2="36" stroke="url(#beamGrad)" strokeWidth="2.5" />
+                                        <polygon points="226,31.5 235,36 226,40.5" fill="#06b6d4" />
 
-                                {/* Cardano circle (source) */}
-                                <circle cx="60" cy="36" r="18" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" strokeWidth="2" filter="url(#glowAda)" />
-                                <text x="60" y="41" textAnchor="middle" fill="#3b82f6" fontSize="13" fontWeight="700" fontFamily="system-ui">₳</text>
-                                <text x="60" y="66" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui">Cardano</text>
+                                        {/* Cardano circle (destination) */}
+                                        <circle cx="250" cy="36" r="18" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" strokeWidth="2" filter="url(#glowAda)" />
+                                        <text x="250" y="41" textAnchor="middle" fill="#3b82f6" fontSize="13" fontWeight="700" fontFamily="system-ui">₳</text>
+                                        <text x="250" y="66" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui">Cardano</text>
+                                    </>
+                                ) : (
+                                    <>
+                                        {/* Beam In: Cardano → Bitcoin */}
 
-                                {/* Arrow: Cardano -> Bitcoin */}
-                                <line x1="80" y1="36" x2="190" y2="36" stroke="url(#beamGrad)" strokeWidth="2" />
-                                <polygon points="190,32 198,36 190,40" fill="#06b6d4" />
+                                        {/* Cardano circle (source) */}
+                                        <circle cx="60" cy="36" r="18" fill="rgba(59,130,246,0.1)" stroke="#3b82f6" strokeWidth="2" filter="url(#glowAda)" />
+                                        <text x="60" y="41" textAnchor="middle" fill="#3b82f6" fontSize="13" fontWeight="700" fontFamily="system-ui">₳</text>
+                                        <text x="60" y="66" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui">Cardano</text>
 
-                                {/* Bitcoin circle (destination, main) */}
-                                <circle cx="216" cy="36" r="20" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="2" filter="url(#glowBtc)" />
-                                <text x="216" y="41" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="700" fontFamily="system-ui">₿</text>
-                                <text x="216" y="66" textAnchor="middle" fill="#f97316" fontSize="9" fontWeight="600" fontFamily="system-ui">Bitcoin</text>
-                            </>
-                        )}
-                    </svg>
-                </div>
+                                        {/* Solid arrow: Cardano → Bitcoin */}
+                                        <line x1="80" y1="36" x2="190" y2="36" stroke="url(#beamGrad)" strokeWidth="2.5" />
+                                        <polygon points="190,31.5 199,36 190,40.5" fill="#06b6d4" />
+
+                                        {/* Bitcoin circle (destination) — clickable */}
+                                        {btcLink ? (
+                                            <a href={btcLink} target="_blank" rel="noopener noreferrer">
+                                                <circle cx="216" cy="36" r="20" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="2" filter="url(#glowBtc)" className="cursor-pointer hover:opacity-80" />
+                                                <text x="216" y="41" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="700" fontFamily="system-ui" className="pointer-events-none">₿</text>
+                                            </a>
+                                        ) : (
+                                            <>
+                                                <circle cx="216" cy="36" r="20" fill="rgba(249,115,22,0.15)" stroke="#f97316" strokeWidth="2" filter="url(#glowBtc)" />
+                                                <text x="216" y="41" textAnchor="middle" fill="#f97316" fontSize="14" fontWeight="700" fontFamily="system-ui">₿</text>
+                                            </>
+                                        )}
+                                        <text x="216" y="66" textAnchor="middle" fill="#f97316" fontSize="9" fontWeight="600" fontFamily="system-ui">Bitcoin</text>
+                                    </>
+                                )}
+                            </svg>
+                        </div>
+                    );
+                })()}
             </div>
         );
     }
