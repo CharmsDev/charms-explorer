@@ -273,77 +273,8 @@ function TransactionPageContent() {
                                     label={headerLabel}
                                     description={headerDescription}
                                     icon={headerIcon}
+                                    beamFlow={analysis.isBeaming ? { isBeamOut: analysis.type === TRANSACTION_TYPES.BEAM_OUT } : null}
                                 />
-
-                                {/* Beaming Flow Visual */}
-                                {analysis.isBeaming && (() => {
-                                    const isBO = analysis.type === TRANSACTION_TYPES.BEAM_OUT;
-                                    const shortTxid = txid ? `${txid.slice(0, 6)}...${txid.slice(-4)}` : '';
-                                    // Extract commitment hash from spell for beam-out
-                                    const nativeData = charm?.data?.native_data || charm?.spell?.native_data || charm?.data;
-                                    const beamedOuts = nativeData?.tx?.beamed_outs;
-                                    const commitHash = beamedOuts ? Object.values(beamedOuts)[0] : null;
-                                    const shortCommit = commitHash ? `${commitHash.slice(0, 6)}...${commitHash.slice(-4)}` : null;
-
-                                    return (
-                                        <div className="mt-5 pt-4 border-t border-dark-700/50">
-                                            <div className="flex items-center justify-center gap-0">
-                                                {/* Source chain */}
-                                                <div className="flex flex-col items-center">
-                                                    <div className={`w-14 h-14 rounded-full flex items-center justify-center border-2 ${
-                                                        isBO
-                                                            ? 'bg-orange-500/20 border-orange-500/50'
-                                                            : 'bg-blue-500/15 border-blue-500/30'
-                                                    }`}>
-                                                        <span className="text-lg font-bold">{isBO ? '₿' : '₳'}</span>
-                                                    </div>
-                                                    <span className={`text-xs font-medium mt-1.5 ${isBO ? 'text-orange-400' : 'text-blue-400'}`}>
-                                                        {isBO ? 'Bitcoin' : 'Cardano'}
-                                                    </span>
-                                                    {isBO && (
-                                                        <span className="text-[10px] text-dark-500 font-mono mt-0.5">{shortTxid}</span>
-                                                    )}
-                                                    {!isBO && (
-                                                        <span className="text-[10px] text-dark-500 mt-0.5">source</span>
-                                                    )}
-                                                </div>
-
-                                                {/* Arrow */}
-                                                <div className="flex flex-col items-center mx-3">
-                                                    <div className="flex items-center">
-                                                        <div className="w-16 h-[2px] bg-gradient-to-r from-cyan-500/50 to-cyan-400"></div>
-                                                        <svg className="w-3 h-3 text-cyan-400 -ml-0.5" fill="currentColor" viewBox="0 0 24 24">
-                                                            <path d="M5 12h14m-4-4l4 4-4 4" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                                                        </svg>
-                                                    </div>
-                                                    {isBO && shortCommit && (
-                                                        <span className="text-[9px] text-dark-600 font-mono mt-1">{shortCommit}</span>
-                                                    )}
-                                                </div>
-
-                                                {/* Destination chain */}
-                                                <div className="flex flex-col items-center">
-                                                    <div className={`w-14 h-14 rounded-full flex items-center justify-center border-2 ${
-                                                        isBO
-                                                            ? 'bg-blue-500/15 border-blue-500/30'
-                                                            : 'bg-orange-500/20 border-orange-500/50'
-                                                    }`}>
-                                                        <span className="text-lg font-bold">{isBO ? '₳' : '₿'}</span>
-                                                    </div>
-                                                    <span className={`text-xs font-medium mt-1.5 ${isBO ? 'text-blue-400' : 'text-orange-400'}`}>
-                                                        {isBO ? 'Cardano' : 'Bitcoin'}
-                                                    </span>
-                                                    {!isBO && (
-                                                        <span className="text-[10px] text-dark-500 font-mono mt-0.5">{shortTxid}</span>
-                                                    )}
-                                                    {isBO && (
-                                                        <span className="text-[10px] text-dark-500 mt-0.5">destination</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
                             </div>
 
                             {/* TXID Section */}
