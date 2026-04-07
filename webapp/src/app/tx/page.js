@@ -15,7 +15,6 @@ import {
     TransactionBadge, 
     TransactionHeader, 
     DexOrderDetails, 
-    BeamingDetails,
     TokenDetails,
     SpellDataViewer 
 } from '@/components/transactions';
@@ -331,18 +330,47 @@ function TransactionPageContent() {
                                 </div>
                             )}
 
-                            {/* [RJJ-BEAMING] Beaming Details (if applicable) */}
-                            {/* TODO: [RJJ-UNBEAM] Add unbeam details section when unbeam txs are supported */}
-                            {analysis.isBeaming && (
-                                <div className="mt-6">
-                                    <BeamingDetails
-                                        charm={charm}
-                                        copyToClipboard={(text) => navigator.clipboard.writeText(text)}
-                                        beamDirection={analysis.type}
-                                        assets={assets}
-                                    />
-                                </div>
-                            )}
+                            {/* Beaming: show commitment hash inline */}
+                            {analysis.isBeaming && analysis.type === TRANSACTION_TYPES.BEAM_OUT && (() => {
+                                const nd = charm?.data?.native_data || charm?.spell?.native_data || charm?.data;
+                                const beamedOuts = nd?.tx?.beamed_outs;
+                                if (!beamedOuts) return null;
+                                const entries = Object.entries(beamedOuts);
+                                // Detect token
+                                const appInputs = nd?.app_public_inputs;
+                                const tokenKey = appInputs ? Object.keys(appInputs).find(k => k.startsWith('t/')) : null;
+                                const isBro = tokenKey?.includes(VERIFIED_BRO_HASH);
+                                const tokenLabel = isBro ? 'BRO' : 'tokens';
+                                // Total beamed amount
+                                const outs = nd?.tx?.outs || [];
+                                let totalRaw = 0;
+                                entries.forEach(([idx]) => {
+                                    const out = outs[parseInt(idx)];
+                                    if (out && typeof out === 'object') {
+                                        Object.values(out).forEach(v => { if (typeof v === 'number') totalRaw += v; });
+                                    }
+                                });
+                                const totalDisplay = (totalRaw / 1e8).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 });
+
+                                return (
+                                    <div className="mt-4 bg-dark-800/50 rounded-lg p-3 border border-cyan-500/20">
+                                        <p className="text-sm text-dark-300 mb-2">
+                                            <span className="text-cyan-400 font-semibold">{totalDisplay} {tokenLabel}</span> beamed to Cardano via commitment hash
+                                        </p>
+                                        {entries.map(([idx, hash]) => (
+                                            <div key={idx} className="flex items-center gap-2 mt-1">
+                                                <span className="text-dark-500 text-xs shrink-0">Commitment</span>
+                                                <code className="text-xs text-purple-400 font-mono break-all flex-1">{hash}</code>
+                                                <button onClick={() => navigator.clipboard.writeText(hash)} className="p-1 hover:bg-dark-700 rounded transition-colors shrink-0" title="Copy">
+                                                    <svg className="w-3.5 h-3.5 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     );
                 })()}
@@ -505,9 +533,21 @@ function TransactionPageContent() {
                             const appKeys = nativeData?.app_public_inputs ? Object.keys(nativeData.app_public_inputs) : [];
                             const spellOuts = nativeData?.tx?.outs || [];
 
+                            // Detect which vouts are beamed (from beamed_outs keys)
+                            const beamedVouts = new Set();
+                            const beamedOuts = nativeData?.tx?.beamed_outs;
+                            if (beamedOuts) {
+                                Object.keys(beamedOuts).forEach(k => beamedVouts.add(parseInt(k)));
+                            }
+                            const hasBeamedOuts = beamedVouts.size > 0;
+
                             // Use role from API if available, fallback to client-side classification
                             const classifyAsset = (asset) => {
                                 if (asset.role) return asset.role;
+                                // For beam-out: vout in beamed_outs = beamed, others = change
+                                if (hasBeamedOuts && asset.asset_type === 'token' && asset.amount > 0) {
+                                    return beamedVouts.has(asset.vout) ? 'beamed' : 'change';
+                                }
                                 if (asset.asset_type === 'token' && asset.amount > 0) return 'output';
                                 if (asset.app_id?.startsWith('c/')) return 'contract';
                                 if (asset.amount === 0 && !asset.name) return 'contract';
@@ -526,6 +566,7 @@ function TransactionPageContent() {
                                     case 'output': return { label: 'Output', cls: 'bg-green-500/20 text-green-400 border-green-500/30' };
                                     case 'input': return { label: 'Input', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
                                     case 'beamed': return { label: 'Beamed', cls: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' };
+                                    case 'change': return { label: 'Change', cls: 'bg-dark-700/50 text-dark-500 border-dark-700' };
                                     case 'contract': return { label: 'Contract', cls: 'bg-purple-500/20 text-purple-400 border-purple-500/30' };
                                     default: return { label: role, cls: 'bg-dark-700 text-dark-300 border-dark-600' };
                                 }
@@ -545,9 +586,16 @@ function TransactionPageContent() {
                                         )}
 
                                         <div className="space-y-3">
-                                            {assets.map((asset, idx) => {
+                                            {[...assets].sort((a, b) => {
+                                                // Beamed assets first, change last
+                                                const ra = classifyAsset(a);
+                                                const rb = classifyAsset(b);
+                                                const order = { beamed: 0, output: 1, input: 2, contract: 3, change: 4 };
+                                                return (order[ra] ?? 3) - (order[rb] ?? 3);
+                                            }).map((asset, idx) => {
                                                 const role = classifyAsset(asset);
                                                 const badge = getRoleBadge(role);
+                                                const isChange = role === 'change';
                                                 const icon = getAssetIcon(asset);
                                                 const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
                                                 const decimals = 8;
@@ -555,7 +603,7 @@ function TransactionPageContent() {
                                                 const displaySymbol = asset.symbol || (isBro ? 'BRO' : null);
 
                                                 return (
-                                                    <div key={idx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
+                                                    <div key={idx} className={`rounded-lg p-3 border ${isChange ? 'bg-dark-900/30 border-dark-800/30 opacity-60' : 'bg-dark-900/50 border-dark-800/50'}`}>
                                                         {/* Header: icon/image + name + role badge */}
                                                         <div className="flex items-center justify-between mb-2">
                                                             <div className="flex items-center gap-2">
