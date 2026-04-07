@@ -525,8 +525,6 @@ function TransactionPageContent() {
                         ) : (() => {
                             const assets = charm.assets || [];
                             const tokenInfo = extractTokenFromSpell(charm.spell || charm.data);
-                            const tags = (charm.tags || '').split(',').map(t => t.trim()).filter(Boolean);
-                            const isBeaming = tags.includes('beaming') || tags.includes('beam-in');
 
                             // Classify assets by role using spell outs data
                             const nativeData = charm.data?.native_data || charm.charm?.native_data || charm.data;
@@ -573,100 +571,98 @@ function TransactionPageContent() {
                             };
 
                             if (assets.length > 0) {
+                                // Separate primary assets from change
+                                const classified = assets.map(a => ({ ...a, _role: classifyAsset(a) }));
+                                const primaryAssets = classified.filter(a => a._role !== 'change');
+                                const changeAssets = classified.filter(a => a._role === 'change');
+                                const decimals = 8;
+
+                                const renderAssetCard = (asset, idx) => {
+                                    const badge = getRoleBadge(asset._role);
+                                    const icon = getAssetIcon(asset);
+                                    const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
+                                    const displayName = asset.name || (isBro ? 'Bro' : asset.app_id?.startsWith('c/') ? 'Contract' : 'Unknown');
+                                    const displaySymbol = asset.symbol || (isBro ? 'BRO' : null);
+
+                                    return (
+                                        <div key={idx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    {asset.image_url ? (
+                                                        <img src={asset.image_url} alt={displayName} className="w-7 h-7 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }} />
+                                                    ) : null}
+                                                    <span className="text-lg" style={asset.image_url ? {display:'none'} : {}}>{icon}</span>
+                                                    <div>
+                                                        <span className="text-white text-sm font-medium">{displayName}</span>
+                                                        {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`text-xs px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
+                                                    <span className="text-dark-500 text-xs font-mono">vout:{asset.vout}</span>
+                                                </div>
+                                            </div>
+
+                                            {asset.asset_type === 'token' && asset.amount > 0 && (
+                                                <div className="flex justify-between items-center mb-1.5">
+                                                    <span className="text-dark-400 text-xs">Amount</span>
+                                                    <span className="text-white font-mono text-sm">
+                                                        {(asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })}
+                                                        {displaySymbol && <span className="text-dark-400 ml-1 text-xs">{displaySymbol}</span>}
+                                                    </span>
+                                                </div>
+                                            )}
+
+                                            {asset.address && (
+                                                <div className="text-dark-300 font-mono text-xs break-all mt-1">{asset.address}</div>
+                                            )}
+
+                                            <div className="flex items-center gap-2 mt-1.5">
+                                                <span className="text-dark-500 text-xs">{asset.asset_type}</span>
+                                                {asset.verified && <span className="text-green-500 text-xs">✓ verified</span>}
+                                            </div>
+
+                                            {asset.cardano_fingerprint && (
+                                                <div className="mt-2 pt-2 border-t border-dark-800/30">
+                                                    <div className="flex items-center justify-between">
+                                                        <code className="text-xs text-cyan-400 font-mono">{asset.cardano_fingerprint}</code>
+                                                        <a href={`https://cardanoscan.io/token/${asset.cardano_fingerprint}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs flex-shrink-0 ml-2">Cardanoscan</a>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                };
+
                                 return (
                                     <div className="card p-6">
-                                        <h2 className="text-lg font-semibold text-white mb-4">Assets ({assets.length})</h2>
-
-                                        {/* Beaming source chain badge */}
-                                        {isBeaming && (
-                                            <div className="flex items-center gap-2 mb-4 px-3 py-2 rounded-lg bg-cyan-500/10 border border-cyan-500/20">
-                                                <span className="text-sm">🌉</span>
-                                                <span className="text-cyan-400 text-xs font-medium">Beamed from Cardano</span>
-                                            </div>
-                                        )}
+                                        <h2 className="text-lg font-semibold text-white mb-4">
+                                            {hasBeamedOuts ? 'Beamed Assets' : `Assets (${assets.length})`}
+                                        </h2>
 
                                         <div className="space-y-3">
-                                            {[...assets].sort((a, b) => {
-                                                // Beamed assets first, change last
-                                                const ra = classifyAsset(a);
-                                                const rb = classifyAsset(b);
-                                                const order = { beamed: 0, output: 1, input: 2, contract: 3, change: 4 };
-                                                return (order[ra] ?? 3) - (order[rb] ?? 3);
-                                            }).map((asset, idx) => {
-                                                const role = classifyAsset(asset);
-                                                const badge = getRoleBadge(role);
-                                                const isChange = role === 'change';
-                                                const icon = getAssetIcon(asset);
-                                                const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
-                                                const decimals = 8;
-                                                const displayName = asset.name || (isBro ? 'Bro' : asset.app_id?.startsWith('c/') ? 'Contract' : 'Unknown');
-                                                const displaySymbol = asset.symbol || (isBro ? 'BRO' : null);
-
-                                                return (
-                                                    <div key={idx} className={`rounded-lg p-3 border ${isChange ? 'bg-dark-900/30 border-dark-800/30 opacity-60' : 'bg-dark-900/50 border-dark-800/50'}`}>
-                                                        {/* Header: icon/image + name + role badge */}
-                                                        <div className="flex items-center justify-between mb-2">
-                                                            <div className="flex items-center gap-2">
-                                                                {asset.image_url ? (
-                                                                    <img src={asset.image_url} alt={displayName} className="w-7 h-7 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }} />
-                                                                ) : null}
-                                                                <span className="text-lg" style={asset.image_url ? {display:'none'} : {}}>{icon}</span>
-                                                                <div>
-                                                                    <span className="text-white text-sm font-medium">{displayName}</span>
-                                                                    {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className={`text-xs px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
-                                                                <span className="text-dark-500 text-xs font-mono">vout:{asset.vout}</span>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Amount (only for tokens with amount > 0) */}
-                                                        {asset.asset_type === 'token' && asset.amount > 0 && (
-                                                            <div className="flex justify-between items-center mb-1.5">
-                                                                <span className="text-dark-400 text-xs">Amount</span>
-                                                                <span className="text-white font-mono text-sm">
-                                                                    {(asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })}
-                                                                    {displaySymbol && <span className="text-dark-400 ml-1 text-xs">{displaySymbol}</span>}
-                                                                </span>
-                                                            </div>
-                                                        )}
-
-                                                        {/* Address */}
-                                                        {asset.address && (
-                                                            <div className="text-dark-300 font-mono text-xs break-all mt-1">
-                                                                {asset.address}
-                                                            </div>
-                                                        )}
-
-                                                        {/* Type badge */}
-                                                        <div className="flex items-center gap-2 mt-1.5">
-                                                            <span className="text-dark-500 text-xs">{asset.asset_type}</span>
-                                                            {asset.verified && <span className="text-green-500 text-xs">✓ verified</span>}
-                                                        </div>
-
-                                                        {/* Cardano origin info */}
-                                                        {asset.cardano_fingerprint && (
-                                                            <div className="mt-2 pt-2 border-t border-dark-800/30">
-                                                                <div className="flex items-center justify-between">
-                                                                    <code className="text-xs text-cyan-400 font-mono">{asset.cardano_fingerprint}</code>
-                                                                    <a
-                                                                        href={`https://cardanoscan.io/token/${asset.cardano_fingerprint}`}
-                                                                        target="_blank"
-                                                                        rel="noopener noreferrer"
-                                                                        className="text-cyan-400 hover:text-cyan-300 text-xs flex-shrink-0 ml-2"
-                                                                    >
-                                                                        Cardanoscan
-                                                                    </a>
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
+                                            {primaryAssets.map((asset, idx) => renderAssetCard(asset, idx))}
                                         </div>
 
+                                        {/* Change outputs: compact summary */}
+                                        {changeAssets.length > 0 && (
+                                            <div className="mt-3 pt-3 border-t border-dark-800/30">
+                                                <p className="text-dark-500 text-xs mb-1">Change</p>
+                                                {changeAssets.map((asset, idx) => {
+                                                    const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
+                                                    const sym = asset.symbol || (isBro ? 'BRO' : '');
+                                                    const amt = asset.amount > 0
+                                                        ? (asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })
+                                                        : '0';
+                                                    return (
+                                                        <div key={idx} className="flex items-center justify-between text-dark-500 text-xs py-0.5">
+                                                            <span className="font-mono">vout:{asset.vout}</span>
+                                                            <span className="font-mono">{amt} {sym}</span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             }
