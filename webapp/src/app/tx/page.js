@@ -539,13 +539,12 @@ function TransactionPageContent() {
                             }
                             const hasBeamedOuts = beamedVouts.size > 0;
 
-                            // Use role from API if available, fallback to client-side classification
                             const classifyAsset = (asset) => {
-                                if (asset.role) return asset.role;
-                                // For beam-out: vout in beamed_outs = beamed, others = change
+                                // For beaming TXs: beamed_outs is source of truth for role
                                 if (hasBeamedOuts && asset.asset_type === 'token' && asset.amount > 0) {
                                     return beamedVouts.has(asset.vout) ? 'beamed' : 'change';
                                 }
+                                if (asset.role) return asset.role;
                                 if (asset.asset_type === 'token' && asset.amount > 0) return 'output';
                                 if (asset.app_id?.startsWith('c/')) return 'contract';
                                 if (asset.amount === 0 && !asset.name) return 'contract';
@@ -571,98 +570,163 @@ function TransactionPageContent() {
                             };
 
                             if (assets.length > 0) {
-                                // Separate primary assets from change
-                                const classified = assets.map(a => ({ ...a, _role: classifyAsset(a) }));
-                                const primaryAssets = classified.filter(a => a._role !== 'change');
-                                const changeAssets = classified.filter(a => a._role === 'change');
                                 const decimals = 8;
+                                const fmtAmt = (raw) => (raw / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 });
 
-                                const renderAssetCard = (asset, idx) => {
-                                    const badge = getRoleBadge(asset._role);
-                                    const icon = getAssetIcon(asset);
-                                    const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
-                                    const displayName = asset.name || (isBro ? 'Bro' : asset.app_id?.startsWith('c/') ? 'Contract' : 'Unknown');
-                                    const displaySymbol = asset.symbol || (isBro ? 'BRO' : null);
+                                // For beaming TXs: group by app_id, show one card per token
+                                if (hasBeamedOuts) {
+                                    const classified = assets.map(a => ({ ...a, _role: classifyAsset(a) }));
+                                    // Group by app_id to merge beamed + change of same token
+                                    const grouped = {};
+                                    for (const a of classified) {
+                                        const key = a.app_id || `unknown-${a.vout}`;
+                                        if (!grouped[key]) grouped[key] = { beamed: [], change: [], other: [] };
+                                        if (a._role === 'beamed') grouped[key].beamed.push(a);
+                                        else if (a._role === 'change') grouped[key].change.push(a);
+                                        else grouped[key].other.push(a);
+                                    }
 
                                     return (
-                                        <div key={idx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
-                                                    {asset.image_url ? (
-                                                        <img src={asset.image_url} alt={displayName} className="w-7 h-7 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }} />
-                                                    ) : null}
-                                                    <span className="text-lg" style={asset.image_url ? {display:'none'} : {}}>{icon}</span>
-                                                    <div>
-                                                        <span className="text-white text-sm font-medium">{displayName}</span>
-                                                        {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className={`text-xs px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
-                                                    <span className="text-dark-500 text-xs font-mono">vout:{asset.vout}</span>
-                                                </div>
-                                            </div>
+                                        <div className="card p-6">
+                                            <h2 className="text-lg font-semibold text-white mb-4">Beamed Assets</h2>
+                                            <div className="space-y-3">
+                                                {Object.values(grouped).map((group, gIdx) => {
+                                                    // Use first beamed asset as representative, fall back to first of any
+                                                    const rep = group.beamed[0] || group.other[0] || group.change[0];
+                                                    if (!rep) return null;
+                                                    const icon = getAssetIcon(rep);
+                                                    const isBro = rep.app_id?.includes(VERIFIED_BRO_HASH);
+                                                    const displayName = rep.name || (isBro ? 'Bro' : 'Token');
+                                                    const displaySymbol = rep.symbol || (isBro ? 'BRO' : null);
+                                                    const totalBeamed = group.beamed.reduce((s, a) => s + (a.amount || 0), 0);
+                                                    const totalChange = group.change.reduce((s, a) => s + (a.amount || 0), 0);
 
-                                            {asset.asset_type === 'token' && asset.amount > 0 && (
-                                                <div className="flex justify-between items-center mb-1.5">
-                                                    <span className="text-dark-400 text-xs">Amount</span>
-                                                    <span className="text-white font-mono text-sm">
-                                                        {(asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })}
-                                                        {displaySymbol && <span className="text-dark-400 ml-1 text-xs">{displaySymbol}</span>}
-                                                    </span>
-                                                </div>
-                                            )}
-
-                                            {asset.address && (
-                                                <div className="text-dark-300 font-mono text-xs break-all mt-1">{asset.address}</div>
-                                            )}
-
-                                            <div className="flex items-center gap-2 mt-1.5">
-                                                <span className="text-dark-500 text-xs">{asset.asset_type}</span>
-                                                {asset.verified && <span className="text-green-500 text-xs">✓ verified</span>}
-                                            </div>
-
-                                            {asset.cardano_fingerprint && (
-                                                <div className="mt-2 pt-2 border-t border-dark-800/30">
-                                                    <div className="flex items-center justify-between">
-                                                        <code className="text-xs text-cyan-400 font-mono">{asset.cardano_fingerprint}</code>
-                                                        <a href={`https://cardanoscan.io/token/${asset.cardano_fingerprint}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs flex-shrink-0 ml-2">Cardanoscan</a>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    );
-                                };
-
-                                return (
-                                    <div className="card p-6">
-                                        <h2 className="text-lg font-semibold text-white mb-4">
-                                            {hasBeamedOuts ? 'Beamed Assets' : `Assets (${assets.length})`}
-                                        </h2>
-
-                                        <div className="space-y-3">
-                                            {primaryAssets.map((asset, idx) => renderAssetCard(asset, idx))}
-                                        </div>
-
-                                        {/* Change outputs: compact summary */}
-                                        {changeAssets.length > 0 && (
-                                            <div className="mt-3 pt-3 border-t border-dark-800/30">
-                                                <p className="text-dark-500 text-xs mb-1">Change</p>
-                                                {changeAssets.map((asset, idx) => {
-                                                    const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
-                                                    const sym = asset.symbol || (isBro ? 'BRO' : '');
-                                                    const amt = asset.amount > 0
-                                                        ? (asset.amount / Math.pow(10, decimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 4 })
-                                                        : '0';
                                                     return (
-                                                        <div key={idx} className="flex items-center justify-between text-dark-500 text-xs py-0.5">
-                                                            <span className="font-mono">vout:{asset.vout}</span>
-                                                            <span className="font-mono">{amt} {sym}</span>
+                                                        <div key={gIdx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
+                                                            {/* Token header */}
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <div className="flex items-center gap-2">
+                                                                    {rep.image_url ? (
+                                                                        <img src={rep.image_url} alt={displayName} className="w-7 h-7 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }} />
+                                                                    ) : null}
+                                                                    <span className="text-lg" style={rep.image_url ? {display:'none'} : {}}>{icon}</span>
+                                                                    <div>
+                                                                        <span className="text-white text-sm font-medium">{displayName}</span>
+                                                                        {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
+                                                                    </div>
+                                                                </div>
+                                                                <span className="text-xs px-1.5 py-0.5 rounded border bg-cyan-500/20 text-cyan-400 border-cyan-500/30">Beamed</span>
+                                                            </div>
+
+                                                            {/* Beamed amount */}
+                                                            {totalBeamed > 0 && (
+                                                                <div className="flex justify-between items-center mb-1">
+                                                                    <span className="text-dark-400 text-xs">Beamed</span>
+                                                                    <span className="text-cyan-400 font-mono text-sm font-semibold">
+                                                                        {fmtAmt(totalBeamed)}
+                                                                        {displaySymbol && <span className="text-dark-400 ml-1 text-xs">{displaySymbol}</span>}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Change amount (subtle) */}
+                                                            {totalChange > 0 && (
+                                                                <div className="flex justify-between items-center mb-1">
+                                                                    <span className="text-dark-500 text-xs">Change</span>
+                                                                    <span className="text-dark-500 font-mono text-xs">
+                                                                        {fmtAmt(totalChange)}
+                                                                        {displaySymbol && <span className="ml-1">{displaySymbol}</span>}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+
+                                                            {/* Address */}
+                                                            {rep.address && (
+                                                                <div className="text-dark-300 font-mono text-xs break-all mt-1">{rep.address}</div>
+                                                            )}
+
+                                                            {/* Type + verified */}
+                                                            <div className="flex items-center gap-2 mt-1.5">
+                                                                <span className="text-dark-500 text-xs">{rep.asset_type}</span>
+                                                                {rep.verified && <span className="text-green-500 text-xs">✓ verified</span>}
+                                                            </div>
+
+                                                            {/* Cardano fingerprint */}
+                                                            {rep.cardano_fingerprint && (
+                                                                <div className="mt-2 pt-2 border-t border-dark-800/30">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <code className="text-xs text-cyan-400 font-mono">{rep.cardano_fingerprint}</code>
+                                                                        <a href={`https://cardanoscan.io/token/${rep.cardano_fingerprint}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs flex-shrink-0 ml-2">Cardanoscan</a>
+                                                                    </div>
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     );
                                                 })}
                                             </div>
-                                        )}
+                                        </div>
+                                    );
+                                }
+
+                                // Non-beaming: standard asset cards
+                                return (
+                                    <div className="card p-6">
+                                        <h2 className="text-lg font-semibold text-white mb-4">Assets ({assets.length})</h2>
+                                        <div className="space-y-3">
+                                            {assets.map((asset, idx) => {
+                                                const role = classifyAsset(asset);
+                                                const badge = getRoleBadge(role);
+                                                const icon = getAssetIcon(asset);
+                                                const isBro = asset.app_id?.includes(VERIFIED_BRO_HASH);
+                                                const displayName = asset.name || (isBro ? 'Bro' : asset.app_id?.startsWith('c/') ? 'Contract' : 'Unknown');
+                                                const displaySymbol = asset.symbol || (isBro ? 'BRO' : null);
+
+                                                return (
+                                                    <div key={idx} className="bg-dark-900/50 rounded-lg p-3 border border-dark-800/50">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <div className="flex items-center gap-2">
+                                                                {asset.image_url ? (
+                                                                    <img src={asset.image_url} alt={displayName} className="w-7 h-7 rounded-full object-cover" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'inline'; }} />
+                                                                ) : null}
+                                                                <span className="text-lg" style={asset.image_url ? {display:'none'} : {}}>{icon}</span>
+                                                                <div>
+                                                                    <span className="text-white text-sm font-medium">{displayName}</span>
+                                                                    {displaySymbol && <span className="text-dark-400 text-xs ml-1.5">{displaySymbol}</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`text-xs px-1.5 py-0.5 rounded border ${badge.cls}`}>{badge.label}</span>
+                                                                <span className="text-dark-500 text-xs font-mono">vout:{asset.vout}</span>
+                                                            </div>
+                                                        </div>
+                                                        {asset.asset_type === 'token' && asset.amount > 0 && (
+                                                            <div className="flex justify-between items-center mb-1.5">
+                                                                <span className="text-dark-400 text-xs">Amount</span>
+                                                                <span className="text-white font-mono text-sm">
+                                                                    {fmtAmt(asset.amount)}
+                                                                    {displaySymbol && <span className="text-dark-400 ml-1 text-xs">{displaySymbol}</span>}
+                                                                </span>
+                                                            </div>
+                                                        )}
+                                                        {asset.address && (
+                                                            <div className="text-dark-300 font-mono text-xs break-all mt-1">{asset.address}</div>
+                                                        )}
+                                                        <div className="flex items-center gap-2 mt-1.5">
+                                                            <span className="text-dark-500 text-xs">{asset.asset_type}</span>
+                                                            {asset.verified && <span className="text-green-500 text-xs">✓ verified</span>}
+                                                        </div>
+                                                        {asset.cardano_fingerprint && (
+                                                            <div className="mt-2 pt-2 border-t border-dark-800/30">
+                                                                <div className="flex items-center justify-between">
+                                                                    <code className="text-xs text-cyan-400 font-mono">{asset.cardano_fingerprint}</code>
+                                                                    <a href={`https://cardanoscan.io/token/${asset.cardano_fingerprint}`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs flex-shrink-0 ml-2">Cardanoscan</a>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 );
                             }
