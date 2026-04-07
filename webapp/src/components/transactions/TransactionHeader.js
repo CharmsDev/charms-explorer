@@ -20,62 +20,58 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
         }
     };
 
-    // Beaming layout: title + confirmed + flow circles inline, description top-right
+    // Beaming layout
     if (beamFlow) {
         return (
             <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
-                    <h2 className="text-2xl font-bold text-white mb-3">
-                        {label || metadata.label}
-                    </h2>
-                    <div className="flex items-center gap-3 flex-wrap">
+                    {/* Title + Confirmed on same line */}
+                    <div className="flex items-center gap-3 mb-3">
+                        <h2 className="text-2xl font-bold text-white">
+                            {label || metadata.label}
+                        </h2>
                         <span className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${getStatusColor(status)}`}>
                             {status}
                         </span>
+                    </div>
 
-                        {/* Inline chain flow */}
-                        <div className="flex items-center gap-0">
-                            {/* Source chain */}
-                            <div className="flex items-center gap-1.5">
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${
-                                    beamFlow.isBeamOut
-                                        ? 'bg-orange-500/20 border-orange-500/50'
-                                        : 'bg-blue-500/15 border-blue-500/30'
-                                }`}>
-                                    <span className="text-sm font-bold">{beamFlow.isBeamOut ? '₿' : '₳'}</span>
-                                </div>
-                                <span className={`text-xs font-medium ${beamFlow.isBeamOut ? 'text-orange-400' : 'text-blue-400'}`}>
-                                    {beamFlow.isBeamOut ? 'Bitcoin' : 'Cardano'}
-                                </span>
+                    {/* Chain flow below, aligned left */}
+                    <div className="flex items-center gap-0">
+                        <div className="flex items-center gap-1.5">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                                beamFlow.isBeamOut
+                                    ? 'bg-orange-500/20 border-orange-500/50'
+                                    : 'bg-blue-500/15 border-blue-500/30'
+                            }`}>
+                                <span className="text-xs font-bold">{beamFlow.isBeamOut ? '₿' : '₳'}</span>
                             </div>
-
-                            {/* Arrow */}
-                            <div className="flex items-center mx-2">
-                                <div className="w-10 h-[2px] bg-gradient-to-r from-cyan-500/50 to-cyan-400"></div>
-                                <svg className="w-2.5 h-2.5 text-cyan-400 -ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M5 12h14m-4-4l4 4-4 4" />
-                                </svg>
+                            <span className={`text-xs font-medium ${beamFlow.isBeamOut ? 'text-orange-400' : 'text-blue-400'}`}>
+                                {beamFlow.isBeamOut ? 'Bitcoin' : 'Cardano'}
+                            </span>
+                        </div>
+                        <div className="flex items-center mx-2">
+                            <div className="w-8 h-[2px] bg-gradient-to-r from-cyan-500/50 to-cyan-400"></div>
+                            <svg className="w-2.5 h-2.5 text-cyan-400 -ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M5 12h14m-4-4l4 4-4 4" />
+                            </svg>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                                beamFlow.isBeamOut
+                                    ? 'bg-blue-500/15 border-blue-500/30'
+                                    : 'bg-orange-500/20 border-orange-500/50'
+                            }`}>
+                                <span className="text-xs font-bold">{beamFlow.isBeamOut ? '₳' : '₿'}</span>
                             </div>
-
-                            {/* Destination chain */}
-                            <div className="flex items-center gap-1.5">
-                                <div className={`w-9 h-9 rounded-full flex items-center justify-center border-2 ${
-                                    beamFlow.isBeamOut
-                                        ? 'bg-blue-500/15 border-blue-500/30'
-                                        : 'bg-orange-500/20 border-orange-500/50'
-                                }`}>
-                                    <span className="text-sm font-bold">{beamFlow.isBeamOut ? '₳' : '₿'}</span>
-                                </div>
-                                <span className={`text-xs font-medium ${beamFlow.isBeamOut ? 'text-blue-400' : 'text-orange-400'}`}>
-                                    {beamFlow.isBeamOut ? 'Cardano' : 'Bitcoin'}
-                                </span>
-                            </div>
+                            <span className={`text-xs font-medium ${beamFlow.isBeamOut ? 'text-blue-400' : 'text-orange-400'}`}>
+                                {beamFlow.isBeamOut ? 'Cardano' : 'Bitcoin'}
+                            </span>
                         </div>
                     </div>
                 </div>
 
-                {/* Description top-right */}
-                <p className="text-dark-400 text-sm text-right max-w-[220px]">
+                {/* Description top-right, single line */}
+                <p className="text-dark-400 text-sm whitespace-nowrap">
                     {description || metadata.description}
                 </p>
             </div>
