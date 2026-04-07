@@ -90,7 +90,7 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
                                         <text x="120" y="66" textAnchor="middle" fill="#f97316" fontSize="9" fontWeight="600" fontFamily="system-ui">Bitcoin</text>
 
                                         {/* Solid arrow: Bitcoin → Cardano */}
-                                        <line x1="142" y1="36" x2="226" y2="36" stroke="url(#beamGrad)" strokeWidth="2.5" />
+                                        <line x1="142" y1="36" x2="226" y2="36" stroke="#06b6d4" strokeWidth="2" opacity="0.8" />
                                         <polygon points="226,31.5 235,36 226,40.5" fill="#06b6d4" />
 
                                         {/* Cardano circle (destination) */}
@@ -108,7 +108,7 @@ export default function TransactionHeader({ type, status = 'confirmed', amount, 
                                         <text x="60" y="66" textAnchor="middle" fill="#3b82f6" fontSize="9" fontWeight="600" fontFamily="system-ui">Cardano</text>
 
                                         {/* Solid arrow: Cardano → Bitcoin */}
-                                        <line x1="80" y1="36" x2="190" y2="36" stroke="url(#beamGrad)" strokeWidth="2.5" />
+                                        <line x1="80" y1="36" x2="190" y2="36" stroke="#06b6d4" strokeWidth="2" opacity="0.8" />
                                         <polygon points="190,31.5 199,36 190,40.5" fill="#06b6d4" />
 
                                         {/* Bitcoin circle (destination) — clickable */}
