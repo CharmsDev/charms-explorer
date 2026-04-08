@@ -539,14 +539,21 @@ function TransactionPageContent() {
                             }
                             const hasBeamedOuts = beamedVouts.size > 0;
 
+                            // Detect DEX TX from tags
+                            const charmTags = (charm.tags || '').split(',').map(t => t.trim());
+                            const isDexTx = charmTags.some(t => ['create-ask','create-bid','fulfill-ask','fulfill-bid','cancel','partial-fill'].includes(t));
+
                             const classifyAsset = (asset) => {
                                 // For beaming TXs: beamed_outs is source of truth for role
                                 if (hasBeamedOuts && asset.asset_type === 'token' && asset.amount > 0) {
                                     return beamedVouts.has(asset.vout) ? 'beamed' : 'change';
                                 }
-                                if (asset.role) return asset.role;
+                                // For DEX TXs: use 'order' role for token outputs
+                                if (isDexTx && asset.asset_type === 'token' && asset.amount > 0) return 'order';
+                                if (asset.role && asset.role !== 'output') return asset.role;
                                 if (asset.asset_type === 'token' && asset.amount > 0) return 'output';
                                 if (asset.app_id?.startsWith('c/')) return 'contract';
+                                if (asset.app_id?.startsWith('b/')) return 'contract';
                                 if (asset.amount === 0 && !asset.name) return 'contract';
                                 return 'output';
                             };
@@ -561,6 +568,7 @@ function TransactionPageContent() {
                             const getRoleBadge = (role) => {
                                 switch (role) {
                                     case 'output': return { label: 'Output', cls: 'bg-green-500/20 text-green-400 border-green-500/30' };
+                                    case 'order': return { label: 'Order', cls: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' };
                                     case 'input': return { label: 'Input', cls: 'bg-blue-500/20 text-blue-400 border-blue-500/30' };
                                     case 'beamed': return { label: 'Beamed', cls: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30' };
                                     case 'change': return { label: 'Change', cls: 'bg-dark-700/50 text-dark-500 border-dark-700' };
@@ -672,16 +680,14 @@ function TransactionPageContent() {
                                 // Non-token assets (contracts, inputs) shown separately
                                 const tokenAssets = assets.filter(a => a.asset_type === 'token' && a.amount > 0);
                                 const otherAssets = assets.filter(a => !(a.asset_type === 'token' && a.amount > 0));
-                                const hasMultipleOutputs = tokenAssets.length > 1;
 
-                                // Group tokens by app_id
+                                // Group tokens by app_id, sort by vout within each group
                                 const tokenGroups = {};
                                 for (const a of tokenAssets) {
                                     const key = a.app_id || `unknown-${a.vout}`;
                                     if (!tokenGroups[key]) tokenGroups[key] = [];
                                     tokenGroups[key].push(a);
                                 }
-                                // Within each group: lowest vout = primary, rest = change
                                 for (const arr of Object.values(tokenGroups)) {
                                     arr.sort((a, b) => a.vout - b.vout);
                                 }
@@ -692,7 +698,7 @@ function TransactionPageContent() {
                                         <div className="space-y-3">
                                             {Object.values(tokenGroups).map((group, gIdx) => {
                                                 const primary = group[0];
-                                                const changeOuts = hasMultipleOutputs ? group.slice(1) : [];
+                                                const changeOuts = group.length > 1 ? group.slice(1) : [];
                                                 const icon = getAssetIcon(primary);
                                                 const isBro = primary.app_id?.includes(VERIFIED_BRO_HASH);
                                                 const displayName = primary.name || (isBro ? 'Bro' : 'Token');
