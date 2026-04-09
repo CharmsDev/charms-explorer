@@ -224,7 +224,8 @@ function TransactionPageContent() {
                 {(() => {
                     const analysis = analyzeTransaction(charm);
                     const tokenDecimals = charm.decimals || 8;
-                    const tokenTicker = charm.ticker || charm.name || null;
+                    const firstAsset = (charm.assets || []).find(a => a.symbol || a.name);
+                    const tokenTicker = charm.ticker || charm.symbol || charm.name || firstAsset?.symbol || firstAsset?.name || null;
                     const formattedQuantity = analysis.orderDetails?.quantity != null
                         ? (analysis.orderDetails.quantity / Math.pow(10, tokenDecimals)).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 })
                         : null;

@@ -25,7 +25,7 @@ export default function DexOrderDetails({ orderDetails, copyToClipboard, tokenDe
         if (!denominator) return '-';
         // Convert from sats/raw_unit to sats/token
         const pricePerToken = (numerator / denominator) * Math.pow(10, tokenDecimals);
-        return `${Math.round(pricePerToken).toLocaleString()} sats/${tokenTicker}`;
+        return `${Math.round(pricePerToken).toLocaleString()} sats/${tokenTicker || 'token'}`;
     };
     
     return (
