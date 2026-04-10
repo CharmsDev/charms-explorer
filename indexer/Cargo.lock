@@ -874,9 +874,8 @@ dependencies = [
 
 [[package]]
 name = "charms-app-runner"
-version = "12.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ec081ade091d1f9cddd2a63a1127e4d0ca1dd83e60fe59d05b372c19c3e1461"
+version = "13.0.0"
+source = "git+https://github.com/CharmsDev/charms.git?branch=main#dd5fc4eeb736b5e1f511436674803a64ad950b47"
 dependencies = [
  "anyhow",
  "charms-data",
@@ -887,9 +886,8 @@ dependencies = [
 
 [[package]]
 name = "charms-client"
-version = "12.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6fd2ce943db6f618151252ec3fbd4dbf5d59d75ab5fef996d2193c1d2b4ee418"
+version = "13.0.0"
+source = "git+https://github.com/CharmsDev/charms.git?branch=main#dd5fc4eeb736b5e1f511436674803a64ad950b47"
 dependencies = [
  "anyhow",
  "ark-bls12-381",
@@ -919,9 +917,8 @@ dependencies = [
 
 [[package]]
 name = "charms-data"
-version = "12.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90bf721aeeb3a63d65007d75d7b41f6fea5a224201b2df1f106d88e134865add"
+version = "13.0.0"
+source = "git+https://github.com/CharmsDev/charms.git?branch=main#dd5fc4eeb736b5e1f511436674803a64ad950b47"
 dependencies = [
  "anyhow",
  "ark-std 0.5.0",
@@ -934,7 +931,7 @@ dependencies = [
 
 [[package]]
 name = "charms-indexer"
-version = "0.1.1"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
