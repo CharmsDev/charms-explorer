@@ -15,11 +15,11 @@ use charms_client::{V7, V10};
 pub struct NativeCharmParser;
 
 impl NativeCharmParser {
-    /// Spell verification key for CURRENT_VERSION (V13)
+    /// Spell verification key for CURRENT_VERSION (V14)
     /// Source: charms-lib SPELL_VK constant
     /// The library uses this for CURRENT_VERSION and falls back to hardcoded VKs for older versions
     pub const SPELL_VK: &'static str =
-        "0x004ef5bd2f6ed0c33b022dcc263bde479421d81a82ca0cb1a99d9ff361f89895";
+        "0x001a2396afb7e376736d9cf82d33c0dec55cb66866bf7f141fdaa92ab70a0506";
 
     /// Extract and verify a charm from a transaction hex string
     ///
