@@ -100,3 +100,18 @@ database/.env.production
 database/tools/
 /scripts/
 /backups/
+
+# ====== Security: credentials, secrets, keys ======
+**/credentials/
+secrets/
+**/*secret*
+**/*key.txt
+**/*_key.hex
+**/*.key
+
+# ====== .env catch-all + example exception ======
+.env.*
+!.env.example
+
+# ====== Temporary directories ======
+**/tmp/
