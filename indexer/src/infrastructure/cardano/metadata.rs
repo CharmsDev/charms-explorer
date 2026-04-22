@@ -40,6 +40,7 @@ pub fn compute_fingerprint(policy_id_hex: &str, asset_name_hex: &str) -> String 
 }
 
 /// Derive Cardano policy_id and asset_name from a charms App struct.
+/// PANICS if app.tag is not TOKEN ('t') or NFT ('n') — callers must filter.
 pub fn derive_cardano_ids(app: &App) -> (String, String) {
     let (pid, _script) = cardano_tx::policy_id(app);
     let aname = cardano_tx::asset_name(app);
@@ -47,7 +48,13 @@ pub fn derive_cardano_ids(app: &App) -> (String, String) {
 }
 
 /// Fetch metadata for a Cardano token. Uses Koios (free, no API key).
+/// Returns None for non-token/nft apps (e.g. `c/` contracts have no Cardano mapping).
 pub async fn fetch_metadata(app: &App) -> Option<CardanoTokenMetadata> {
+    // Only TOKEN ('t') and NFT ('n') apps have Cardano policy_id/asset_name.
+    // Contracts ('c') and other tags would panic in cardano_tx::asset_name.
+    if app.tag != 't' && app.tag != 'n' {
+        return None;
+    }
     let (policy_id_hex, asset_name_hex) = derive_cardano_ids(app);
     let cache_key = format!("{}{}", policy_id_hex, asset_name_hex);
 

@@ -292,12 +292,27 @@ async fn build_asset_requests(
 
 /// Fetch Cardano token metadata for a beaming transaction.
 /// Parses the App from the asset's app_id, derives Cardano IDs, and fetches metadata.
+/// For beam-in txs, the primary app_id is the `c/` contract — which can't be used for
+/// Cardano derivation (panics in charms_client::cardano_tx::asset_name on non-TOKEN/NFT).
+/// We find the first `t/` or `n/` app in the spell's app_public_inputs instead.
 async fn fetch_cardano_metadata_for_beaming(
     analyzed: &AnalyzedTx,
 ) -> Option<crate::infrastructure::cardano::metadata::CardanoTokenMetadata> {
     use crate::infrastructure::cardano::metadata;
 
-    let app: charms_data::App = analyzed.app_id.parse().ok()?;
+    // Pick an app that's a token or NFT (not a contract)
+    let app_id = if analyzed.app_id.starts_with("t/") || analyzed.app_id.starts_with("n/") {
+        analyzed.app_id.clone()
+    } else {
+        // Primary app is a contract — find first t/ or n/ from asset_infos
+        analyzed
+            .asset_infos
+            .iter()
+            .find(|a| a.app_id.starts_with("t/") || a.app_id.starts_with("n/"))
+            .map(|a| a.app_id.clone())?
+    };
+
+    let app: charms_data::App = app_id.parse().ok()?;
     metadata::fetch_metadata(&app).await
 }
 
