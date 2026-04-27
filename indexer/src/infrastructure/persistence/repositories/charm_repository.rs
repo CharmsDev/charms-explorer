@@ -528,6 +528,31 @@ impl CharmRepository {
             .collect())
     }
 
+    /// Check if any of the given txids belongs to a known beam-out transaction.
+    /// Used as a heuristic to detect ADA→BTC claims: when a user claims tokens back from
+    /// Cardano, they often fund the claim tx with outputs from their prior BTC→ADA beam-out.
+    /// If a spell that creates tokens has an input from a beam-out tx, it's likely a claim.
+    pub async fn has_beam_out_input_txid(&self, input_txids: &[String]) -> Result<bool, DbError> {
+        if input_txids.is_empty() {
+            return Ok(false);
+        }
+        // txids are 64-char hex — safe to inline
+        let txid_list = input_txids
+            .iter()
+            .map(|t| format!("'{}'", t))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let sql = format!(
+            "SELECT EXISTS (SELECT 1 FROM charms WHERE txid IN ({}) AND tags LIKE '%beam-out%') AS result",
+            txid_list
+        );
+        let stmt = Statement::from_string(DbBackend::Postgres, sql);
+        let result = self.conn.query_one(stmt).await?;
+        Ok(result
+            .and_then(|r| r.try_get::<bool>("", "result").ok())
+            .unwrap_or(false))
+    }
+
     /// Get unspent charms by block height and network
     /// Returns (app_id, address, amount) for stats_holders updates during reindex
     pub async fn get_unspent_charms_by_block(

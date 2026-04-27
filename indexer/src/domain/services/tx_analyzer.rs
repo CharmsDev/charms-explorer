@@ -26,6 +26,9 @@ pub struct AnalyzedTx {
     pub is_beaming: bool,
     pub version: u32,
     pub tx_type: String,
+    /// Output indices present in spell.tx.beamed_outs — tokens at these outputs
+    /// are committed to Cardano and must be reported with amount=0 on Bitcoin.
+    pub beamed_out_indices: std::collections::HashSet<usize>,
 }
 
 /// Pure analysis: parse raw tx hex → Option<AnalyzedTx>.
@@ -95,6 +98,12 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
     // - beam-in/cross-chain: tx involves a c/ (contract) app alongside t/ tokens
     //   This covers beam-in (receiving from Cardano) and cross-chain operations
     let has_beamed_outs = spell.tx.beamed_outs.is_some();
+    let beamed_out_indices: std::collections::HashSet<usize> = spell_json
+        .get("tx")
+        .and_then(|tx| tx.get("beamed_outs"))
+        .and_then(|bo| bo.as_object())
+        .map(|obj| obj.keys().filter_map(|k| k.parse::<usize>().ok()).collect())
+        .unwrap_or_default();
     let has_contract_app = spell
         .app_public_inputs
         .keys()
@@ -186,6 +195,7 @@ pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx
         is_beaming,
         version: spell.version,
         tx_type,
+        beamed_out_indices,
     })
 }
 

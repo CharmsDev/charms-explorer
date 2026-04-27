@@ -36,11 +36,51 @@ pub async fn detect_charms(
     let mut charm_batch = Vec::new();
     let mut asset_batch: Vec<AssetBatchItem> = Vec::new();
 
-    for (txid, tx_hex, tx_pos, input_txids) in tx_data {
-        let analyzed = match tx_analyzer::analyze_tx(&txid, &tx_hex, network) {
+    for (txid, tx_hex, tx_pos, input_utxos) in tx_data {
+        let input_txids: Vec<String> = input_utxos.iter().map(|(t, _)| t.clone()).collect();
+
+        let mut analyzed = match tx_analyzer::analyze_tx(&txid, &tx_hex, network) {
             Some(a) => a,
             None => continue,
         };
+
+        // Detect ADA→BTC claims: spells that create tokens but have no beam marker.
+        // Heuristic: users commonly fund the Bitcoin claim tx with outputs from their prior
+        // BTC→ADA beam-out. If any input txid is a known beam-out, classify as beam-in.
+        if !analyzed.is_beaming && !analyzed.asset_infos.is_empty() {
+            match charm_service
+                .get_charm_repository()
+                .has_beam_out_input_txid(&input_txids)
+                .await
+            {
+                Ok(true) => {
+                    analyzed.is_beaming = true;
+                    let mut tag_list: Vec<String> = analyzed
+                        .tags
+                        .as_deref()
+                        .unwrap_or("")
+                        .split(',')
+                        .filter(|s| !s.is_empty() && *s != "bro-mint" && *s != "bro-transfer")
+                        .map(String::from)
+                        .collect();
+                    tag_list.insert(0, "beam-in".to_string());
+                    tag_list.insert(0, "beaming".to_string());
+                    analyzed.tags = Some(tag_list.join(","));
+                    analyzed.tx_type = "beam_in".to_string();
+                    logging::log_info(&format!(
+                        "[{}] 🏷️ Block {}: ADA→BTC claim detected for tx {} (beam-in via input txid)",
+                        network, height, txid
+                    ));
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    logging::log_warning(&format!(
+                        "[{}] ⚠️ Block {}: beam-in input check failed for tx {}: {}",
+                        network, height, txid, e
+                    ));
+                }
+            }
+        }
 
         let confirmations = latest_height - height + 1;
 
@@ -162,11 +202,13 @@ pub async fn detect_charms(
                 .unwrap_or_default()
         };
 
-        // Push one charm entry per charm-bearing output with its correct vout
+        // Push one charm entry per charm-bearing output with its correct vout.
+        // Beamed-out outputs are committed to Cardano — amount is 0 on Bitcoin.
         for asset in &analyzed.asset_infos {
             let address = vout_addresses
                 .get(asset.vout_index as usize)
                 .and_then(|a| a.clone());
+            let is_beamed_out = analyzed.beamed_out_indices.contains(&(asset.vout_index as usize));
             charm_batch.push((
                 txid.clone(),
                 asset.vout_index,
@@ -177,7 +219,7 @@ pub async fn detect_charms(
                 network.to_string(),
                 address,
                 asset.app_id.clone(),
-                asset.amount as i64,
+                if is_beamed_out { 0i64 } else { asset.amount as i64 },
                 analyzed.tags.clone(),
             ));
         }
@@ -215,7 +257,13 @@ async fn build_asset_requests(
     let mut net_changes: HashMap<String, i64> = HashMap::new();
     for asset in &analyzed.asset_infos {
         let nft_app_id = normalize_app_id(&asset.app_id, &asset.asset_type);
-        *net_changes.entry(nft_app_id).or_insert(0) += asset.amount as i64;
+        // Beamed-out outputs leave Bitcoin — don't count toward on-chain supply
+        let on_chain_amount = if analyzed.beamed_out_indices.contains(&(asset.vout_index as usize)) {
+            0i64
+        } else {
+            asset.amount as i64
+        };
+        *net_changes.entry(nft_app_id).or_insert(0) += on_chain_amount;
     }
 
     for (_txid, app_id, amount) in &input_amounts {
@@ -373,27 +421,34 @@ fn parse_metadata_fields(
 }
 
 /// Extracts transaction data into an owned vector to avoid lifetime issues.
+/// Returns (txid, tx_hex, tx_pos, input_utxos) where input_utxos is Vec<(txid, vout)>.
 fn extract_transaction_data(
     block: &bitcoin::Block,
-) -> Vec<(String, String, usize, Vec<String>)> {
+) -> Vec<(String, String, usize, Vec<(String, u32)>)> {
     block
         .txdata
         .iter()
         .enumerate()
         .map(|(tx_pos, tx)| {
-            let input_txids: Vec<String> = tx
+            let input_utxos: Vec<(String, u32)> = tx
                 .input
                 .iter()
                 .filter(|input| !input.previous_output.is_null())
-                .map(|input| input.previous_output.txid.to_string())
+                .map(|input| {
+                    (
+                        input.previous_output.txid.to_string(),
+                        input.previous_output.vout,
+                    )
+                })
                 .collect();
 
             (
                 tx.txid().to_string(),
                 bitcoin::consensus::encode::serialize_hex(tx),
                 tx_pos,
-                input_txids,
+                input_utxos,
             )
         })
         .collect()
 }
+

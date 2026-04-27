@@ -111,6 +111,7 @@ pub async fn process_tx_with_hex(
         let address = vout_addresses
             .get(asset.vout_index as usize)
             .and_then(|a| a.clone());
+        let is_beamed_out = analyzed.beamed_out_indices.contains(&(asset.vout_index as usize));
         let charm_model = charms::ActiveModel {
             txid: Set(txid.to_string()),
             vout: Set(asset.vout_index),
@@ -123,7 +124,7 @@ pub async fn process_tx_with_hex(
             address: Set(address),
             spent: Set(false),
             app_id: Set(asset.app_id.clone()),
-            amount: Set(asset.amount as i64),
+            amount: Set(if is_beamed_out { 0i64 } else { asset.amount as i64 }),
             mempool_detected_at: Set(Some(now_tz)),
             tags: Set(analyzed.tags.clone()),
             verified: Set(true),
