@@ -160,7 +160,7 @@ export default function BeamingDetails({ charm, copyToClipboard, beamDirection, 
             {/* Header */}
             <h3 className="text-lg font-semibold text-white mb-2 flex items-center gap-2 flex-wrap">
                 <span>{isBeamOut ? '📤' : '📥'}</span>
-                <span>{isBeamOut ? 'Beam Out' : 'Beam In'}</span>
+                <span>{isBeamOut ? 'Beam Out' : 'Mint / Beam In'}</span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30">
                     {isBeamOut ? 'Bitcoin → Cardano' : 'Cardano → Bitcoin'}
                 </span>

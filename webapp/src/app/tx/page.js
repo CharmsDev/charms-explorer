@@ -256,10 +256,10 @@ function TransactionPageContent() {
                     } else if (analysis.isBeaming) {
                         const isBeamOut = analysis.type === TRANSACTION_TYPES.BEAM_OUT;
                         headerIcon = isBeamOut ? '📤' : '📥';
-                        headerLabel = isBeamOut ? 'Beam Out' : 'Beam In';
+                        headerLabel = isBeamOut ? 'Beam Out' : 'Mint / Beam In';
                         headerDescription = isBeamOut
                             ? 'Tokens beamed from Bitcoin to Cardano'
-                            : 'Tokens received from Cardano to Bitcoin';
+                            : 'Tokens minted on Bitcoin — may be a fresh mint or an ADA→BTC beam-in claim';
                     }
                     return (
                         <div className="mb-6">

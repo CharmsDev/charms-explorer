@@ -184,13 +184,13 @@ export const TRANSACTION_METADATA = {
     description: "Cross-chain token transfer via beaming",
   },
   [TRANSACTION_TYPES.BEAM_IN]: {
-    label: "Beam In",
+    label: "Mint / Beam In",
     icon: "📥",
     color: "cyan",
     bgClass: "bg-cyan-500/20",
     textClass: "text-cyan-400",
     borderClass: "border-cyan-500/30",
-    description: "Tokens received from Cardano to Bitcoin via beaming claim",
+    description: "Tokens minted on Bitcoin — may be a fresh mint or an ADA→BTC beam-in claim (indistinguishable at the Bitcoin level)",
   },
   [TRANSACTION_TYPES.BEAM_OUT]: {
     label: "Beam Out",
