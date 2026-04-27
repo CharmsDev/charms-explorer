@@ -14,6 +14,7 @@ use bitcoincore_rpc::Client;
 use std::sync::Arc;
 
 use crate::error::{ExplorerError, ExplorerResult};
+use http::{HeaderMap, HeaderValue};
 use crate::handlers::AppState;
 use crate::services::address_monitor_service::AddressMonitorService;
 use crate::services::maestro_service;
@@ -685,7 +686,7 @@ pub async fn get_wallet_charm_balances(
     })))
 }
 
-/// POST /wallet/charms/batch
+/// POST /wallet/charms/batch — DEPRECATED, use POST /wallet/balance/batch
 /// Live charm balances: DB charms cross-checked against real UTXOs from Maestro.
 /// Only counts charms whose UTXO actually exists on-chain (mempool-aware).
 /// Body: { "addresses": ["bc1p...", "bc1p..."], "network": "mainnet" }
@@ -693,7 +694,21 @@ pub async fn get_wallet_charm_balances(
 pub async fn get_wallet_charm_balances_batch(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
-) -> ExplorerResult<Json<serde_json::Value>> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), ExplorerError> {
+    tracing::warn!("DEPRECATED: POST /wallet/charms/batch — migrate to POST /wallet/balance/batch");
+
+    let dep_headers = || {
+        let mut h = HeaderMap::new();
+        h.insert("deprecation", HeaderValue::from_static("true"));
+        h.insert(
+            "link",
+            HeaderValue::from_static(
+                r#"</v1/wallet/balance/batch>; rel="successor-version""#,
+            ),
+        );
+        h
+    };
+
     let network = body
         .get("network")
         .and_then(|v| v.as_str())
@@ -712,7 +727,7 @@ pub async fn get_wallet_charm_balances_batch(
         .unwrap_or_default();
 
     if addresses.is_empty() {
-        return Ok(Json(serde_json::json!({ "results": {} })));
+        return Ok((dep_headers(), Json(serde_json::json!({ "results": {} }))));
     }
 
     let tasks: Vec<_> = addresses
@@ -748,7 +763,7 @@ pub async fn get_wallet_charm_balances_batch(
         }
     }
 
-    Ok(Json(serde_json::json!({ "results": results })))
+    Ok((dep_headers(), Json(serde_json::json!({ "results": results }))))
 }
 
 /// POST /wallet/charms/batch/indexed
@@ -814,12 +829,26 @@ pub async fn get_wallet_charm_balances_batch_indexed(
     Ok(Json(serde_json::json!({ "results": results })))
 }
 
-/// POST /wallet/utxos/batch
+/// POST /wallet/utxos/batch — DEPRECATED, use POST /wallet/balance/batch
 /// Batch fetch UTXOs for multiple addresses in a single request (max 50)
 pub async fn get_wallet_utxos_batch(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
-) -> ExplorerResult<Json<serde_json::Value>> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), ExplorerError> {
+    tracing::warn!("DEPRECATED: POST /wallet/utxos/batch — migrate to POST /wallet/balance/batch");
+
+    let dep_headers = || {
+        let mut h = HeaderMap::new();
+        h.insert("deprecation", HeaderValue::from_static("true"));
+        h.insert(
+            "link",
+            HeaderValue::from_static(
+                r#"</v1/wallet/balance/batch>; rel="successor-version""#,
+            ),
+        );
+        h
+    };
+
     let network = body
         .get("network")
         .and_then(|v| v.as_str())
@@ -842,7 +871,7 @@ pub async fn get_wallet_utxos_batch(
         .and_then(|v| v.as_u64());
 
     if addresses.is_empty() {
-        return Ok(Json(serde_json::json!({ "results": {} })));
+        return Ok((dep_headers(), Json(serde_json::json!({ "results": {} }))));
     }
 
     let qn = quicknode_url(&state).to_string();
@@ -904,7 +933,7 @@ pub async fn get_wallet_utxos_batch(
         }
     }
 
-    Ok(Json(serde_json::json!({ "results": results })))
+    Ok((dep_headers(), Json(serde_json::json!({ "results": results }))))
 }
 
 /// Core logic for resolving charm balances for a single address.
@@ -962,9 +991,9 @@ async fn resolve_charm_balances_for_address(
         .find_by_app_ids(app_ids)
         .await
         .unwrap_or_default();
-    let symbol_map: std::collections::HashMap<String, String> = assets
+    let asset_map: std::collections::HashMap<String, crate::entity::assets::Model> = assets
         .into_iter()
-        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
+        .map(|a| (a.app_id.clone(), a))
         .collect();
 
     let mut balance_map: std::collections::HashMap<
@@ -982,7 +1011,7 @@ async fn resolve_charm_balances_for_address(
             .unwrap_or_else(|| vec![charm.app_id.clone()]);
         let has_order_charm = all_app_ids.iter().any(|id| id.starts_with("b/"));
         let btc_value = utxo_values.get(&key).copied().unwrap_or(546);
-        let symbol = symbol_map.get(&charm.app_id).cloned().unwrap_or_default();
+        let symbol = asset_map.get(&charm.app_id).and_then(|a| a.symbol.clone()).unwrap_or_default();
 
         let utxo_json = serde_json::json!({
             "txid": charm.txid,
@@ -1016,16 +1045,33 @@ async fn resolve_charm_balances_for_address(
         .into_iter()
         .map(
             |(app_id, (asset_type, symbol, confirmed, unconfirmed, mempool_spent_total, utxos))| {
+                let asset = asset_map.get(&app_id);
+                let cardano = asset.and_then(|a| {
+                    a.cardano_policy_id.as_ref()?;
+                    Some(serde_json::json!({
+                        "policyId": a.cardano_policy_id,
+                        "assetName": a.cardano_asset_name,
+                        "fingerprint": a.cardano_fingerprint,
+                        "name": a.name,
+                        "ticker": a.symbol,
+                        "decimals": a.decimals,
+                        "image": a.image_url,
+                        "description": a.description,
+                    }))
+                });
                 let available = confirmed + unconfirmed;
                 serde_json::json!({
                     "appId": app_id,
                     "assetType": asset_type,
                     "symbol": symbol,
+                    "name": asset.and_then(|a| a.name.clone()),
+                    "decimals": asset.map(|a| a.decimals),
                     "confirmed": confirmed,
                     "unconfirmed": unconfirmed,
                     "mempoolSpent": mempool_spent_total,
                     "available": available,
                     "total": available + mempool_spent_total,
+                    "cardano": cardano,
                     "utxos": utxos,
                 })
             },
@@ -1091,9 +1137,9 @@ async fn resolve_charm_balances_live(
         .find_by_app_ids(app_ids)
         .await
         .unwrap_or_default();
-    let symbol_map: std::collections::HashMap<String, String> = assets
+    let asset_map: std::collections::HashMap<String, crate::entity::assets::Model> = assets
         .into_iter()
-        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
+        .map(|a| (a.app_id.clone(), a))
         .collect();
 
     // 4. Sibling app_ids
@@ -1123,7 +1169,7 @@ async fn resolve_charm_balances_live(
             .cloned()
             .unwrap_or_else(|| vec![charm.app_id.clone()]);
         let has_order_charm = all_app_ids.iter().any(|id| id.starts_with("b/"));
-        let symbol = symbol_map.get(&charm.app_id).cloned().unwrap_or_default();
+        let symbol = asset_map.get(&charm.app_id).and_then(|a| a.symbol.clone()).unwrap_or_default();
 
         let utxo_json = serde_json::json!({
             "txid": charm.txid,
@@ -1154,16 +1200,33 @@ async fn resolve_charm_balances_live(
     let balances: Vec<serde_json::Value> = balance_map
         .into_iter()
         .map(|(app_id, (asset_type, symbol, confirmed, unconfirmed, utxos))| {
+            let asset = asset_map.get(&app_id);
+            let cardano = asset.and_then(|a| {
+                a.cardano_policy_id.as_ref()?;
+                Some(serde_json::json!({
+                    "policyId": a.cardano_policy_id,
+                    "assetName": a.cardano_asset_name,
+                    "fingerprint": a.cardano_fingerprint,
+                    "name": a.name,
+                    "ticker": a.symbol,
+                    "decimals": a.decimals,
+                    "image": a.image_url,
+                    "description": a.description,
+                }))
+            });
             let available = confirmed + unconfirmed;
             serde_json::json!({
                 "appId": app_id,
                 "assetType": asset_type,
                 "symbol": symbol,
+                "name": asset.and_then(|a| a.name.clone()),
+                "decimals": asset.map(|a| a.decimals),
                 "confirmed": confirmed,
                 "unconfirmed": unconfirmed,
                 "mempoolSpent": 0,
                 "available": available,
                 "total": available,
+                "cardano": cardano,
                 "utxos": utxos,
             })
         })
@@ -1291,4 +1354,391 @@ pub async fn get_wallet_transactions(
             Err(ExplorerError::InternalError(e))
         }
     }
+}
+
+/// Compute balance for a single address (used by balance batch endpoint).
+/// Does NOT call ensure_monitored — the batch handler seeds each address concurrently.
+async fn resolve_balance_for_batch(
+    state: &AppState,
+    address: &str,
+    network: &str,
+) -> serde_json::Value {
+    let utxo_rows = state
+        .repositories
+        .utxo
+        .get_by_address(address, network)
+        .await
+        .unwrap_or_default();
+
+    let charms = state
+        .repositories
+        .charm
+        .get_unspent_charms_by_address(address, network)
+        .await
+        .unwrap_or_default();
+
+    let charm_utxo_keys: std::collections::HashSet<(String, i32)> =
+        charms.iter().map(|c| (c.txid.clone(), c.vout)).collect();
+
+    let mut available: u64 = 0;
+    let mut locked: u64 = 0;
+    let mut unconfirmed: u64 = 0;
+    let mut btc_utxos: Vec<serde_json::Value> = Vec::new();
+
+    for row in &utxo_rows {
+        let has_charms = charm_utxo_keys.contains(&(row.txid.clone(), row.vout));
+        let value = row.value as u64;
+        let is_confirmed = row.block_height > 0;
+
+        if !is_confirmed {
+            unconfirmed += value;
+        } else if has_charms {
+            locked += value;
+        } else {
+            available += value;
+        }
+
+        btc_utxos.push(serde_json::json!({
+            "txid": row.txid,
+            "vout": row.vout,
+            "value": row.value,
+            "blockHeight": row.block_height,
+            "hasCharms": has_charms,
+            "confirmed": is_confirmed,
+        }));
+    }
+
+    let confirmed = available + locked;
+
+    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
+    let assets = state
+        .repositories
+        .asset_repository
+        .find_by_app_ids(app_ids)
+        .await
+        .unwrap_or_default();
+    let symbol_map: std::collections::HashMap<String, String> = assets
+        .into_iter()
+        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
+        .collect();
+
+    let mut charm_balance_map: std::collections::HashMap<
+        String,
+        (String, i64, Vec<serde_json::Value>),
+    > = std::collections::HashMap::new();
+
+    for charm in &charms {
+        let btc_value = utxo_rows
+            .iter()
+            .find(|r| r.txid == charm.txid && r.vout == charm.vout)
+            .map(|r| r.value)
+            .unwrap_or(546);
+
+        let utxo_json = serde_json::json!({
+            "txid": charm.txid,
+            "vout": charm.vout,
+            "value": btc_value,
+            "amount": charm.amount,
+            "confirmed": charm.block_height.map_or(false, |h| h > 0),
+            "blockHeight": charm.block_height,
+        });
+
+        let entry = charm_balance_map
+            .entry(charm.app_id.clone())
+            .or_insert_with(|| (charm.asset_type.clone(), 0, Vec::new()));
+        entry.1 += charm.amount;
+        entry.2.push(utxo_json);
+    }
+
+    let charm_balances: Vec<serde_json::Value> = charm_balance_map
+        .into_iter()
+        .map(|(app_id, (asset_type, total, utxos))| {
+            let symbol = symbol_map.get(&app_id).cloned().unwrap_or_default();
+            serde_json::json!({
+                "appId": app_id,
+                "assetType": asset_type,
+                "symbol": symbol,
+                "total": total,
+                "utxos": utxos,
+            })
+        })
+        .collect();
+
+    serde_json::json!({
+        "address": address,
+        "network": network,
+        "btc": {
+            "confirmed": confirmed,
+            "unconfirmed": unconfirmed,
+            "total": confirmed + unconfirmed,
+            "available": available,
+            "locked": locked,
+            "utxos": btc_utxos,
+        },
+        "charms": {
+            "balances": charm_balances,
+            "count": charm_balances.len(),
+        },
+    })
+}
+
+/// POST /wallet/balance/batch
+/// Batch fetch unified BTC + charm balances for up to 50 addresses in one request.
+/// Auto-monitors each address on first call (lazy seeding via Maestro/QuickNode).
+/// Body: { "addresses": ["bc1p...", ...], "network": "mainnet" }
+/// Response: { "results": { "bc1p...": { address, network, monitored, btc, charms }, ... } }
+pub async fn get_wallet_balance_batch(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = body
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mainnet")
+        .to_string();
+
+    let addresses: Vec<String> = body
+        .get("addresses")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .take(50)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if addresses.is_empty() {
+        return Ok(Json(serde_json::json!({ "results": {} })));
+    }
+
+    let tasks: Vec<_> = addresses
+        .iter()
+        .map(|addr| {
+            let state = state.clone();
+            let address = addr.clone();
+            let network = network.clone();
+            tokio::spawn(async move {
+                let qn = quicknode_url(&state).to_string();
+                let mk = maestro_key(&state).to_string();
+                let monitored = AddressMonitorService::ensure_monitored(
+                    &state.repositories.monitored_addresses,
+                    &state.repositories.utxo,
+                    &state.repositories.address_transactions,
+                    &state.http_client,
+                    &qn,
+                    &mk,
+                    &address,
+                    &network,
+                )
+                .await
+                .unwrap_or(false);
+
+                let mut balance =
+                    resolve_balance_for_batch(&state, &address, &network).await;
+                if let Some(obj) = balance.as_object_mut() {
+                    obj.insert("monitored".to_string(), serde_json::json!(monitored));
+                }
+                (address, balance)
+            })
+        })
+        .collect();
+
+    let mut results = serde_json::Map::new();
+    for task in tasks {
+        match task.await {
+            Ok((addr, balance)) => {
+                results.insert(addr, balance);
+            }
+            Err(e) => {
+                tracing::warn!("Balance batch: task join error: {:?}", e);
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "results": results })))
+}
+
+/// POST /wallet/transactions/batch
+/// Batch fetch paginated transaction history for up to 50 addresses in one request.
+/// Each address response includes charm enrichment (assets[], charm_detected).
+/// Body: { "addresses": [...], "network": "mainnet", "since_block": 850000, "page_size": 50 }
+/// Response: { "results": { "addr": { transactions, total, last_block } } }
+pub async fn get_wallet_transactions_batch(
+    State(state): State<AppState>,
+    Json(body): Json<serde_json::Value>,
+) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = body
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mainnet")
+        .to_string();
+
+    let addresses: Vec<String> = body
+        .get("addresses")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .take(50)
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let since_block: Option<i64> = body.get("since_block").and_then(|v| v.as_i64());
+    let page_size: u64 = body
+        .get("page_size")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(50)
+        .min(100);
+
+    if addresses.is_empty() {
+        return Ok(Json(serde_json::json!({ "results": {} })));
+    }
+
+    let tasks: Vec<_> = addresses
+        .iter()
+        .map(|addr| {
+            let state = state.clone();
+            let address = addr.clone();
+            let network = network.clone();
+            tokio::spawn(async move {
+                let qn = quicknode_url(&state).to_string();
+                let mk = maestro_key(&state).to_string();
+
+                let _ = AddressMonitorService::ensure_monitored(
+                    &state.repositories.monitored_addresses,
+                    &state.repositories.utxo,
+                    &state.repositories.address_transactions,
+                    &state.http_client,
+                    &qn,
+                    &mk,
+                    &address,
+                    &network,
+                )
+                .await;
+
+                let (txs, total) = match state
+                    .repositories
+                    .address_transactions
+                    .get_by_address_since(&address, &network, since_block, 1, page_size)
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("TX batch: DB error for {}: {}", address, e);
+                        return (
+                            address,
+                            serde_json::json!({
+                                "transactions": [],
+                                "total": 0,
+                                "last_block": null,
+                                "error": true,
+                            }),
+                        );
+                    }
+                };
+
+                let txids: Vec<String> = txs.iter().map(|t| t.txid.clone()).collect();
+                let charm_rows = state
+                    .repositories
+                    .charm
+                    .get_by_txids(&txids)
+                    .await
+                    .unwrap_or_default();
+
+                let mut charms_by_txid: std::collections::HashMap<
+                    String,
+                    Vec<crate::entity::charms::Model>,
+                > = std::collections::HashMap::new();
+                for c in charm_rows {
+                    charms_by_txid.entry(c.txid.clone()).or_default().push(c);
+                }
+
+                let all_app_ids: Vec<String> = charms_by_txid
+                    .values()
+                    .flatten()
+                    .map(|c| c.app_id.clone())
+                    .collect::<std::collections::HashSet<_>>()
+                    .into_iter()
+                    .collect();
+                let symbol_map: std::collections::HashMap<String, String> = state
+                    .repositories
+                    .asset_repository
+                    .find_by_app_ids(all_app_ids)
+                    .await
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
+                    .collect();
+
+                let last_block: Option<i64> = txs
+                    .iter()
+                    .filter_map(|t| t.block_height.map(|h| h as i64))
+                    .max();
+
+                let tx_values: Vec<serde_json::Value> = txs
+                    .iter()
+                    .map(|t| {
+                        let tx_charms = charms_by_txid.get(&t.txid);
+                        let assets: Vec<serde_json::Value> = tx_charms
+                            .map(|charms| {
+                                charms
+                                    .iter()
+                                    .map(|c| {
+                                        let symbol = symbol_map
+                                            .get(&c.app_id)
+                                            .cloned()
+                                            .unwrap_or_default();
+                                        serde_json::json!({
+                                            "appId": c.app_id,
+                                            "assetType": c.asset_type,
+                                            "symbol": symbol,
+                                            "amount": c.amount,
+                                            "vout": c.vout,
+                                        })
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        serde_json::json!({
+                            "txid": t.txid,
+                            "direction": t.direction,
+                            "amount": t.amount,
+                            "fee": t.fee,
+                            "block_height": t.block_height,
+                            "block_time": t.block_time,
+                            "confirmations": t.confirmations,
+                            "charm_detected": !assets.is_empty(),
+                            "assets": assets,
+                        })
+                    })
+                    .collect();
+
+                (
+                    address,
+                    serde_json::json!({
+                        "transactions": tx_values,
+                        "total": total,
+                        "last_block": last_block,
+                    }),
+                )
+            })
+        })
+        .collect();
+
+    let mut results = serde_json::Map::new();
+    for task in tasks {
+        match task.await {
+            Ok((addr, value)) => {
+                results.insert(addr, value);
+            }
+            Err(e) => {
+                tracing::warn!("TX batch: task join error: {:?}", e);
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({ "results": results })))
 }

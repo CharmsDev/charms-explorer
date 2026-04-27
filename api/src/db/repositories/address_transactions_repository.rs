@@ -64,6 +64,51 @@ impl AddressTransactionsRepository {
         Ok((results, total))
     }
 
+    /// Same as get_by_address but with optional since_block filter.
+    /// Includes unconfirmed (NULL block_height) and confirmed from since_block onwards.
+    pub async fn get_by_address_since(
+        &self,
+        address: &str,
+        network: &str,
+        since_block: Option<i64>,
+        page: u64,
+        page_size: u64,
+    ) -> Result<(Vec<address_transactions::Model>, u64), String> {
+        use sea_orm::{Condition, PaginatorTrait};
+        let offset = (page.saturating_sub(1)) * page_size;
+
+        let mut count_q = address_transactions::Entity::find()
+            .filter(address_transactions::Column::Address.eq(address))
+            .filter(address_transactions::Column::Network.eq(network));
+        let mut data_q = address_transactions::Entity::find()
+            .filter(address_transactions::Column::Address.eq(address))
+            .filter(address_transactions::Column::Network.eq(network));
+
+        if let Some(since) = since_block {
+            let cond = Condition::any()
+                .add(address_transactions::Column::BlockHeight.is_null())
+                .add(address_transactions::Column::BlockHeight.gte(since as i32));
+            count_q = count_q.filter(cond.clone());
+            data_q = data_q.filter(cond);
+        }
+
+        let total = count_q
+            .count(&self.conn)
+            .await
+            .map_err(|e| format!("DB count failed: {}", e))?;
+
+        let results = data_q
+            .order_by_desc(address_transactions::Column::BlockTime)
+            .order_by_desc(address_transactions::Column::Txid)
+            .offset(Some(offset))
+            .limit(Some(page_size))
+            .all(&self.conn)
+            .await
+            .map_err(|e| format!("DB query failed: {}", e))?;
+
+        Ok((results, total))
+    }
+
     /// Insert a batch of address transactions (used by seeding from QuickNode bb_getAddress)
     pub async fn insert_batch(&self, txs: &[AddressTxInsert]) -> Result<usize, String> {
         if txs.is_empty() {

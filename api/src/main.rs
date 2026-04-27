@@ -29,9 +29,11 @@ use handlers::{
     get_all_orders, get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset,
     get_orders_by_maker,
     get_reference_nft_by_hash, get_transaction_by_txid, get_transactions, get_wallet_balance,
+    get_wallet_balance_batch,
     get_wallet_chain_tip, get_wallet_charm_balances, get_wallet_charm_balances_batch,
     get_wallet_charm_balances_batch_indexed,
     get_wallet_fee_estimate, get_wallet_prev_txs, get_wallet_transaction, get_wallet_transactions,
+    get_wallet_transactions_batch,
     get_wallet_tx_hex, get_wallet_utxos, get_wallet_utxos_batch,
     health_check, like_charm, unlike_charm,
 };
@@ -174,6 +176,7 @@ async fn main() {
         .route("/wallet/utxos/{address}", get(get_wallet_utxos))
         .route("/wallet/utxos/batch", post(get_wallet_utxos_batch))
         .route("/wallet/balance/{address}", get(get_wallet_balance))
+        .route("/wallet/balance/batch", post(get_wallet_balance_batch))
         .route("/wallet/tx/{txid}", get(get_wallet_transaction))
         .route("/wallet/tx/{txid}/hex", get(get_wallet_tx_hex))
         .route("/wallet/prev-txs", post(get_wallet_prev_txs))
@@ -192,6 +195,10 @@ async fn main() {
         .route(
             "/wallet/transactions/{address}",
             get(get_wallet_transactions),
+        )
+        .route(
+            "/wallet/transactions/batch",
+            post(get_wallet_transactions_batch),
         );
 
     // Mount under /v1/ (canonical) and / (backward compat for Explorer webapp)

@@ -286,6 +286,12 @@ pub struct ReferenceNftResponse {
     pub description: Option<String>,
     pub image_url: Option<String>,
     pub decimals: i16,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_policy_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_asset_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cardano_fingerprint: Option<String>,
 }
 
 /// Get reference NFT metadata by hash (for token image lookup)
@@ -316,6 +322,9 @@ pub async fn get_reference_nft_by_hash(
                 description: nft.description,
                 image_url,
                 decimals: nft.decimals,
+                cardano_policy_id: nft.cardano_policy_id,
+                cardano_asset_name: nft.cardano_asset_name,
+                cardano_fingerprint: nft.cardano_fingerprint,
             }))
         }
         Ok(None) => Err(StatusCode::NOT_FOUND),

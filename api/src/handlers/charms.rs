@@ -5,7 +5,7 @@ use axum::{
     Json,
 };
 
-use crate::error::ExplorerResult;
+use crate::error::{ExplorerError, ExplorerResult};
 use crate::handlers::AppState;
 use crate::models::{
     CharmCountResponse, CharmData, CharmsCountByTypeResponse, CharmsResponse, GetCharmNumbersQuery,
@@ -68,14 +68,25 @@ pub async fn get_charms_by_type(
     Ok(Json(response))
 }
 
-/// Handler for GET /charms/{txid} - Returns a specific charm by its transaction ID
+/// Handler for GET /charms/{txid} — DEPRECATED, use GET /transactions/{txid}
 pub async fn get_charm_by_txid(
     State(state): State<AppState>,
     Path(txid): Path<String>,
-) -> ExplorerResult<Json<CharmData>> {
-    // Use default user_id of 1 as specified in requirements
+) -> Result<(http::HeaderMap, Json<CharmData>), ExplorerError> {
+    tracing::warn!("DEPRECATED: GET /charms/{{txid}} — use GET /transactions/{{txid}}");
     let charm_data = charm_service::get_charm_by_txid(&state, &txid, 1).await?;
-    Ok(Json(charm_data))
+    let mut headers = http::HeaderMap::new();
+    headers.insert(
+        "deprecation",
+        http::HeaderValue::from_static("true"),
+    );
+    headers.insert(
+        "link",
+        http::HeaderValue::from_static(
+            r#"</v1/transactions/{txid}>; rel="successor-version""#,
+        ),
+    );
+    Ok((headers, Json(charm_data)))
 }
 
 /// Handler for GET /charms/by-charmid/{charmid} - Returns a specific charm by its charm ID

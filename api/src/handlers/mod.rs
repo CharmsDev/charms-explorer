@@ -32,10 +32,12 @@ pub use stats_holders::get_asset_holders; // [RJJ-STATS-HOLDERS]
 pub use status::get_indexer_status;
 pub use transactions::{get_transaction_by_txid, get_transactions};
 pub use wallet::{
-    broadcast_wallet_transaction, get_wallet_balance, get_wallet_chain_tip,
+    broadcast_wallet_transaction, get_wallet_balance, get_wallet_balance_batch,
+    get_wallet_chain_tip,
     get_wallet_charm_balances, get_wallet_charm_balances_batch,
     get_wallet_charm_balances_batch_indexed, get_wallet_fee_estimate,
     get_wallet_prev_txs, get_wallet_transaction, get_wallet_transactions,
+    get_wallet_transactions_batch,
     get_wallet_tx_hex, get_wallet_utxos, get_wallet_utxos_batch,
 }; // [RJJ-WALLET]
 
