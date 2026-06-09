@@ -18,6 +18,7 @@ use http::{HeaderMap, HeaderValue};
 use crate::handlers::AppState;
 use crate::services::address_monitor_service::AddressMonitorService;
 use crate::services::maestro_service;
+use crate::services::mempool_space_service;
 use crate::services::wallet_service::WalletService;
 
 const RPC_TIMEOUT: Duration = Duration::from_secs(3);
@@ -222,132 +223,12 @@ pub async fn get_wallet_balance(
     .await
     .unwrap_or(false);
 
-    // Step 2: Get UTXOs from our DB
-    let utxo_rows = state
-        .repositories
-        .utxo
-        .get_by_address(&address, network)
-        .await
-        .unwrap_or_default();
-
-    // Step 3: Get unspent charms for this address
-    let charms = state
-        .repositories
-        .charm
-        .get_unspent_charms_by_address(&address, network)
-        .await
-        .unwrap_or_default();
-
-    // Build a set of (txid, vout) that hold charms
-    let charm_utxo_keys: std::collections::HashSet<(String, i32)> =
-        charms.iter().map(|c| (c.txid.clone(), c.vout)).collect();
-
-    // Step 4: Classify UTXOs as available (no charms), locked (has charms), or unconfirmed (mempool)
-    let mut available: u64 = 0;
-    let mut locked: u64 = 0;
-    let mut unconfirmed: u64 = 0;
-    let mut btc_utxos: Vec<serde_json::Value> = Vec::new();
-
-    for row in &utxo_rows {
-        let has_charms = charm_utxo_keys.contains(&(row.txid.clone(), row.vout));
-        let value = row.value as u64;
-        let is_confirmed = row.block_height > 0;
-
-        if !is_confirmed {
-            unconfirmed += value;
-        } else if has_charms {
-            locked += value;
-        } else {
-            available += value;
-        }
-
-        btc_utxos.push(serde_json::json!({
-            "txid": row.txid,
-            "vout": row.vout,
-            "value": row.value,
-            "blockHeight": row.block_height,
-            "hasCharms": has_charms,
-            "confirmed": is_confirmed,
-        }));
+    // Step 2-5: Compute balance using live Maestro UTXOs (same as balance/batch)
+    let mut balance = resolve_balance_for_batch(&state, &address, network).await;
+    if let Some(obj) = balance.as_object_mut() {
+        obj.insert("monitored".to_string(), serde_json::json!(monitored));
     }
-
-    let confirmed = available + locked;
-
-    // Step 5: Build charm balances (same logic as get_wallet_charm_balances)
-    let mut charm_balance_map: std::collections::HashMap<
-        String,
-        (String, i64, Vec<serde_json::Value>),
-    > = std::collections::HashMap::new();
-
-    // Look up symbols
-    let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let assets = state
-        .repositories
-        .asset_repository
-        .find_by_app_ids(app_ids)
-        .await
-        .unwrap_or_default();
-    let symbol_map: std::collections::HashMap<String, String> = assets
-        .into_iter()
-        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
-        .collect();
-
-    for charm in &charms {
-        let btc_value = utxo_rows
-            .iter()
-            .find(|r| r.txid == charm.txid && r.vout == charm.vout)
-            .map(|r| r.value)
-            .unwrap_or(546);
-
-        let utxo_json = serde_json::json!({
-            "txid": charm.txid,
-            "vout": charm.vout,
-            "value": btc_value,
-            "amount": charm.amount,
-            "confirmed": charm.block_height.map_or(false, |h| h > 0),
-            "blockHeight": charm.block_height,
-        });
-
-        let entry = charm_balance_map
-            .entry(charm.app_id.clone())
-            .or_insert_with(|| (charm.asset_type.clone(), 0, Vec::new()));
-
-        entry.1 += charm.amount;
-        entry.2.push(utxo_json);
-    }
-
-    let charm_balances: Vec<serde_json::Value> = charm_balance_map
-        .into_iter()
-        .map(|(app_id, (asset_type, total, utxos))| {
-            let symbol = symbol_map.get(&app_id).cloned().unwrap_or_default();
-            serde_json::json!({
-                "appId": app_id,
-                "assetType": asset_type,
-                "symbol": symbol,
-                "total": total,
-                "utxos": utxos,
-            })
-        })
-        .collect();
-
-    // Step 6: Build unified response
-    Ok(Json(serde_json::json!({
-        "address": address,
-        "network": network,
-        "monitored": monitored,
-        "btc": {
-            "confirmed": confirmed,
-            "unconfirmed": unconfirmed,
-            "total": confirmed + unconfirmed,
-            "available": available,
-            "locked": locked,
-            "utxos": btc_utxos,
-        },
-        "charms": {
-            "balances": charm_balances,
-            "count": charm_balances.len(),
-        },
-    })))
+    Ok(Json(balance))
 }
 
 /// GET /wallet/tx/{txid}
@@ -470,18 +351,31 @@ pub async fn get_wallet_prev_txs(
 }
 
 /// POST /wallet/broadcast
-/// Maestro (primary) → QuickNode RPC (fallback) → local RPC (last resort)
+/// mempool.space (primary) → Maestro (backup) → local RPC (last resort)
 pub async fn broadcast_wallet_transaction(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
     Json(body): Json<BroadcastRequest>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    // Try Maestro first
+    let raw_tx = &body.raw_tx;
+    let network = params.network.as_str();
+
+    // Primary: mempool.space
+    match mempool_space_service::broadcast(&state.http_client, raw_tx, network).await {
+        Ok(txid) => {
+            tracing::info!("Broadcast: mempool.space accepted {}", txid);
+            return Ok(Json(serde_json::json!({ "txid": txid })));
+        }
+        Err(e) => tracing::warn!("Broadcast: mempool.space failed, trying Maestro: {}", e),
+    }
+
+    // Backup: Maestro
     if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::broadcast_transaction(&state.http_client, &mk, &body.raw_tx).await {
+        match maestro_service::broadcast_transaction(&state.http_client, &mk, raw_tx).await {
             Ok(txid) => {
                 state.maestro_cb.record_success();
+                tracing::info!("Broadcast: Maestro accepted {}", txid);
                 return Ok(Json(serde_json::json!({ "txid": txid })));
             }
             Err(e) => {
@@ -491,12 +385,12 @@ pub async fn broadcast_wallet_transaction(
         }
     }
 
-    // Fallback: local RPC node
+    // Last resort: local RPC node
     let client = rpc_client(&state, &params.network);
-    match WalletService::broadcast_transaction(client, &body.raw_tx).await {
+    match WalletService::broadcast_transaction(client, raw_tx).await {
         Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            tracing::error!("Wallet: failed to broadcast transaction: {}", e);
+            tracing::error!("Broadcast: all paths failed: {}", e);
             Err(ExplorerError::InternalError(e))
         }
     }
