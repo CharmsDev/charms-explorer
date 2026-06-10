@@ -11,7 +11,7 @@
 
 use charms_indexer::application::indexer::NetworkManager;
 use charms_indexer::config::AppConfig;
-use charms_indexer::infrastructure::persistence::{DbPool, RepositoryFactory};
+use charms_indexer::infrastructure::persistence::{DbPool, Repositories};
 use charms_indexer::utils::logging;
 
 fn main() {
@@ -41,7 +41,7 @@ async fn async_main() {
         }
     };
 
-    let repositories = RepositoryFactory::create_repositories(&db_pool);
+    let repositories = Repositories::from_pool(&db_pool);
 
     // Unified indexer - uses block_status to determine what needs processing
     run_production_indexer(config, repositories).await;
