@@ -3,8 +3,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set,
 };
 use std::fmt;
 
@@ -48,22 +48,6 @@ impl BlockStatusRepository {
             .await?;
 
         Ok(results.into_iter().map(|b| b.block_height).collect())
-    }
-
-    /// Get the highest downloaded block height
-    pub async fn get_last_downloaded_block(
-        &self,
-        network_id: &NetworkId,
-    ) -> Result<Option<i32>, DbError> {
-        let result = block_status::Entity::find()
-            .filter(block_status::Column::Network.eq(network_id.name.clone()))
-            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .filter(block_status::Column::Downloaded.eq(true))
-            .order_by_desc(block_status::Column::BlockHeight)
-            .one(&self.conn)
-            .await?;
-
-        Ok(result.map(|b| b.block_height))
     }
 
     /// Get the highest processed block height
@@ -165,39 +149,6 @@ impl BlockStatusRepository {
         Ok(())
     }
 
-    /// Count pending blocks
-    pub async fn count_pending_blocks(&self, network_id: &NetworkId) -> Result<i64, DbError> {
-        let count = block_status::Entity::find()
-            .filter(block_status::Column::Network.eq(network_id.name.clone()))
-            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .filter(block_status::Column::Downloaded.eq(true))
-            .filter(block_status::Column::Processed.eq(false))
-            .count(&self.conn)
-            .await?;
-
-        Ok(count as i64)
-    }
-
-    /// Reset all blocks to unprocessed (for reindex)
-    /// Only resets CONFIRMED blocks - unconfirmed blocks should not be reset
-    pub async fn reset_all_processed(&self, network_id: &NetworkId) -> Result<u64, DbError> {
-        use sea_orm::sea_query::Expr;
-
-        let result = block_status::Entity::update_many()
-            .col_expr(block_status::Column::Processed, Expr::value(false))
-            .col_expr(
-                block_status::Column::ProcessedAt,
-                Expr::value::<Option<chrono::DateTime<Utc>>>(None),
-            )
-            .filter(block_status::Column::Network.eq(network_id.name.clone()))
-            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .filter(block_status::Column::Confirmed.eq(true)) // Only reset confirmed blocks
-            .exec(&self.conn)
-            .await?;
-
-        Ok(result.rows_affected)
-    }
-
     /// Mark a block as confirmed
     pub async fn mark_confirmed(
         &self,
@@ -223,26 +174,6 @@ impl BlockStatusRepository {
         Ok(())
     }
 
-    /// Get pending blocks for REINDEX mode (only confirmed, downloaded, not processed)
-    pub async fn get_pending_confirmed_blocks(
-        &self,
-        network_id: &NetworkId,
-        limit: u64,
-    ) -> Result<Vec<i32>, DbError> {
-        let results = block_status::Entity::find()
-            .filter(block_status::Column::Network.eq(network_id.name.clone()))
-            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .filter(block_status::Column::Downloaded.eq(true))
-            .filter(block_status::Column::Processed.eq(false))
-            .filter(block_status::Column::Confirmed.eq(true)) // Only confirmed blocks
-            .order_by_asc(block_status::Column::BlockHeight)
-            .limit(limit)
-            .all(&self.conn)
-            .await?;
-
-        Ok(results.into_iter().map(|b| b.block_height).collect())
-    }
-
     /// Get unconfirmed blocks (mempool/live processing)
     pub async fn get_unconfirmed_blocks(
         &self,
@@ -259,19 +190,4 @@ impl BlockStatusRepository {
         Ok(results.into_iter().map(|b| b.block_height).collect())
     }
 
-    /// Get the highest confirmed block height
-    pub async fn get_last_confirmed_block(
-        &self,
-        network_id: &NetworkId,
-    ) -> Result<Option<i32>, DbError> {
-        let result = block_status::Entity::find()
-            .filter(block_status::Column::Network.eq(network_id.name.clone()))
-            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .filter(block_status::Column::Confirmed.eq(true))
-            .order_by_desc(block_status::Column::BlockHeight)
-            .one(&self.conn)
-            .await?;
-
-        Ok(result.map(|b| b.block_height))
-    }
 }
