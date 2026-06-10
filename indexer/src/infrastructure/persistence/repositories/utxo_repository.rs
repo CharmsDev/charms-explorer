@@ -114,48 +114,4 @@ impl UtxoRepository {
         Ok(total_deleted)
     }
 
-    /// Delete all UTXOs for a given block height and network (for rollback/reindex)
-    pub async fn delete_by_block(
-        &self,
-        block_height: i32,
-        network: &str,
-    ) -> Result<usize, DbError> {
-        let sql = format!(
-            "DELETE FROM address_utxos WHERE block_height = {} AND network = '{}'",
-            block_height,
-            network.replace('\'', "''")
-        );
-
-        let result = self
-            .conn
-            .execute(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map_err(|e| DbError::QueryError(e.to_string()))?;
-
-        Ok(result.rows_affected() as usize)
-    }
-
-    /// Get UTXO count for monitoring
-    pub async fn count(&self, network: &str) -> Result<i64, DbError> {
-        let sql = format!(
-            "SELECT COUNT(*) as cnt FROM address_utxos WHERE network = '{}'",
-            network.replace('\'', "''")
-        );
-
-        let result = self
-            .conn
-            .query_one(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map_err(|e| DbError::QueryError(e.to_string()))?;
-
-        match result {
-            Some(row) => {
-                let count: i64 = row
-                    .try_get("", "cnt")
-                    .map_err(|e| DbError::QueryError(e.to_string()))?;
-                Ok(count)
-            }
-            None => Ok(0),
-        }
-    }
 }

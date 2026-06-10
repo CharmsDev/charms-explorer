@@ -3,8 +3,8 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait,
-    QueryFilter, Set, Statement,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, DbBackend, EntityTrait, QueryFilter,
+    Statement,
 };
 
 use crate::infrastructure::persistence::entities::mempool_spends;
@@ -23,35 +23,6 @@ impl MempoolSpendsRepository {
     /// Expose the underlying connection (needed by MempoolProcessor for direct entity inserts)
     pub fn get_connection(&self) -> DatabaseConnection {
         self.conn.clone()
-    }
-
-    /// Record that a mempool tx is spending a UTXO.
-    /// Uses ON CONFLICT DO NOTHING — safe to call multiple times.
-    pub async fn record_spend(
-        &self,
-        spending_txid: &str,
-        spent_txid: &str,
-        spent_vout: i32,
-        network: &str,
-    ) -> Result<(), DbError> {
-        let model = mempool_spends::ActiveModel {
-            spending_txid: Set(spending_txid.to_string()),
-            spent_txid: Set(spent_txid.to_string()),
-            spent_vout: Set(spent_vout),
-            network: Set(network.to_string()),
-            detected_at: Set(Utc::now()),
-        };
-
-        match model.insert(&self.conn).await {
-            Ok(_) => Ok(()),
-            Err(e) => {
-                if e.to_string().contains("duplicate key") {
-                    Ok(())
-                } else {
-                    Err(e.into())
-                }
-            }
-        }
     }
 
     /// Record multiple spends in a single batch INSERT.
@@ -154,20 +125,4 @@ impl MempoolSpendsRepository {
         Ok(result.rows_affected())
     }
 
-    /// Get all UTXOs currently being spent in mempool for a network.
-    /// Returns (spent_txid, spent_vout) pairs.
-    pub async fn get_mempool_spent_utxos(
-        &self,
-        network: &str,
-    ) -> Result<Vec<(String, i32)>, DbError> {
-        let results = mempool_spends::Entity::find()
-            .filter(mempool_spends::Column::Network.eq(network))
-            .all(&self.conn)
-            .await?;
-
-        Ok(results
-            .into_iter()
-            .map(|m| (m.spent_txid, m.spent_vout))
-            .collect())
-    }
 }

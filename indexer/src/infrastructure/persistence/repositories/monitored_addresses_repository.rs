@@ -47,31 +47,6 @@ impl MonitoredAddressesRepository {
         Ok(set)
     }
 
-    /// Register an address for monitoring (idempotent — ON CONFLICT DO NOTHING).
-    pub async fn register(
-        &self,
-        address: &str,
-        network: &str,
-        source: &str,
-    ) -> Result<bool, DbError> {
-        let sql = format!(
-            "INSERT INTO monitored_addresses (address, network, source, created_at) \
-             VALUES ('{}', '{}', '{}', NOW()) \
-             ON CONFLICT (address, network) DO NOTHING",
-            address.replace('\'', "''"),
-            network.replace('\'', "''"),
-            source.replace('\'', "''"),
-        );
-
-        let result = self
-            .conn
-            .execute(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map_err(|e| DbError::QueryError(e.to_string()))?;
-
-        Ok(result.rows_affected() > 0)
-    }
-
     /// Register a batch of addresses (from charm detection in a single block).
     pub async fn register_batch(
         &self,
@@ -139,44 +114,4 @@ impl MonitoredAddressesRepository {
         Ok(set)
     }
 
-    /// Check if an address is monitored.
-    pub async fn is_monitored(&self, address: &str, network: &str) -> Result<bool, DbError> {
-        let sql = format!(
-            "SELECT 1 FROM monitored_addresses WHERE address = '{}' AND network = '{}' LIMIT 1",
-            address.replace('\'', "''"),
-            network.replace('\'', "''"),
-        );
-
-        let result = self
-            .conn
-            .query_one(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map_err(|e| DbError::QueryError(e.to_string()))?;
-
-        Ok(result.is_some())
-    }
-
-    /// Get total count of monitored addresses for a network.
-    pub async fn count(&self, network: &str) -> Result<i64, DbError> {
-        let sql = format!(
-            "SELECT COUNT(*) as cnt FROM monitored_addresses WHERE network = '{}'",
-            network.replace('\'', "''"),
-        );
-
-        let result = self
-            .conn
-            .query_one(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map_err(|e| DbError::QueryError(e.to_string()))?;
-
-        match result {
-            Some(row) => {
-                let count: i64 = row
-                    .try_get("", "cnt")
-                    .map_err(|e| DbError::QueryError(e.to_string()))?;
-                Ok(count)
-            }
-            None => Ok(0),
-        }
-    }
 }

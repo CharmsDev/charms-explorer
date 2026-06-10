@@ -89,27 +89,4 @@ impl AddressTransactionsRepository {
         Ok(total_inserted)
     }
 
-    /// Update block_height and confirmations when a mempool tx gets confirmed
-    pub async fn confirm_tx(
-        &self,
-        txid: &str,
-        block_height: i32,
-        block_time: i64,
-        network: &str,
-    ) -> Result<(), DbError> {
-        let sql = format!(
-            "UPDATE address_transactions SET block_height = {}, block_time = {}, confirmations = 1 \
-             WHERE txid = '{}' AND network = '{}' AND block_height IS NULL",
-            block_height,
-            block_time,
-            txid.replace('\'', "''"),
-            network.replace('\'', "''"),
-        );
-
-        self.conn
-            .execute(Statement::from_string(DbBackend::Postgres, sql))
-            .await
-            .map(|_| ())
-            .map_err(|e| DbError::QueryError(e.to_string()))
-    }
 }
