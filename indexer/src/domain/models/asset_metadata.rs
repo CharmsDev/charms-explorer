@@ -141,16 +141,6 @@ impl AssetMetadata {
         metadata
     }
 
-    /// Extract hash from app_id (removes t/ or n/ prefix)
-    /// [RJJ-DECIMALS] Used to match tokens with their reference NFT
-    pub fn extract_hash_from_app_id(app_id: &str) -> String {
-        let parts: Vec<&str> = app_id.split('/').collect();
-        if parts.len() >= 2 {
-            parts[1..].join("/")
-        } else {
-            app_id.to_string()
-        }
-    }
 }
 
 #[cfg(test)]
@@ -180,14 +170,4 @@ mod tests {
         assert_eq!(metadata.symbol, Some("TEST".to_string()));
     }
 
-    #[test]
-    fn test_extract_hash_from_app_id() {
-        let app_id = "t/abc123/def456";
-        let hash = AssetMetadata::extract_hash_from_app_id(app_id);
-        assert_eq!(hash, "abc123/def456");
-
-        let nft_id = "n/abc123/def456";
-        let nft_hash = AssetMetadata::extract_hash_from_app_id(nft_id);
-        assert_eq!(nft_hash, "abc123/def456");
-    }
 }

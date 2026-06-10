@@ -90,9 +90,4 @@ impl Charm {
         }
     }
 
-    /// Creates a new Charm with tags
-    pub fn with_tags(mut self, tags: Option<String>) -> Self {
-        self.tags = tags;
-        self
-    }
 }

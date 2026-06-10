@@ -65,8 +65,4 @@ impl Transaction {
         }
     }
 
-    /// Returns true if transaction has sufficient confirmations
-    pub fn is_confirmed(&self) -> bool {
-        self.confirmations >= 6 || self.status == "confirmed"
-    }
 }
