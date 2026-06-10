@@ -12,7 +12,7 @@ use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
 use crate::infrastructure::persistence::repositories::{
     AddressTransactionsRepository, AssetRepository, BlockStatusRepository, CharmRepository,
-    DexOrdersRepository, MempoolSpendsRepository, MonitoredAddressesRepository, SpellRepository,
+    DexOrdersRepository, MempoolSpendsRepository, MonitoredAddressesRepository,
     StatsHoldersRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 use crate::utils::logging;
@@ -41,7 +41,6 @@ impl NetworkManager {
         &mut self,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
-        spell_repository: SpellRepository,
         stats_holders_repository: StatsHoldersRepository,
         dex_orders_repository: DexOrdersRepository,
         transaction_repository: TransactionRepository,
@@ -58,7 +57,6 @@ impl NetworkManager {
                 "testnet4",
                 charm_repository.clone(),
                 asset_repository.clone(),
-                spell_repository.clone(),
                 stats_holders_repository.clone(),
                 dex_orders_repository.clone(),
                 transaction_repository.clone(),
@@ -77,7 +75,6 @@ impl NetworkManager {
                 "mainnet",
                 charm_repository.clone(),
                 asset_repository.clone(),
-                spell_repository.clone(),
                 stats_holders_repository.clone(),
                 dex_orders_repository.clone(),
                 transaction_repository.clone(),
@@ -102,7 +99,6 @@ impl NetworkManager {
         network: &str,
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
-        spell_repository: SpellRepository,
         stats_holders_repository: StatsHoldersRepository,
         dex_orders_repository: DexOrdersRepository,
         transaction_repository: TransactionRepository,
@@ -156,7 +152,6 @@ impl NetworkManager {
         let charm_service = CharmService::new(
             charm_repository.clone(),
             asset_repository,
-            spell_repository,
             stats_holders_repository,
             dex_orders_repository,
         );
