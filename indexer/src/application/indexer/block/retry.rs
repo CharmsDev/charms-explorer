@@ -20,44 +20,6 @@ impl RetryHandler {
         }
     }
 
-    pub fn with_config(max_retries: u32, base_delay_ms: u64) -> Self {
-        Self {
-            max_retries,
-            base_delay_ms,
-        }
-    }
-
-    /// Execute an operation with retry logic
-    pub async fn execute_with_retry<F, Fut, T, E>(&self, operation: F) -> Result<T, E>
-    where
-        F: Fn() -> Fut,
-        Fut: Future<Output = Result<T, E>>,
-        E: std::fmt::Display,
-    {
-        let mut retry_count = 0;
-
-        loop {
-            match operation().await {
-                Ok(result) => return Ok(result),
-                Err(e) => {
-                    retry_count += 1;
-
-                    if retry_count >= self.max_retries {
-                        return Err(e);
-                    }
-
-                    let delay = self.calculate_delay(retry_count);
-                    logging::log_error(&format!(
-                        "Operation failed (attempt {}/{}): {}. Retrying in {}ms",
-                        retry_count, self.max_retries, e, delay
-                    ));
-
-                    sleep(Duration::from_millis(delay)).await;
-                }
-            }
-        }
-    }
-
     /// Execute an operation with retry logic and custom error handling
     pub async fn execute_with_retry_and_logging<F, Fut, T, E>(
         &self,

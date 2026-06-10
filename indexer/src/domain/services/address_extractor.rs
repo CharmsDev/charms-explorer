@@ -6,36 +6,8 @@ use anyhow::Result;
 pub struct AddressExtractor;
 
 impl AddressExtractor {
-    /// Extract the first output address from a transaction hex string
-    /// This is typically where the charm/asset is sent to
-    pub fn extract_primary_address(tx_hex: &str, network: &str) -> Result<Option<String>> {
-        // Convert hex string to bytes
-        let tx_bytes = hex::decode(tx_hex)?;
-        
-        // Deserialize transaction
-        let tx: Transaction = deserialize(&tx_bytes)?;
-        
-        // Determine Bitcoin network
-        let btc_network = match network {
-            "mainnet" => Network::Bitcoin,
-            "testnet4" => Network::Testnet,
-            "testnet" => Network::Testnet,
-            "regtest" => Network::Regtest,
-            _ => Network::Testnet, // Default to testnet
-        };
-        
-        // Look for the first output with a valid address
-        for output in &tx.output {
-            if let Ok(address) = Address::from_script(&output.script_pubkey, btc_network) {
-                return Ok(Some(address.to_string()));
-            }
-        }
-        
-        Ok(None)
-    }
-    
     /// Extract all output addresses from a transaction hex string
-    pub fn extract_all_addresses(tx_hex: &str, network: &str) -> Result<Vec<String>> {
+    fn extract_all_addresses(tx_hex: &str, network: &str) -> Result<Vec<String>> {
         let tx_bytes = hex::decode(tx_hex)?;
         let tx: Transaction = deserialize(&tx_bytes)?;
         
@@ -90,22 +62,3 @@ impl AddressExtractor {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_extract_address_from_valid_hex() {
-        // This would need a real transaction hex for proper testing
-        // For now, just test that the function doesn't panic with invalid input
-        let result = AddressExtractor::extract_primary_address("invalid_hex", "testnet4");
-        assert!(result.is_err());
-    }
-    
-    #[test]
-    fn test_network_mapping() {
-        // Test that network strings map correctly
-        // This is tested implicitly in the extract functions
-        assert!(true);
-    }
-}
