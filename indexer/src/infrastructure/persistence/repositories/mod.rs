@@ -6,7 +6,6 @@ pub mod charm_repository;
 pub mod dex_orders_repository;
 pub mod mempool_spends_repository; // [RJJ-MEMPOOL]
 pub mod monitored_addresses_repository;
-pub mod spell_repository;
 pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
 pub mod summary_repository;
 pub mod transaction_repository; // [RJJ-DEX]
@@ -19,55 +18,33 @@ pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository;
 pub use mempool_spends_repository::MempoolSpendsRepository; // [RJJ-MEMPOOL]
 pub use monitored_addresses_repository::MonitoredAddressesRepository;
-pub use spell_repository::SpellRepository;
 pub use stats_holders_repository::StatsHoldersRepository;
 pub use summary_repository::SummaryRepository;
 pub use transaction_repository::TransactionRepository; // [RJJ-DEX]
 pub use utxo_repository::UtxoRepository;
 
 /// Collection of all repositories
-/// [RJJ-S01] Added spell repository
-/// [RJJ-STATS-HOLDERS] Added stats_holders repository
-/// [RJJ-DEX] Added dex_orders repository
 pub struct Repositories {
-    /// Repository for address transaction history
     pub address_transactions: AddressTransactionsRepository,
-    /// Repository for asset operations
     pub asset: AssetRepository,
-    /// Repository for block status tracking
     pub block_status: BlockStatusRepository,
-    /// Repository for charm operations
     pub charm: CharmRepository,
-    /// Repository for DEX orders [RJJ-DEX]
     pub dex_orders: DexOrdersRepository,
-    /// Repository for spell operations [RJJ-S01]
-    pub spell: SpellRepository,
-    /// Repository for holder statistics [RJJ-STATS-HOLDERS]
     pub stats_holders: StatsHoldersRepository,
-    /// Repository for summary operations
     pub summary: SummaryRepository,
-    /// Repository for transaction operations
     pub transaction: TransactionRepository,
-    /// Repository for address UTXO index
     pub utxo: UtxoRepository,
-    /// Repository for monitored addresses (on-demand tracking)
     pub monitored_addresses: MonitoredAddressesRepository,
-    /// Repository for mempool spend tracking [RJJ-MEMPOOL]
     pub mempool_spends: MempoolSpendsRepository,
 }
 
 impl Repositories {
-    /// Create a new Repositories instance
-    /// [RJJ-S01] Now includes spell repository
-    /// [RJJ-STATS-HOLDERS] Now includes stats_holders repository
-    /// [RJJ-DEX] Now includes dex_orders repository
     pub fn new(
         address_transactions: AddressTransactionsRepository,
         asset: AssetRepository,
         block_status: BlockStatusRepository,
         charm: CharmRepository,
         dex_orders: DexOrdersRepository,
-        spell: SpellRepository,
         stats_holders: StatsHoldersRepository,
         summary: SummaryRepository,
         transaction: TransactionRepository,
@@ -81,7 +58,6 @@ impl Repositories {
             block_status,
             charm,
             dex_orders,
-            spell,
             stats_holders,
             summary,
             transaction,

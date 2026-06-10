@@ -4,8 +4,7 @@ use crate::infrastructure::persistence::connection::DbPool;
 use crate::infrastructure::persistence::repositories::{
     AddressTransactionsRepository, AssetRepository, BlockStatusRepository, CharmRepository,
     DexOrdersRepository, MempoolSpendsRepository, MonitoredAddressesRepository, Repositories,
-    SpellRepository, StatsHoldersRepository, SummaryRepository, TransactionRepository,
-    UtxoRepository,
+    StatsHoldersRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
 
 /// Factory for creating repositories
@@ -13,9 +12,6 @@ pub struct RepositoryFactory;
 
 impl RepositoryFactory {
     /// Create all repositories
-    /// [RJJ-S01] Now includes spell repository
-    /// [RJJ-STATS-HOLDERS] Now includes stats_holders repository
-    /// [RJJ-DEX] Now includes dex_orders repository
     pub fn create_repositories(db_pool: &DbPool) -> Repositories {
         let conn = db_pool.get_connection().clone();
 
@@ -25,7 +21,6 @@ impl RepositoryFactory {
             Self::create_block_status_repository(conn.clone()),
             Self::create_charm_repository(conn.clone()),
             Self::create_dex_orders_repository(conn.clone()),
-            Self::create_spell_repository(conn.clone()),
             Self::create_stats_holders_repository(conn.clone()),
             Self::create_summary_repository(conn.clone()),
             Self::create_transaction_repository(conn.clone()),
@@ -53,12 +48,6 @@ impl RepositoryFactory {
     /// Create an asset repository
     pub fn create_asset_repository(conn: DatabaseConnection) -> AssetRepository {
         AssetRepository::new(conn)
-    }
-
-    /// Create a spell repository
-    /// [RJJ-S01] New repository for spell persistence
-    pub fn create_spell_repository(conn: DatabaseConnection) -> SpellRepository {
-        SpellRepository::new(conn)
     }
 
     /// Create a stats_holders repository

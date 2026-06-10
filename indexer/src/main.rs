@@ -58,7 +58,6 @@ async fn run_production_indexer(
         .initialize(
             repositories.charm.clone(),
             repositories.asset.clone(),
-            repositories.spell.clone(),
             repositories.stats_holders.clone(),
             repositories.dex_orders.clone(),
             repositories.transaction.clone(),

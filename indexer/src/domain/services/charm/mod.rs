@@ -11,7 +11,7 @@ use std::fmt;
 
 use crate::domain::errors::CharmError;
 use crate::infrastructure::persistence::repositories::{
-    AssetRepository, CharmRepository, DexOrdersRepository, SpellRepository, StatsHoldersRepository,
+    AssetRepository, CharmRepository, DexOrdersRepository, StatsHoldersRepository,
 };
 use persistence::CharmPersistence;
 use spent_tracking::SpentTracker;
@@ -22,7 +22,6 @@ use spent_tracking::SpentTracker;
 pub struct CharmService {
     charm_repository: CharmRepository,
     asset_repository: AssetRepository,
-    spell_repository: SpellRepository,
     stats_holders_repository: StatsHoldersRepository,
     dex_orders_repository: DexOrdersRepository,
 }
@@ -38,14 +37,12 @@ impl CharmService {
     pub fn new(
         charm_repository: CharmRepository,
         asset_repository: AssetRepository,
-        spell_repository: SpellRepository,
         stats_holders_repository: StatsHoldersRepository,
         dex_orders_repository: DexOrdersRepository,
     ) -> Self {
         Self {
             charm_repository,
             asset_repository,
-            spell_repository,
             stats_holders_repository,
             dex_orders_repository,
         }
