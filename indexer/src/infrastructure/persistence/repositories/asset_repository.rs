@@ -2,7 +2,6 @@
 
 use chrono::{DateTime, FixedOffset, Utc};
 use rust_decimal::Decimal;
-use sea_orm::entity::prelude::*;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, NotSet, QueryFilter, Set};
 use serde_json::Value;
 
@@ -90,11 +89,6 @@ impl AssetRepository {
         Ok(())
     }
 
-    /// Save a single asset to the database (legacy method)
-    pub async fn save_asset(&self, asset: &Asset) -> Result<(), DbError> {
-        self.save_or_update_asset(asset, 1).await
-    }
-
     /// Save multiple assets in a batch operation
     /// Delegates to asset/save.rs which handles NFT-token metadata inheritance
     pub async fn save_batch(
@@ -113,60 +107,6 @@ impl AssetRepository {
     ) -> Result<(), DbError> {
         crate::infrastructure::persistence::repositories::asset::save::save_batch(&self.db, assets)
             .await
-    }
-
-    /// Find asset by app_id
-    pub async fn find_by_app_id(&self, app_id: &str) -> Result<Option<Asset>, DbError> {
-        let asset_model = Assets::find()
-            .filter(assets::Column::AppId.eq(app_id))
-            .one(&self.db)
-            .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
-
-        match asset_model {
-            Some(model) => Ok(Some(Asset {
-                app_id: model.app_id,
-                txid: model.txid,
-                vout_index: model.vout_index,
-                charm_id: model.charm_id,
-                block_height: model.block_height as u64,
-                date_created: model.date_created.naive_utc(),
-                data: model.data,
-                asset_type: model.asset_type,
-                blockchain: model.blockchain,
-                network: model.network,
-                total_supply: model.total_supply,
-            })),
-            None => Ok(None),
-        }
-    }
-
-    /// Get assets by charm_id
-    pub async fn find_by_charm_id(&self, charm_id: &str) -> Result<Vec<Asset>, DbError> {
-        let asset_models = Assets::find()
-            .filter(assets::Column::CharmId.eq(charm_id))
-            .all(&self.db)
-            .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
-
-        let assets = asset_models
-            .into_iter()
-            .map(|model| Asset {
-                app_id: model.app_id,
-                txid: model.txid,
-                vout_index: model.vout_index,
-                charm_id: model.charm_id,
-                block_height: model.block_height as u64,
-                date_created: model.date_created.naive_utc(),
-                data: model.data,
-                asset_type: model.asset_type,
-                blockchain: model.blockchain,
-                network: model.network,
-                total_supply: model.total_supply,
-            })
-            .collect();
-
-        Ok(assets)
     }
 
     /// Update supply when charms are marked as spent
@@ -241,83 +181,4 @@ impl AssetRepository {
         }
     }
 
-    /// Mark NFT as reference and update token with inherited name
-    pub async fn mark_nft_as_reference_and_get_name(
-        &self,
-        nft_pattern: &str,
-        token_app_id: &str,
-    ) -> Result<(), DbError> {
-        // Find parent NFT by pattern
-        let parent_nft = Assets::find()
-            .filter(assets::Column::AssetType.eq("nft"))
-            .filter(assets::Column::AppId.like(nft_pattern))
-            .one(&self.db)
-            .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
-
-        if let Some(nft) = parent_nft {
-            // Mark NFT as reference
-            let mut nft_active: assets::ActiveModel = nft.clone().into();
-            nft_active.is_reference_nft = Set(true);
-            nft_active.updated_at = Set(Utc::now().into());
-            Assets::update(nft_active)
-                .exec(&self.db)
-                .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
-
-            // Update token with inherited name
-            if let Some(name) = nft.name {
-                let token = Assets::find()
-                    .filter(assets::Column::AppId.eq(token_app_id))
-                    .one(&self.db)
-                    .await
-                    .map_err(|e| DbError::SeaOrmError(e))?;
-
-                if let Some(token_model) = token {
-                    let mut token_active: assets::ActiveModel = token_model.into();
-                    token_active.name = Set(Some(name));
-                    token_active.updated_at = Set(Utc::now().into());
-                    Assets::update(token_active)
-                        .exec(&self.db)
-                        .await
-                        .map_err(|e| DbError::SeaOrmError(e))?;
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Update NFT metadata (name, image_url) directly
-    pub async fn update_nft_metadata(
-        &self,
-        app_id: &str,
-        name: Option<&str>,
-        image_url: Option<&str>,
-    ) -> Result<(), DbError> {
-        let existing = Assets::find()
-            .filter(assets::Column::AppId.eq(app_id))
-            .one(&self.db)
-            .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
-
-        if let Some(asset) = existing {
-            let mut active: assets::ActiveModel = asset.into();
-
-            if let Some(n) = name {
-                active.name = Set(Some(n.to_string()));
-            }
-            if let Some(img) = image_url {
-                active.image_url = Set(Some(img.to_string()));
-            }
-            active.updated_at = Set(Utc::now().into());
-
-            active
-                .update(&self.db)
-                .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
-        }
-
-        Ok(())
-    }
 }
