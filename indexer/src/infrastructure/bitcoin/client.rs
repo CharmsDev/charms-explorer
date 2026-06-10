@@ -5,7 +5,7 @@ use bitcoincore_rpc::{Auth, Client, RpcApi};
 use std::str::FromStr;
 use std::sync::Arc;
 
-use crate::config::{AppConfig, BitcoinConfig, NetworkId, NetworkType};
+use crate::config::{BitcoinConfig, NetworkId, NetworkType};
 use crate::infrastructure::bitcoin::SimpleBitcoinClient;
 use crate::infrastructure::bitcoin::error::BitcoinClientError;
 use crate::utils::logging;
@@ -60,16 +60,6 @@ impl BitcoinClient {
     }
 
     /// Creates a Bitcoin client from application configuration
-    pub fn from_app_config(config: &AppConfig, network: &str) -> Result<Self, BitcoinClientError> {
-        match config.get_bitcoin_config(network) {
-            Some(bitcoin_config) => Self::new(bitcoin_config),
-            None => Err(BitcoinClientError::ConfigError(format!(
-                "Bitcoin configuration for network '{}' not found",
-                network
-            ))),
-        }
-    }
-
     /// Creates a Bitcoin client from a SimpleBitcoinClient
     pub fn from_simple_client(simple_client: SimpleBitcoinClient) -> Self {
         let network_id = simple_client.network_id().clone();
@@ -152,40 +142,6 @@ impl BitcoinClient {
                 "No client available".to_string(),
             ))
         }
-    }
-
-    /// Get the name of the currently active provider
-    pub fn get_primary_provider_name(&self) -> Option<String> {
-        if let Some(simple_client) = &self.simple_client {
-            Some(simple_client.provider_name())
-        } else {
-            Some("BitcoinCore".to_string())
-        }
-    }
-
-    /// Heuristic to determine if we're likely using a local Bitcoin node
-    pub fn is_using_local_node(&self) -> bool {
-        if let Some(simple_client) = &self.simple_client {
-            simple_client.uses_local_node()
-        } else {
-            // Legacy single client - assume it's local
-            true
-        }
-    }
-
-    /// Check if external providers exist
-    pub fn has_external_providers(&self) -> bool {
-        if let Some(simple_client) = &self.simple_client {
-            simple_client.is_external_provider()
-        } else {
-            false
-        }
-    }
-
-    /// Returns the underlying RPC client Arc for direct RPC calls (e.g. getrawmempool)
-    /// Only available when using the legacy single-client mode (not SimpleBitcoinClient)
-    pub fn get_rpc_client(&self) -> Option<std::sync::Arc<bitcoincore_rpc::Client>> {
-        self.client.clone()
     }
 
     /// Fetch all txids currently in the mempool via getrawmempool RPC.

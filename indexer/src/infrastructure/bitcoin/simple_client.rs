@@ -12,7 +12,6 @@ use crate::infrastructure::bitcoin::providers::BitcoinProvider;
 #[derive(Debug, Clone)]
 pub struct SimpleBitcoinClient {
     provider: Arc<dyn BitcoinProvider>,
-    network: String,
     network_id: NetworkId,
 }
 
@@ -22,12 +21,10 @@ impl SimpleBitcoinClient {
         let provider = ProviderFactory::create_provider(config)?;
         let network_id = NetworkId::new(NetworkType::Bitcoin, &config.network);
 
-        // Log which provider is being used
         crate::utils::logging::log_info(&format!("Using provider: {}", provider.provider_name()));
 
         Ok(Self {
             provider,
-            network: config.network.clone(),
             network_id,
         })
     }
@@ -61,29 +58,8 @@ impl SimpleBitcoinClient {
             .await
     }
 
-    /// Get the network name
-    pub fn network(&self) -> &str {
-        &self.network
-    }
-
     /// Get the network ID
     pub fn network_id(&self) -> &NetworkId {
         &self.network_id
-    }
-
-    /// Get the provider name
-    pub fn provider_name(&self) -> String {
-        self.provider.provider_name()
-    }
-
-    /// Check if this is an external provider (for rate limiting decisions)
-    pub fn is_external_provider(&self) -> bool {
-        // QuickNode is external, Bitcoin nodes are local
-        self.provider.provider_name().contains("QuickNode")
-    }
-
-    /// Check if local node is being used
-    pub fn uses_local_node(&self) -> bool {
-        !self.is_external_provider()
     }
 }
