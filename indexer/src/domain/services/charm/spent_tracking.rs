@@ -12,17 +12,6 @@ impl<'a> SpentTracker<'a> {
         Self { charm_repository }
     }
 
-    /// Mark a charm as spent by its txid and vout
-    /// [RJJ-S01] Updated: now requires both txid and vout
-    pub async fn mark_charm_as_spent(&self, txid: &str, vout: i32) -> Result<(), CharmError> {
-        self.charm_repository
-            .mark_charm_as_spent(txid, vout)
-            .await
-            .map_err(|e| {
-                CharmError::ProcessingError(format!("Failed to mark charm as spent: {}", e))
-            })
-    }
-
     /// Mark multiple charms as spent in a batch using (txid, vout) pairs
     pub async fn mark_charms_as_spent_batch(
         &self,

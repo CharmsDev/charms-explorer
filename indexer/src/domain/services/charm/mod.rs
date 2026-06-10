@@ -168,13 +168,6 @@ impl CharmService {
             })
     }
 
-    /// Mark a charm as spent by its txid and vout
-    /// [RJJ-S01] Updated: now requires both txid and vout
-    pub async fn mark_charm_as_spent(&self, txid: &str, vout: i32) -> Result<(), CharmError> {
-        let tracker = SpentTracker::new(&self.charm_repository);
-        tracker.mark_charm_as_spent(txid, vout).await
-    }
-
     /// Mark multiple charms as spent in a batch using (txid, vout) pairs
     /// Also updates asset supply and stats_holders with negative amounts
     pub async fn mark_charms_as_spent_batch(
