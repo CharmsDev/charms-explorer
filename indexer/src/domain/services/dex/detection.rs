@@ -32,21 +32,12 @@ pub fn detect_dex_operation(charm_data: &Value) -> Option<DexDetectionResult> {
     // Operation details go in dex_orders table
     let tags = vec!["charms-cast".to_string()];
 
-    // Extract order details from output if creating/modifying
     let order = output_orders.first().cloned();
-
-    // Input order IDs (empty — spell ins are raw UtxoId bytes, not charm data)
-    let input_order_ids: Vec<String> = Vec::new();
-
-    // Build output order ID
-    let output_order_id = order.as_ref().and_then(|o| o.scrolls_address.clone());
 
     Some(DexDetectionResult {
         operation,
         dex_app_id,
         order,
-        input_order_ids,
-        output_order_id,
         tags,
     })
 }

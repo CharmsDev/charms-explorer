@@ -108,40 +108,13 @@ pub struct DexOrder {
     pub scrolls_address: Option<String>,
 }
 
-impl DexOrder {
-    /// Calculate price per token (sats per whole token, assuming 8 decimals)
-    pub fn price_per_token(&self) -> f64 {
-        if self.price.1 == 0 {
-            return 0.0;
-        }
-        // price = num/den sats per unit
-        // For 8 decimal token: multiply by 10^8 to get sats per whole token
-        (self.price.0 as f64 / self.price.1 as f64) * 100_000_000.0
-    }
-}
-
 /// Result of DEX detection on a transaction
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DexDetectionResult {
-    /// Type of operation detected
     pub operation: DexOperation,
-    /// DEX contract app_id used
     pub dex_app_id: String,
-    /// Order data (if applicable)
     pub order: Option<DexOrder>,
-    /// Input order IDs consumed (for fulfills/cancels)
-    pub input_order_ids: Vec<String>,
-    /// Output order ID created (for creates/partial fills)
-    pub output_order_id: Option<String>,
-    /// Tags to apply to the transaction
     pub tags: Vec<String>,
-}
-
-impl DexDetectionResult {
-    /// Create tags string for database storage
-    pub fn tags_string(&self) -> String {
-        self.tags.join(",")
-    }
 }
 
 /// Check if an app_id is a known DEX contract
