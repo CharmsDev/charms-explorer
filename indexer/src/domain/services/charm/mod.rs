@@ -50,7 +50,7 @@ impl CharmService {
 
     // ==================== Repository Access Methods ====================
 
-    /// [RJJ-STATS-HOLDERS] Get reference to stats_holders repository
+    /// Get reference to stats_holders repository
     pub fn get_stats_holders_repository(&self) -> &StatsHoldersRepository {
         &self.stats_holders_repository
     }
@@ -76,9 +76,9 @@ impl CharmService {
     // ==================== Persistence Methods ====================
 
     /// Saves multiple charms in a single database operation
-    /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
-    /// [RJJ-ADDRESS] Added address field
-    /// [RJJ-DEX] Added tags field
+    /// Updated: replaced charmid with vout, added app_id and amount
+    /// Added address field
+    /// Added tags field
     /// Returns the list of (txid, vout) that were actually inserted (not duplicates).
     pub async fn save_batch(
         &self,

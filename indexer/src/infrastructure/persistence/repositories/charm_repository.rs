@@ -63,9 +63,9 @@ impl CharmRepository {
     }
 
     /// Save multiple charms in a batch
-    /// [RJJ-S01] Updated signature: removed charmid, added vout, app_id, and amount
-    /// [RJJ-ADDRESS] Added address field
-    /// [RJJ-DEX] Added tags field
+    /// Updated signature: removed charmid, added vout, app_id, and amount
+    /// Added address field
+    /// Added tags field
     pub async fn save_batch(
         &self,
         charms: Vec<(

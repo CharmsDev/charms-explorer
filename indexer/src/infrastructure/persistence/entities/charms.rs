@@ -5,9 +5,9 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// [RJJ-S01] Updated to use composite primary key (txid, vout)
+// Updated to use composite primary key (txid, vout)
 // Removed charmid field, added app_id field
-// [RJJ-MEMPOOL] Added support for mempool tracking with nullable block_height
+// Added support for mempool tracking with nullable block_height
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "charms")]
 pub struct Model {

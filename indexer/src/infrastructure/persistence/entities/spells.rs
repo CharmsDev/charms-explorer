@@ -1,5 +1,5 @@
 //! SeaORM Entity for Spells table
-//! [RJJ-S01] New entity to store spell data (output 0 of charm transactions)
+//! New entity to store spell data (output 0 of charm transactions)
 //! Spells are OP_RETURN outputs and don't have addresses
 
 use chrono::NaiveDateTime;

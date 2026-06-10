@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Represents a Charm asset found in a blockchain transaction
-/// [RJJ-S01] Updated: Removed charmid field, added app_id field
-/// [RJJ-MEMPOOL] Updated: block_height is now Option<u64> to support mempool charms
+/// Updated: Removed charmid field, added app_id field
+/// Updated: block_height is now Option<u64> to support mempool charms
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Charm {
     /// Transaction ID
@@ -55,8 +55,8 @@ pub struct Charm {
 
 impl Charm {
     /// Creates a new Charm with specified parameters
-    /// [RJJ-S01] Updated: Removed charmid parameter, added app_id and amount
-    /// [RJJ-MEMPOOL] Updated: block_height is now Option<u64>, added mempool_detected_at
+    /// Updated: Removed charmid parameter, added app_id and amount
+    /// Updated: block_height is now Option<u64>, added mempool_detected_at
     pub fn new(
         txid: String,
         vout: i32,

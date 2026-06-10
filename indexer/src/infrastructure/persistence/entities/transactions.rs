@@ -5,7 +5,7 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// [RJJ-MEMPOOL] Added support for mempool tracking with nullable block_height
+// Added support for mempool tracking with nullable block_height
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "transactions")]
 pub struct Model {

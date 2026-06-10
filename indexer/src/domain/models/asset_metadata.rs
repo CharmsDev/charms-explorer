@@ -1,4 +1,4 @@
-/// [RJJ-DECIMALS] Asset metadata including decimal precision
+/// Asset metadata including decimal precision
 ///
 /// This module handles dynamic decimal precision for token amounts based on NFT metadata.
 ///
@@ -24,7 +24,7 @@ pub const DEFAULT_DECIMALS: u8 = 8;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssetMetadata {
     /// Number of decimal places for token amounts
-    /// [RJJ-DECIMALS] This value is extracted from the NFT metadata
+    /// This value is extracted from the NFT metadata
     pub decimals: u8,
 
     /// Asset name (optional)

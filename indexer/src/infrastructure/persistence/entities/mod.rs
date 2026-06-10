@@ -7,9 +7,9 @@ pub mod assets;
 pub mod block_status;
 pub mod charms;
 pub mod dex_orders;
-pub mod mempool_spends; // [RJJ-MEMPOOL] Tracks UTXOs spent by unconfirmed txs
+pub mod mempool_spends; // Tracks UTXOs spent by unconfirmed txs
 pub mod monitored_addresses;
-pub mod spells; // [RJJ-S01] New spells entity
-pub mod stats_holders; // [RJJ-STATS-HOLDERS]
+pub mod spells; // New spells entity
+pub mod stats_holders; //
 pub mod summary;
-pub mod transactions; // [RJJ-DEX] DEX orders for Charms Cast
+pub mod transactions; // DEX orders for Charms Cast

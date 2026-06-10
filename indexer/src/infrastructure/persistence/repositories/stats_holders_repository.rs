@@ -1,4 +1,4 @@
-// [RJJ-STATS-HOLDERS] Repository for stats_holders table operations in indexer
+// Repository for stats_holders table operations in indexer
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 

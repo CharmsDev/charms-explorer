@@ -177,7 +177,7 @@ impl NetworkManager {
             Arc::new(Mutex::new(Box::new(processor))),
         );
 
-        // [RJJ-MEMPOOL] Spawn MempoolProcessor as a parallel background task
+        // Spawn MempoolProcessor as a parallel background task
         // Uses a direct RPC BitcoinClient (not SimpleBitcoinClient) for getrawmempool support
         match BitcoinClient::new(bitcoin_config) {
             Ok(mempool_client) => {

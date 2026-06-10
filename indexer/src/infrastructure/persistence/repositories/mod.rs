@@ -4,11 +4,11 @@ pub mod asset_repository;
 pub mod block_status_repository;
 pub mod charm_repository;
 pub mod dex_orders_repository;
-pub mod mempool_spends_repository; // [RJJ-MEMPOOL]
+pub mod mempool_spends_repository; //
 pub mod monitored_addresses_repository;
-pub mod stats_holders_repository; // [RJJ-STATS-HOLDERS]
+pub mod stats_holders_repository; //
 pub mod summary_repository;
-pub mod transaction_repository; // [RJJ-DEX]
+pub mod transaction_repository; //
 pub mod utxo_repository;
 
 pub use address_transactions_repository::AddressTransactionsRepository;
@@ -16,11 +16,11 @@ pub use asset_repository::AssetRepository;
 pub use block_status_repository::BlockStatusRepository;
 pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository;
-pub use mempool_spends_repository::MempoolSpendsRepository; // [RJJ-MEMPOOL]
+pub use mempool_spends_repository::MempoolSpendsRepository; //
 pub use monitored_addresses_repository::MonitoredAddressesRepository;
 pub use stats_holders_repository::StatsHoldersRepository;
 pub use summary_repository::SummaryRepository;
-pub use transaction_repository::TransactionRepository; // [RJJ-DEX]
+pub use transaction_repository::TransactionRepository; //
 pub use utxo_repository::UtxoRepository;
 
 /// Collection of all repositories

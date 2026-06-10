@@ -51,13 +51,13 @@ impl RepositoryFactory {
     }
 
     /// Create a stats_holders repository
-    /// [RJJ-STATS-HOLDERS] New repository for holder statistics
+    /// New repository for holder statistics
     pub fn create_stats_holders_repository(conn: DatabaseConnection) -> StatsHoldersRepository {
         StatsHoldersRepository::new(conn)
     }
 
     /// Create a dex_orders repository
-    /// [RJJ-DEX] New repository for Cast DEX order tracking
+    /// New repository for Cast DEX order tracking
     pub fn create_dex_orders_repository(conn: DatabaseConnection) -> DexOrdersRepository {
         DexOrdersRepository::new(conn)
     }
@@ -79,7 +79,7 @@ impl RepositoryFactory {
         MonitoredAddressesRepository::new(conn)
     }
 
-    /// Create a mempool_spends repository [RJJ-MEMPOOL]
+    /// Create a mempool_spends repository
     pub fn create_mempool_spends_repository(conn: DatabaseConnection) -> MempoolSpendsRepository {
         MempoolSpendsRepository::new(conn)
     }

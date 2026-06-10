@@ -19,8 +19,8 @@ fn extract_cardano_fields(data: &serde_json::Value) -> (Option<String>, Option<S
     (policy_id, asset_name, fingerprint)
 }
 
-/// [RJJ-SUPPLY] Save or update asset with correct supply logic
-/// [RJJ-DECIMALS] Extract and store decimals from NFT metadata
+/// Save or update asset with correct supply logic
+/// Extract and store decimals from NFT metadata
 ///
 /// Supply Rules:
 /// - NFT creation: total_supply = 0 (NFT itself has implicit supply of 1)
@@ -74,7 +74,7 @@ pub async fn save_or_update_asset(
                     description: Set(metadata.description),
                     image_url: Set(metadata.image_url),
                     total_supply: Set(Some(Decimal::ZERO)), // NFT supply starts at 0
-                    decimals: Set(metadata.decimals as i16), // [RJJ-DECIMALS]
+                    decimals: Set(metadata.decimals as i16), //
                     is_reference_nft: Set(false),
                     cardano_policy_id: Set(extract_cardano_fields(&asset.data).0),
                     cardano_asset_name: Set(extract_cardano_fields(&asset.data).1),

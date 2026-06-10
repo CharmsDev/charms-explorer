@@ -22,9 +22,9 @@ impl<'a> CharmPersistence<'a> {
     }
 
     /// Saves multiple charms in a single database operation
-    /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
-    /// [RJJ-ADDRESS] Added address field
-    /// [RJJ-DEX] Added tags field
+    /// Updated: replaced charmid with vout, added app_id and amount
+    /// Added address field
+    /// Added tags field
     /// Returns the list of (txid, vout) that were actually inserted (not duplicates).
     pub async fn save_charm_batch(
         &self,

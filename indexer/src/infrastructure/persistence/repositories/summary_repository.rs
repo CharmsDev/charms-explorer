@@ -123,7 +123,7 @@ impl SummaryRepository {
                 last_updated: Set(now),
                 created_at: Set(now),
                 updated_at: Set(now),
-                // Tag statistics [RJJ-DEX]
+                // Tag statistics
                 charms_cast_count: Set(0),
                 bro_count: Set(0),
                 dex_orders_count: Set(0),

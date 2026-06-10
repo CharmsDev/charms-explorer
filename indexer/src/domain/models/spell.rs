@@ -1,4 +1,4 @@
-// [RJJ-S01] New Spell domain model
+// New Spell domain model
 // A Spell is the container in output 0 that describes all charms in a transaction
 // Spells are OP_RETURN outputs and don't have addresses (only charms have addresses)
 
