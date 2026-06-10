@@ -1,7 +1,7 @@
 //! Repository for DEX orders operations
 
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
+    ActiveModelTrait, DatabaseConnection, EntityTrait, Set,
 };
 
 use crate::domain::services::dex::{DexOperation, DexOrder, ExecType, OrderSide};
@@ -106,40 +106,6 @@ impl DexOrdersRepository {
         Ok(result)
     }
 
-    /// Find orders by asset
-    pub async fn find_by_asset(&self, asset_app_id: &str) -> Result<Vec<dex_orders::Model>, DbError> {
-        let results = dex_orders::Entity::find()
-            .filter(dex_orders::Column::AssetAppId.eq(asset_app_id))
-            .order_by_desc(dex_orders::Column::CreatedAt)
-            .all(&self.conn)
-            .await?;
-        Ok(results)
-    }
-
-    /// Find open orders by asset (for orderbook)
-    pub async fn find_open_orders_by_asset(
-        &self,
-        asset_app_id: &str,
-    ) -> Result<Vec<dex_orders::Model>, DbError> {
-        let results = dex_orders::Entity::find()
-            .filter(dex_orders::Column::AssetAppId.eq(asset_app_id))
-            .filter(dex_orders::Column::Status.eq("open"))
-            .order_by_asc(dex_orders::Column::PriceNum)
-            .all(&self.conn)
-            .await?;
-        Ok(results)
-    }
-
-    /// Find orders by maker address
-    pub async fn find_by_maker(&self, maker: &str) -> Result<Vec<dex_orders::Model>, DbError> {
-        let results = dex_orders::Entity::find()
-            .filter(dex_orders::Column::Maker.eq(maker))
-            .order_by_desc(dex_orders::Column::CreatedAt)
-            .all(&self.conn)
-            .await?;
-        Ok(results)
-    }
-
     /// Update order status
     pub async fn update_status(&self, order_id: &str, status: &str) -> Result<(), DbError> {
         if let Some(order) = dex_orders::Entity::find_by_id(order_id.to_string())
@@ -206,13 +172,4 @@ impl DexOrdersRepository {
         }
     }
 
-    /// Count orders by platform
-    pub async fn count_by_platform(&self, platform: &str) -> Result<u64, DbError> {
-        use sea_orm::PaginatorTrait;
-        let count = dex_orders::Entity::find()
-            .filter(dex_orders::Column::Platform.eq(platform))
-            .count(&self.conn)
-            .await?;
-        Ok(count)
-    }
 }
