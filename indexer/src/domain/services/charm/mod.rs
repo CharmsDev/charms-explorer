@@ -75,12 +75,6 @@ impl CharmService {
 
     // ==================== Persistence Methods ====================
 
-    /// Optimize DB session for high-throughput writer tasks
-    pub async fn optimize_writer_session(&self) -> Result<(), CharmError> {
-        let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);
-        persistence.optimize_writer_session().await
-    }
-
     /// Saves multiple charms in a single database operation
     /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
     /// [RJJ-ADDRESS] Added address field
@@ -104,27 +98,6 @@ impl CharmService {
     ) -> Result<Vec<(String, i32)>, CharmError> {
         let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);
         persistence.save_charm_batch(charms).await
-    }
-
-    /// Save a batch of transactions to the repository
-    pub async fn save_transaction_batch(
-        &self,
-        batch: Vec<(
-            String,
-            u64,
-            i64,
-            serde_json::Value,
-            serde_json::Value,
-            i32,
-            bool,
-            String,
-            String,
-            Option<String>,
-            Option<String>,
-        )>,
-    ) -> Result<(), CharmError> {
-        let persistence = CharmPersistence::new(&self.charm_repository, &self.asset_repository);
-        persistence.save_transaction_batch(batch).await
     }
 
     /// Save a batch of assets to the repository

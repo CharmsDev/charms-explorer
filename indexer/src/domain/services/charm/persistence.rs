@@ -21,16 +21,6 @@ impl<'a> CharmPersistence<'a> {
         }
     }
 
-    /// Optimize DB session for high-throughput writer tasks
-    pub async fn optimize_writer_session(&self) -> Result<(), CharmError> {
-        self.charm_repository
-            .set_synchronous_commit(false)
-            .await
-            .map_err(|e| {
-                CharmError::ProcessingError(format!("Failed to set synchronous_commit off: {}", e))
-            })
-    }
-
     /// Saves multiple charms in a single database operation
     /// [RJJ-S01] Updated: replaced charmid with vout, added app_id and amount
     /// [RJJ-ADDRESS] Added address field
@@ -56,30 +46,6 @@ impl<'a> CharmPersistence<'a> {
             .save_batch(charms)
             .await
             .map_err(|e| CharmError::ProcessingError(format!("Failed to save charm batch: {}", e)))
-    }
-
-    /// Save a batch of transactions to the repository
-    ///
-    /// Note: This currently returns Ok() as transactions are handled separately
-    /// TODO: Add TransactionRepository to CharmService dependencies if needed
-    pub async fn save_transaction_batch(
-        &self,
-        _batch: Vec<(
-            String,            // txid
-            u64,               // block_height
-            i64,               // tx_position
-            serde_json::Value, // raw_json
-            serde_json::Value, // charm_data
-            i32,               // confirmations
-            bool,              // is_confirmed
-            String,            // blockchain
-            String,            // network
-            Option<String>,    // tags
-            Option<String>,    // tx_type
-        )>,
-    ) -> Result<(), CharmError> {
-        // Transactions are handled separately by TransactionRepository
-        Ok(())
     }
 
     /// Save a batch of assets to the repository
