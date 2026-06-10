@@ -29,14 +29,10 @@ impl BitcoinClient {
 
         let network_id = NetworkId::new(NetworkType::Bitcoin, &bitcoin_config.network);
 
-        // Log connection details
-        logging::log_bitcoin_connection_details(
-            &bitcoin_config.host,
-            &bitcoin_config.port,
-            &bitcoin_config.username,
-            &bitcoin_config.password,
-            &bitcoin_config.network,
-        );
+        logging::log_info(&format!(
+            "Bitcoin RPC for {}: {}:{}",
+            bitcoin_config.network, bitcoin_config.host, bitcoin_config.port
+        ));
 
         match Client::new(&rpc_url, auth) {
             Ok(client) => {

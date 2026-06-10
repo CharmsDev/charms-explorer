@@ -29,21 +29,3 @@ pub fn log_error(message: &str) {
     error!("{}", message);
 }
 
-/// Log connection details for Bitcoin client
-pub fn log_bitcoin_connection_details(
-    host: &str,
-    port: &str,
-    username: &str,
-    password: &str,
-    network: &str,
-) {
-    info!(
-        "Bitcoin connection details for {}: http://{}:{}@{}:{}",
-        network, username, password, host, port
-    );
-}
-
-/// Log database connection details
-pub fn log_database_connection_details(url: &str) {
-    info!("Database connection details: {}", url);
-}
