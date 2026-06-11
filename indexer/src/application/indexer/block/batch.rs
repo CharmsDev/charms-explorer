@@ -203,6 +203,7 @@ pub struct TransactionBatchItem {
 
 impl TransactionBatchItem {
     /// Repos still consume the historical tuple shape; preserves wire format.
+    #[allow(clippy::type_complexity)]
     pub fn into_tuple(
         self,
     ) -> (
@@ -253,6 +254,7 @@ pub struct CharmBatchItem {
 impl CharmBatchItem {
     /// Repos still consume the historical 11-tuple shape; this preserves
     /// the wire format until they migrate too.
+    #[allow(clippy::type_complexity)]
     pub fn into_tuple(
         self,
     ) -> (

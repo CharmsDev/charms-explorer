@@ -89,8 +89,9 @@ impl AssetRepository {
         Ok(())
     }
 
-    /// Save multiple assets in a batch operation
-    /// Delegates to asset/save.rs which handles NFT-token metadata inheritance
+    /// Save multiple assets in a batch operation.
+    /// Delegates to asset/save.rs which handles NFT-token metadata inheritance.
+    #[allow(clippy::type_complexity)]
     pub async fn save_batch(
         &self,
         assets: Vec<(

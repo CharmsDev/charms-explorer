@@ -43,6 +43,8 @@ impl TransactionRepository {
     /// Save multiple transactions in a batch.
     /// Uses ON CONFLICT DO UPDATE to promote pending/mempool transactions to
     /// confirmed status when the block processor re-encounters them.
+    /// Tuple shape matches `block/batch.rs::TransactionBatchItem`.
+    #[allow(clippy::type_complexity)]
     pub async fn save_batch(
         &self,
         transactions: Vec<(

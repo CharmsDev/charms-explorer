@@ -21,11 +21,11 @@ impl<'a> CharmPersistence<'a> {
         }
     }
 
-    /// Saves multiple charms in a single database operation
-    /// Updated: replaced charmid with vout, added app_id and amount
-    /// Added address field
-    /// Added tags field
+    /// Saves multiple charms in a single database operation.
     /// Returns the list of (txid, vout) that were actually inserted (not duplicates).
+    /// Tuple shape matches the SQL row layout — see `block/batch.rs::CharmBatchItem`
+    /// for the named-field analogue used by callers in the application layer.
+    #[allow(clippy::type_complexity)]
     pub async fn save_charm_batch(
         &self,
         charms: Vec<(
@@ -48,9 +48,9 @@ impl<'a> CharmPersistence<'a> {
             .map_err(|e| CharmError::ProcessingError(format!("Failed to save charm batch: {}", e)))
     }
 
-    /// Save a batch of assets to the repository
-    ///
-    /// Converts simplified asset batch items into the full tuple format expected by the repository
+    /// Save a batch of assets to the repository.
+    /// Tuple shape matches `block/batch.rs::AssetBatchItem` — converted at the boundary.
+    #[allow(clippy::type_complexity)]
     pub async fn save_asset_batch(
         &self,
         batch: Vec<(
@@ -77,6 +77,7 @@ impl<'a> CharmPersistence<'a> {
         }
 
         // Transform simplified batch items into full repository format
+        #[allow(clippy::type_complexity)]
         let asset_tuples: Vec<(
             String,
             String,

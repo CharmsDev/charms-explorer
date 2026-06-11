@@ -62,10 +62,10 @@ impl CharmRepository {
         Ok(heights)
     }
 
-    /// Save multiple charms in a batch
-    /// Updated signature: removed charmid, added vout, app_id, and amount
-    /// Added address field
-    /// Added tags field
+    /// Save multiple charms in a batch.
+    /// Tuple shape mirrors the SQL row layout — see `block/batch.rs::CharmBatchItem`
+    /// for the named-field representation used by the application layer.
+    #[allow(clippy::type_complexity)]
     pub async fn save_batch(
         &self,
         charms: Vec<(

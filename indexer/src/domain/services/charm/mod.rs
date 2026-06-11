@@ -75,11 +75,10 @@ impl CharmService {
 
     // ==================== Persistence Methods ====================
 
-    /// Saves multiple charms in a single database operation
-    /// Updated: replaced charmid with vout, added app_id and amount
-    /// Added address field
-    /// Added tags field
+    /// Saves multiple charms in a single database operation.
     /// Returns the list of (txid, vout) that were actually inserted (not duplicates).
+    /// Tuple shape matches `block/batch.rs::CharmBatchItem`.
+    #[allow(clippy::type_complexity)]
     pub async fn save_batch(
         &self,
         charms: Vec<(
@@ -100,7 +99,9 @@ impl CharmService {
         persistence.save_charm_batch(charms).await
     }
 
-    /// Save a batch of assets to the repository
+    /// Save a batch of assets to the repository.
+    /// Tuple shape matches `block/batch.rs::AssetBatchItem`.
+    #[allow(clippy::type_complexity)]
     pub async fn save_asset_batch(
         &self,
         batch: Vec<(

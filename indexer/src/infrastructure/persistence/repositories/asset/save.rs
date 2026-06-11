@@ -324,8 +324,9 @@ pub async fn save_asset(db: &DatabaseConnection, asset: &Asset) -> Result<(), Db
     save_or_update_asset(db, asset, 1).await
 }
 
-/// Save multiple assets in a batch operation
-/// For tokens, inherits metadata from parent NFT if it exists
+/// Save multiple assets in a batch operation.
+/// For tokens, inherits metadata from parent NFT if it exists.
+#[allow(clippy::type_complexity)]
 pub async fn save_batch(
     db: &DatabaseConnection,
     assets: Vec<(
