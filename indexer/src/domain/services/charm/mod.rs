@@ -204,7 +204,7 @@ impl CharmService {
 
             if let Err(e) = self
                 .stats_holders_repository
-                .update_holders_batch(holder_updates)
+                .update_holders_batch(holder_updates, network)
                 .await
             {
                 crate::utils::logging::log_warning(&format!(

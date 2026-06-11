@@ -106,7 +106,7 @@ impl BatchProcessor {
             if let Err(e) = self
                 .charm_service
                 .get_stats_holders_repository()
-                .update_holders_batch(holder_updates)
+                .update_holders_batch(holder_updates, &network_id.name)
                 .await
             {
                 logging::log_warning(&format!(

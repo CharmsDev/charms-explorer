@@ -9,6 +9,7 @@ pub struct Model {
     pub id: i32,
     pub app_id: String,
     pub address: String,
+    pub network: String,
     pub total_amount: i64,
     pub charm_count: i32,
     pub first_seen_block: i32,

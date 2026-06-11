@@ -92,13 +92,14 @@ CREATE TABLE stats_holders (
     id                  SERIAL PRIMARY KEY,
     app_id              TEXT        NOT NULL,
     address             TEXT        NOT NULL,
+    network             TEXT        NOT NULL DEFAULT 'mainnet',
     total_amount        BIGINT      NOT NULL DEFAULT 0,
     charm_count         INTEGER     NOT NULL DEFAULT 0,
     first_seen_block    INTEGER     NOT NULL DEFAULT 0,
     last_updated_block  INTEGER     NOT NULL DEFAULT 0,
     created_at          TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at          TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (app_id, address)
+    UNIQUE (app_id, address, network)
 );
 
 CREATE TABLE address_utxos (
