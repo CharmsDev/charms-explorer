@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::application::indexer::block::BitcoinProcessor;
 use crate::application::indexer::mempool::MempoolProcessor;
@@ -23,6 +24,12 @@ pub struct NetworkManager {
     config: AppConfig,
     processors: HashMap<String, Arc<Mutex<Box<dyn BlockchainProcessor>>>>,
     tasks: HashMap<String, JoinHandle<Result<(), BlockProcessorError>>>,
+    /// Background worker handles (mempool supervisors). Distinct from
+    /// `tasks` so block processors and mempool processors can be awaited
+    /// separately on shutdown.
+    background_tasks: Vec<JoinHandle<()>>,
+    /// Fired by `stop_all` to ask every worker to wind down cleanly.
+    shutdown: CancellationToken,
 }
 
 impl NetworkManager {
@@ -32,6 +39,8 @@ impl NetworkManager {
             config,
             processors: HashMap::new(),
             tasks: HashMap::new(),
+            background_tasks: Vec::new(),
+            shutdown: CancellationToken::new(),
         }
     }
 
@@ -180,7 +189,8 @@ impl NetworkManager {
 
         // Spawn the MempoolProcessor under a supervisor so a panic in any
         // poll cycle restarts the worker instead of silently killing it
-        // (root cause of the bloque 946,620 incident).
+        // (root cause of the bloque 946,620 incident). The shutdown token
+        // lets `stop_all` wind it down cleanly.
         match BitcoinClient::new(bitcoin_config) {
             Ok(mempool_client) => {
                 let db_conn = mempool_spends_repository.get_connection();
@@ -193,14 +203,17 @@ impl NetworkManager {
                     network_id.clone(),
                 ));
                 let supervisor_name = format!("mempool/{}", network_id.name);
-                tokio::spawn(async move {
+                let cancel = self.shutdown.clone();
+                let handle = tokio::spawn(async move {
                     let proc = mempool_proc;
                     supervisor::supervise(&supervisor_name, move || {
                         let proc = proc.clone();
-                        async move { proc.run().await }
+                        let cancel = cancel.clone();
+                        async move { proc.run(cancel).await }
                     })
                     .await;
                 });
+                self.background_tasks.push(handle);
                 logging::log_info(&format!(
                     "[{}] 🔍 MempoolProcessor spawned under supervisor",
                     network_id.name
@@ -250,8 +263,25 @@ impl NetworkManager {
         }
     }
 
-    /// Stop all processors
+    /// Graceful shutdown: fire the cancellation token, await background
+    /// workers (mempool supervisors) until they wind down or the timeout
+    /// elapses, then abort any block-processor task that still hasn't
+    /// noticed (those don't observe the token yet).
     pub async fn stop_all(&mut self) {
+        const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
+        self.shutdown.cancel();
+        logging::log_info("Shutdown signalled, waiting for workers...");
+
+        let background = std::mem::take(&mut self.background_tasks);
+        for handle in background {
+            match tokio::time::timeout(SHUTDOWN_TIMEOUT, handle).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => logging::log_warning(&format!("background task join error: {e}")),
+                Err(_) => logging::log_warning("background task did not stop within timeout"),
+            }
+        }
+
         for (_, handle) in self.tasks.drain() {
             handle.abort();
         }

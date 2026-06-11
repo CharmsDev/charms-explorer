@@ -68,21 +68,22 @@ impl MempoolProcessor {
         }
     }
 
-    /// Main loop — runs forever, polling mempool every POLL_INTERVAL_SECS
-    pub async fn run(&self) {
+    /// Main loop — polls mempool every POLL_INTERVAL_SECS until `cancel` fires.
+    pub async fn run(&self, cancel: tokio_util::sync::CancellationToken) {
         logging::log_info(&format!(
             "[{}] 🔍 MempoolProcessor started (poll every {}s)",
             self.network_id.name, POLL_INTERVAL_SECS
         ));
 
         let mut cycle: u64 = 0;
-        // Load monitored set on startup
         self.reload_monitored_set().await;
 
         loop {
+            if cancel.is_cancelled() {
+                break;
+            }
             cycle += 1;
 
-            // Reload monitored set periodically
             if cycle % MONITORED_SET_RELOAD_INTERVAL == 0 {
                 self.reload_monitored_set().await;
             }
@@ -94,7 +95,6 @@ impl MempoolProcessor {
                 ));
             }
 
-            // Purge stale entries every 100 cycles
             if cycle % 100 == 0 {
                 cleanup::purge_stale(
                     &self.network_id.name,
@@ -105,13 +105,19 @@ impl MempoolProcessor {
                 .await;
             }
 
-            // Reconcile: revert side effects for txs that left the mempool
             if cycle % RECONCILE_INTERVAL_CYCLES == 0 {
                 self.reconcile_with_mempool().await;
             }
 
-            tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)).await;
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_secs(POLL_INTERVAL_SECS)) => {}
+                _ = cancel.cancelled() => break,
+            }
         }
+        logging::log_info(&format!(
+            "[{}] 🛑 MempoolProcessor stopped after {} cycles",
+            self.network_id.name, cycle
+        ));
     }
 
     /// Single poll cycle: fetch mempool, detect new charm txs, save them
