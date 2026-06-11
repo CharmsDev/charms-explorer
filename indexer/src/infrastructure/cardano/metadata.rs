@@ -87,7 +87,17 @@ async fn fetch_cip68_metadata(
     policy_id_hex: &str,
     asset_name_hex: &str,
 ) -> Option<CardanoTokenMetadata> {
-    // Derive the reference NFT asset_name: replace label with 000643b0
+    // Derive the reference NFT asset_name: replace the CIP-67 label (first 8
+    // hex chars / 4 bytes) with 000643b0. Bail out if the name is too short to
+    // carry a label — derive_cardano_ids always produces a full-length name
+    // but external callers may not.
+    if asset_name_hex.len() < 8 {
+        logging::log_warning(&format!(
+            "Cardano asset_name too short to derive reference NFT: '{}'",
+            asset_name_hex
+        ));
+        return None;
+    }
     let ref_asset_name = format!("000643b0{}", &asset_name_hex[8..]);
 
     let client = reqwest::Client::new();
@@ -242,10 +252,10 @@ mod tests {
         assert_ne!(fp_bro, fp_other);
     }
 
-    /// Reproduces audit finding N3: `fetch_cip68_metadata` does
-    /// `&asset_name_hex[8..]` which panics when len < 8. Until that is fixed,
-    /// `derive_cardano_ids` produces full-length asset names (≥40 chars) for
-    /// real apps, so this test guards the invariant that callers can rely on.
+    /// Guards the invariant that `derive_cardano_ids` produces a full-length
+    /// asset name (≥ 8 hex chars / 4 bytes). The CIP-68 reference NFT
+    /// derivation in `fetch_cip68_metadata` now bails out gracefully on
+    /// short names, but real apps never produce one.
     #[test]
     fn derive_cardano_ids_yields_asset_name_at_least_8_chars() {
         let app: App = BRO_APP_ID.parse().unwrap();
