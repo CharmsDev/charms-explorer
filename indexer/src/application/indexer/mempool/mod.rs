@@ -5,8 +5,10 @@
 //! - `cleanup`: stale entry purging
 
 mod cleanup;
+mod dex_persistence;
 mod processor;
 mod reconcile;
+mod spend_extraction;
 pub mod utxo_tracker;
 
 use std::collections::HashSet;
