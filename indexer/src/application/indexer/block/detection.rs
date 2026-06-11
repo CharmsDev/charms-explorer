@@ -36,7 +36,13 @@ pub async fn detect_charms(
     let mut charm_batch = Vec::new();
     let mut asset_batch: Vec<AssetBatchItem> = Vec::new();
 
-    for (txid, tx_hex, tx_pos, input_utxos) in tx_data {
+    for ExtractedTx {
+        txid,
+        tx_hex,
+        tx_pos,
+        input_utxos,
+    } in tx_data
+    {
         let input_txids: Vec<String> = input_utxos.iter().map(|(t, _)| t.clone()).collect();
 
         let mut analyzed = match tx_analyzer::analyze_tx(&txid, &tx_hex, network) {
@@ -277,8 +283,13 @@ async fn build_asset_requests(
     }
 
     let metadata = extract_nft_metadata(analyzed);
-    let (mut name, mut symbol, mut description, mut image_url, mut decimals) =
-        parse_metadata_fields(&metadata);
+    let ParsedMetadata {
+        mut name,
+        mut symbol,
+        mut description,
+        mut image_url,
+        mut decimals,
+    } = parse_metadata_fields(&metadata);
 
     // Enrich beaming assets with Cardano token metadata
     let mut cardano_policy_id: Option<String> = None;
@@ -388,50 +399,61 @@ fn extract_nft_metadata(analyzed: &AnalyzedTx) -> Option<serde_json::Value> {
     }
 }
 
-fn parse_metadata_fields(
-    metadata: &Option<serde_json::Value>,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<u8>,
-) {
-    if let Some(ref meta) = metadata {
-        (
-            meta.get("name").and_then(|v| v.as_str()).map(String::from),
-            meta.get("ticker")
-                .or_else(|| meta.get("symbol"))
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            meta.get("description")
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            meta.get("image")
-                .or_else(|| meta.get("url"))
-                .or_else(|| meta.get("image_url"))
-                .and_then(|v| v.as_str())
-                .map(String::from),
-            meta.get("decimals")
-                .and_then(|v| v.as_u64())
-                .map(|d| d as u8),
-        )
-    } else {
-        (None, None, None, None, None)
+#[derive(Default)]
+struct ParsedMetadata {
+    name: Option<String>,
+    symbol: Option<String>,
+    description: Option<String>,
+    image_url: Option<String>,
+    decimals: Option<u8>,
+}
+
+fn parse_metadata_fields(metadata: &Option<serde_json::Value>) -> ParsedMetadata {
+    let Some(meta) = metadata else {
+        return ParsedMetadata::default();
+    };
+    ParsedMetadata {
+        name: meta.get("name").and_then(|v| v.as_str()).map(String::from),
+        symbol: meta
+            .get("ticker")
+            .or_else(|| meta.get("symbol"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        description: meta
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        image_url: meta
+            .get("image")
+            .or_else(|| meta.get("url"))
+            .or_else(|| meta.get("image_url"))
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        decimals: meta
+            .get("decimals")
+            .and_then(|v| v.as_u64())
+            .map(|d| d as u8),
     }
 }
 
-/// Extracts transaction data into an owned vector to avoid lifetime issues.
-/// Returns (txid, tx_hex, tx_pos, input_utxos) where input_utxos is Vec<(txid, vout)>.
-fn extract_transaction_data(
-    block: &bitcoin::Block,
-) -> Vec<(String, String, usize, Vec<(String, u32)>)> {
+struct ExtractedTx {
+    txid: String,
+    tx_hex: String,
+    tx_pos: usize,
+    input_utxos: Vec<(String, u32)>,
+}
+
+/// Owned snapshot of every tx in a block (txid, hex, position, parent outpoints).
+fn extract_transaction_data(block: &bitcoin::Block) -> Vec<ExtractedTx> {
     block
         .txdata
         .iter()
         .enumerate()
-        .map(|(tx_pos, tx)| {
-            let input_utxos: Vec<(String, u32)> = tx
+        .map(|(tx_pos, tx)| ExtractedTx {
+            txid: tx.txid().to_string(),
+            tx_hex: bitcoin::consensus::encode::serialize_hex(tx),
+            tx_pos,
+            input_utxos: tx
                 .input
                 .iter()
                 .filter(|input| !input.previous_output.is_null())
@@ -441,14 +463,7 @@ fn extract_transaction_data(
                         input.previous_output.vout,
                     )
                 })
-                .collect();
-
-            (
-                tx.txid().to_string(),
-                bitcoin::consensus::encode::serialize_hex(tx),
-                tx_pos,
-                input_utxos,
-            )
+                .collect(),
         })
         .collect()
 }
