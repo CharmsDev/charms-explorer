@@ -8,6 +8,7 @@ use crate::domain::services::dex::{self, extract_ins0_order_id};
 use crate::domain::services::tx_analyzer;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
 use crate::infrastructure::persistence::entities::{charms, dex_orders, transactions};
+use crate::infrastructure::persistence::error::is_duplicate_key;
 use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
 use crate::utils::logging;
 
@@ -136,7 +137,7 @@ pub async fn process_tx_with_hex(
                     network, txid, asset.vout_index, asset.asset_type
                 ));
             }
-            Err(e) if e.to_string().contains("duplicate key") => {}
+            Err(e) if is_duplicate_key(&e) => {}
             Err(e) => {
                 return Err(format!("Failed to save mempool charm: {}", e));
             }
@@ -162,7 +163,7 @@ pub async fn process_tx_with_hex(
     };
     match tx_model.insert(db).await {
         Ok(_) => {}
-        Err(e) if e.to_string().contains("duplicate key") => {}
+        Err(e) if is_duplicate_key(&e) => {}
         Err(e) => {
             logging::log_warning(&format!(
                 "[{}] ⚠️ Failed to save mempool transaction {}: {}",
@@ -271,7 +272,7 @@ async fn save_dex_order(
                 network, txid, dex_result.operation
             ));
         }
-        Err(e) if e.to_string().contains("duplicate key") => {}
+        Err(e) if is_duplicate_key(&e) => {}
         Err(e) => {
             logging::log_warning(&format!(
                 "[{}] ⚠️ Failed to save mempool DEX order {}: {}",
@@ -403,7 +404,7 @@ async fn update_consumed_order_status(
                 network, txid, new_status, order_id
             ));
         }
-        Err(e) if e.to_string().contains("duplicate key") => {}
+        Err(e) if is_duplicate_key(&e) => {}
         Err(e) => {
             logging::log_warning(&format!(
                 "[{}] ⚠️ Failed to save activity row for {}: {}",

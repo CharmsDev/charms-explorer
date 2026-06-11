@@ -32,3 +32,11 @@ impl From<sea_orm::DbErr> for DbError {
         DbError::SeaOrmError(err)
     }
 }
+
+/// Returns true if the given error came from a Postgres unique-key violation.
+///
+/// Used by repositories that intentionally tolerate duplicate inserts
+/// (idempotent batches that may run a second time after a retry).
+pub fn is_duplicate_key<E: ToString>(err: &E) -> bool {
+    err.to_string().contains("duplicate key")
+}

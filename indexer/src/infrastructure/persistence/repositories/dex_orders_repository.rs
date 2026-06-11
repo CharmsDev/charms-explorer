@@ -6,7 +6,7 @@ use sea_orm::{
 
 use crate::domain::services::dex::{DexOperation, DexOrder, ExecType, OrderSide};
 use crate::infrastructure::persistence::entities::dex_orders;
-use crate::infrastructure::persistence::error::DbError;
+use crate::infrastructure::persistence::error::{is_duplicate_key, DbError};
 
 /// Repository for DEX orders operations
 #[derive(Clone, Debug)]
@@ -89,7 +89,7 @@ impl DexOrdersRepository {
         match model.insert(&self.conn).await {
             Ok(_) => Ok(()),
             Err(e) => {
-                if e.to_string().contains("duplicate key") {
+                if is_duplicate_key(&e) {
                     Ok(()) // Order already exists
                 } else {
                     Err(e.into())
@@ -163,7 +163,7 @@ impl DexOrdersRepository {
         match model.insert(&self.conn).await {
             Ok(_) => Ok(()),
             Err(e) => {
-                if e.to_string().contains("duplicate key") {
+                if is_duplicate_key(&e) {
                     Ok(()) // Activity row already exists (idempotent)
                 } else {
                     Err(e.into())
