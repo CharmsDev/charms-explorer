@@ -1,0 +1,38 @@
+name: indexer-ci
+
+on:
+  push:
+    paths:
+      - "indexer/**"
+      - ".github/workflows/indexer-ci.yml"
+  pull_request:
+    paths:
+      - "indexer/**"
+      - ".github/workflows/indexer-ci.yml"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+defaults:
+  run:
+    working-directory: indexer
+
+jobs:
+  test:
+    name: cargo test (unit + integration)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: indexer
+
+      # Docker is preinstalled on ubuntu-latest runners; testcontainers
+      # uses it to spawn an ephemeral Postgres per integration test.
+      - run: cargo build --tests --locked
+
+      - run: cargo test --all-targets --locked

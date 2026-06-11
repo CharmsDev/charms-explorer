@@ -3,6 +3,28 @@
 PORT=8002
 PID_FILE=.indexer.pid
 
+# Run all tests (unit + integration). Integration tests need a Docker daemon
+# running because they start ephemeral Postgres containers via testcontainers.
+.PHONY: test
+test:
+	@cargo test --all-targets
+
+# Quick unit-only loop (no containers).
+.PHONY: test-unit
+test-unit:
+	@cargo test --lib
+
+# Strict lint pass (advisory until warnings are driven to zero).
+.PHONY: lint
+lint:
+	@cargo clippy --all-targets
+
+# Coverage report via cargo-llvm-cov (install with `cargo install cargo-llvm-cov`).
+# Writes target/llvm-cov/html/index.html.
+.PHONY: coverage
+coverage:
+	@cargo llvm-cov --all-targets --html --output-dir target/llvm-cov
+
 # Development server - kills any previous instances before starting
 .PHONY: dev
 dev: stop
