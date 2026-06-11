@@ -213,20 +213,43 @@ async fn fetch_total_supply(
 mod tests {
     use super::*;
 
+    const BRO_APP_ID: &str = "t/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b/c975d4e0c292fb95efbda5c13312d6ac1d8b5aeff7f0f1e5578645a2da70ff5f";
+    const BRO_POLICY_ID: &str = "b8f72e95dee612df98ac5a90b7604f7815c2af07a6db209a5c70abe4";
+    const BRO_ASSET_NAME: &str =
+        "0014df10cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b";
+
     #[test]
-    fn print_cardano_ids() {
-        let tokens = [
-            ("BRO", "t/3d7fe7e4cea6121947af73d70e5119bebd8aa5b7edfe74bfaf6e779a1847bd9b/c975d4e0c292fb95efbda5c13312d6ac1d8b5aeff7f0f1e5578645a2da70ff5f"),
-            ("eBTC", "t/0796f63ed48144b4ec69fb794fbc2290ae63acf945fb035d5474648b50ee43b6/fd0cac892e457454be0212fa7d9a0e1517d5bd6a33aa7c66a1f10f55e375c290"),
-        ];
-        for (name, app_id) in tokens {
-            let app: charms_data::App = app_id.parse().expect("parse");
-            let (pid, aname) = derive_cardano_ids(&app);
-            let fp = compute_fingerprint(&pid, &aname);
-            println!("\n=== {} ===", name);
-            println!("policy_id: {}", pid);
-            println!("asset_name: {}", aname);
-            println!("fingerprint: {}", fp);
-        }
+    fn derive_cardano_ids_for_bro_token() {
+        let app: App = BRO_APP_ID.parse().expect("parse BRO app_id");
+        let (pid, aname) = derive_cardano_ids(&app);
+        assert_eq!(pid, BRO_POLICY_ID);
+        assert_eq!(aname, BRO_ASSET_NAME);
+    }
+
+    #[test]
+    fn compute_fingerprint_is_deterministic_for_bro() {
+        let fp1 = compute_fingerprint(BRO_POLICY_ID, BRO_ASSET_NAME);
+        let fp2 = compute_fingerprint(BRO_POLICY_ID, BRO_ASSET_NAME);
+        assert_eq!(fp1, fp2);
+        assert!(fp1.starts_with("asset1"), "got: {fp1}");
+    }
+
+    #[test]
+    fn compute_fingerprint_changes_with_inputs() {
+        let fp_bro = compute_fingerprint(BRO_POLICY_ID, BRO_ASSET_NAME);
+        let other_policy = "0000000000000000000000000000000000000000000000000000000000000000";
+        let fp_other = compute_fingerprint(other_policy, BRO_ASSET_NAME);
+        assert_ne!(fp_bro, fp_other);
+    }
+
+    /// Reproduces audit finding N3: `fetch_cip68_metadata` does
+    /// `&asset_name_hex[8..]` which panics when len < 8. Until that is fixed,
+    /// `derive_cardano_ids` produces full-length asset names (≥40 chars) for
+    /// real apps, so this test guards the invariant that callers can rely on.
+    #[test]
+    fn derive_cardano_ids_yields_asset_name_at_least_8_chars() {
+        let app: App = BRO_APP_ID.parse().unwrap();
+        let (_, aname) = derive_cardano_ids(&app);
+        assert!(aname.len() >= 8, "asset_name too short: {aname}");
     }
 }
