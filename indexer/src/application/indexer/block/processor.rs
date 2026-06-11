@@ -68,6 +68,7 @@ impl BlockProcessor {
         height: u64,
         network_id: &NetworkId,
     ) -> Result<(), BlockProcessorError> {
+        let started = std::time::Instant::now();
         let latest_height = self
             .bitcoin_client
             .get_block_count()
@@ -208,6 +209,16 @@ impl BlockProcessor {
             charm_batch.len(),
             remaining
         ));
+
+        // Metrics: block + per-asset_type charm counters + current height gauge.
+        crate::utils::metrics::block_processed(
+            &network_id.name,
+            started.elapsed().as_secs_f64(),
+        );
+        crate::utils::metrics::current_height(&network_id.name, height);
+        for charm in &charm_batch {
+            crate::utils::metrics::charm_detected(&network_id.name, &charm.4);
+        }
 
         Ok(())
     }

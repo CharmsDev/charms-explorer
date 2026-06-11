@@ -12,7 +12,7 @@
 use charms_indexer::application::indexer::NetworkManager;
 use charms_indexer::config::AppConfig;
 use charms_indexer::infrastructure::persistence::{DbPool, Repositories};
-use charms_indexer::utils::logging;
+use charms_indexer::utils::{logging, metrics};
 
 fn main() {
     // Build tokio runtime with 8MB worker thread stack (default 2MB)
@@ -29,6 +29,7 @@ fn main() {
 
 async fn async_main() {
     logging::init_logger();
+    metrics::init();
 
     let config = AppConfig::from_env();
 

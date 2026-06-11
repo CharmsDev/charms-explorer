@@ -138,6 +138,8 @@ impl MempoolProcessor {
             .await
             .map_err(|e| format!("getrawmempool failed: {}", e))?;
 
+        crate::utils::metrics::mempool_size(&self.network_id.name, mempool_txids.len());
+
         if mempool_txids.is_empty() {
             return Ok(());
         }
