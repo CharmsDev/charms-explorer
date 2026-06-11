@@ -149,28 +149,40 @@ impl BlockStatusRepository {
         Ok(())
     }
 
-    /// Mark a block as confirmed
+    /// Mark a single block as confirmed.
     pub async fn mark_confirmed(
         &self,
         block_height: i32,
         network_id: &NetworkId,
     ) -> Result<(), DbError> {
-        let now = Utc::now();
+        self.mark_confirmed_batch(&[block_height], network_id).await
+    }
 
-        let existing = block_status::Entity::find()
-            .filter(block_status::Column::BlockHeight.eq(block_height))
+    /// Mark a batch of blocks as confirmed in one UPDATE.
+    ///
+    /// Avoids the N-query pattern when `confirm_pending_blocks` finds
+    /// thousands of previously-unconfirmed blocks at once (audit N13).
+    pub async fn mark_confirmed_batch(
+        &self,
+        heights: &[i32],
+        network_id: &NetworkId,
+    ) -> Result<(), DbError> {
+        if heights.is_empty() {
+            return Ok(());
+        }
+        let now = Utc::now();
+        let result = block_status::Entity::update_many()
+            .col_expr(block_status::Column::Confirmed, sea_orm::sea_query::Expr::value(true))
+            .col_expr(
+                block_status::Column::UpdatedAt,
+                sea_orm::sea_query::Expr::value(now),
+            )
+            .filter(block_status::Column::BlockHeight.is_in(heights.iter().copied()))
             .filter(block_status::Column::Network.eq(network_id.name.clone()))
             .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .one(&self.conn)
+            .exec(&self.conn)
             .await?;
-
-        if let Some(model) = existing {
-            let mut update_model: block_status::ActiveModel = model.into();
-            update_model.confirmed = Set(true);
-            update_model.updated_at = Set(now.into());
-            update_model.update(&self.conn).await?;
-        }
-
+        let _ = result.rows_affected;
         Ok(())
     }
 

@@ -299,40 +299,50 @@ impl BitcoinProcessor {
         Ok(())
     }
 
-    /// Retroactively confirm blocks with 6+ confirmations
+    /// Retroactively confirm blocks with 6+ confirmations.
+    /// Issues a single batch UPDATE so a long backlog (e.g. after a reindex)
+    /// doesn't fan out into thousands of individual queries (audit N13).
     async fn confirm_pending_blocks(&self, latest_height: u64) {
-        match self
+        let unconfirmed = match self
             .block_status_repository
             .get_unconfirmed_blocks(self.network_id())
             .await
         {
-            Ok(unconfirmed) => {
-                let mut confirmed_count = 0;
-                for block_height in unconfirmed {
-                    let confirmations = latest_height.saturating_sub(block_height as u64) + 1;
-                    if confirmations >= 6 {
-                        let _ = self
-                            .block_status_repository
-                            .mark_confirmed(block_height, self.network_id())
-                            .await;
-                        confirmed_count += 1;
-                    }
-                }
-                if confirmed_count > 0 {
-                    logging::log_info(&format!(
-                        "[{}] ✅ Confirmed {} previously unconfirmed blocks",
-                        self.network_id().name,
-                        confirmed_count
-                    ));
-                }
-            }
+            Ok(u) => u,
             Err(e) => {
                 logging::log_warning(&format!(
                     "[{}] ⚠️ Failed to check unconfirmed blocks: {}",
                     self.network_id().name,
                     e
                 ));
+                return;
             }
+        };
+
+        let to_confirm: Vec<i32> = unconfirmed
+            .into_iter()
+            .filter(|h| latest_height.saturating_sub(*h as u64) + 1 >= 6)
+            .collect();
+
+        if to_confirm.is_empty() {
+            return;
+        }
+
+        match self
+            .block_status_repository
+            .mark_confirmed_batch(&to_confirm, self.network_id())
+            .await
+        {
+            Ok(()) => logging::log_info(&format!(
+                "[{}] ✅ Confirmed {} previously unconfirmed blocks",
+                self.network_id().name,
+                to_confirm.len()
+            )),
+            Err(e) => logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to batch-confirm blocks: {}",
+                self.network_id().name,
+                e
+            )),
         }
     }
 }

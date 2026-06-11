@@ -32,8 +32,9 @@ const MAX_TXS_PER_CYCLE: usize = 100;
 const MONITORED_SET_RELOAD_INTERVAL: u64 = 60;
 
 /// How often to reconcile DB state with the live mempool (every N cycles).
-/// At 1s per cycle, 300 cycles = every 5 minutes.
-const RECONCILE_INTERVAL_CYCLES: u64 = 300;
+/// At 1s per cycle, 30 cycles = every 30 seconds. The previous value of 5
+/// minutes left a window where RBF-evicted txs stayed visible (audit N11).
+const RECONCILE_INTERVAL_CYCLES: u64 = 30;
 
 /// Mempool processor — runs as a background task alongside the block processor
 pub struct MempoolProcessor {
