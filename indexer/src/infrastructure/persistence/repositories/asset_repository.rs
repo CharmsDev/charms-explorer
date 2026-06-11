@@ -28,7 +28,7 @@ impl AssetRepository {
             .filter(assets::Column::AppId.eq(&asset.app_id))
             .one(&self.db)
             .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
+            .map_err(DbError::SeaOrmError)?;
 
         match existing_asset {
             Some(existing) => {
@@ -47,7 +47,7 @@ impl AssetRepository {
                 Assets::update(update_model)
                     .exec(&self.db)
                     .await
-                    .map_err(|e| DbError::SeaOrmError(e))?;
+                    .map_err(DbError::SeaOrmError)?;
             }
             None => {
                 // Asset doesn't exist, create new one
@@ -82,7 +82,7 @@ impl AssetRepository {
                 Assets::insert(active_model)
                     .exec(&self.db)
                     .await
-                    .map_err(|e| DbError::SeaOrmError(e))?;
+                    .map_err(DbError::SeaOrmError)?;
             }
         }
 
@@ -125,7 +125,7 @@ impl AssetRepository {
                 .filter(assets::Column::AppId.like(&parent_nft_pattern))
                 .one(&self.db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
 
             if let Some(nft) = parent_nft {
                 nft.app_id
@@ -140,7 +140,7 @@ impl AssetRepository {
             .filter(assets::Column::AppId.eq(&target_app_id))
             .one(&self.db)
             .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
+            .map_err(DbError::SeaOrmError)?;
 
         if let Some(asset_model) = asset {
             let old_supply = asset_model.total_supply.unwrap_or(Decimal::ZERO);
@@ -157,7 +157,7 @@ impl AssetRepository {
             Assets::update(update_model)
                 .exec(&self.db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
         }
 
         Ok(())

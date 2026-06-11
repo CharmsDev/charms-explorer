@@ -1,9 +1,9 @@
-///! Charm service - persistence and spent-tracking for charms.
-///!
-///! Detection is handled by `domain::services::tx_analyzer` (shared by all code paths).
-///! This module provides:
-///! - `persistence`: Batch save operations for charms and assets
-///! - `spent_tracking`: Marking charms as spent when UTXOs are consumed
+//! Charm service - persistence and spent-tracking for charms.
+//!
+//! Detection is handled by `domain::services::tx_analyzer` (shared by all code paths).
+//! This module provides:
+//! - `persistence`: Batch save operations for charms and assets
+//! - `spent_tracking`: Marking charms as spent when UTXOs are consumed
 mod persistence;
 mod spent_tracking;
 

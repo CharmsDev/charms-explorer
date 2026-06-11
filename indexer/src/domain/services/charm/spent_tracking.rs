@@ -1,4 +1,4 @@
-///! Spent UTXO tracking for charms
+//! Spent UTXO tracking for charms
 use crate::domain::errors::CharmError;
 use crate::infrastructure::persistence::repositories::CharmRepository;
 

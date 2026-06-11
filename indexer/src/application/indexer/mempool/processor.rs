@@ -77,7 +77,7 @@ pub async fn process_tx_with_hex(
     let has_dex_order = analyzed
         .dex_result
         .as_ref()
-        .map_or(false, |d| d.order.is_some());
+        .is_some_and(|d| d.order.is_some());
 
     if let Some(ref dex) = analyzed.dex_result {
         logging::log_info(&format!(
@@ -188,7 +188,7 @@ pub async fn process_tx_with_hex(
     // Record mempool spends (inputs being consumed by this tx)
     // stats_holders is NOT updated here — spent tracking only happens at block confirmation
     // via spent_tracker::mark_spent_charms to avoid double-subtraction.
-    let spends = extract_spends(&raw_hex, txid);
+    let spends = extract_spends(raw_hex, txid);
     if !spends.is_empty() {
         if let Err(e) = mempool_spends_repository
             .record_spends_batch(&spends, &network)

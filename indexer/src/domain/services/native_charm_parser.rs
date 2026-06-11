@@ -333,7 +333,8 @@ mod tests {
 
     #[test]
     fn test_spell_vk_constant() {
-        assert!(!NativeCharmParser::SPELL_VK.is_empty());
+        // SPELL_VK is the only runtime check that this constant is wired up
+        // correctly — the prefix is what `extract_and_verify_charm` matches on.
         assert!(NativeCharmParser::SPELL_VK.starts_with("0x"));
     }
 
@@ -351,9 +352,11 @@ mod tests {
     }
 
     /// Test that simulates exactly what the indexer does:
+    ///
     /// 1. Deserialize hex with bitcoin::consensus (as if from block)
     /// 2. Re-serialize with bitcoin::consensus::encode::serialize_hex
     /// 3. Try to parse with NativeCharmParser
+    ///
     /// This catches any roundtrip serialization issues.
     #[test]
     fn test_beaming_tx_roundtrip_like_indexer() {

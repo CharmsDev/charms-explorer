@@ -48,7 +48,7 @@ impl BitcoinProvider for BitcoinNodeProvider {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             client.get_block_count()
-                .map_err(|e| BitcoinClientError::RpcError(e))
+                .map_err(BitcoinClientError::RpcError)
         })
         .await
         .map_err(|e| BitcoinClientError::NetworkError(e.to_string()))?
@@ -58,7 +58,7 @@ impl BitcoinProvider for BitcoinNodeProvider {
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
             client.get_block_hash(height)
-                .map_err(|e| BitcoinClientError::RpcError(e))
+                .map_err(BitcoinClientError::RpcError)
         })
         .await
         .map_err(|e| BitcoinClientError::NetworkError(e.to_string()))?
@@ -69,7 +69,7 @@ impl BitcoinProvider for BitcoinNodeProvider {
         let block_hash = *block_hash;
         tokio::task::spawn_blocking(move || {
             client.get_block(&block_hash)
-                .map_err(|e| BitcoinClientError::RpcError(e))
+                .map_err(BitcoinClientError::RpcError)
         })
         .await
         .map_err(|e| BitcoinClientError::NetworkError(e.to_string()))?
@@ -89,7 +89,7 @@ impl BitcoinProvider for BitcoinNodeProvider {
                 .map_err(|e| BitcoinClientError::ParseError(e.to_string()))?;
             
             client.get_raw_transaction_hex(&txid, block_hash.as_ref())
-                .map_err(|e| BitcoinClientError::RpcError(e))
+                .map_err(BitcoinClientError::RpcError)
         })
         .await
         .map_err(|e| BitcoinClientError::NetworkError(e.to_string()))?

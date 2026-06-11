@@ -94,7 +94,7 @@ impl MempoolProcessor {
             }
             cycle += 1;
 
-            if cycle % MONITORED_SET_RELOAD_INTERVAL == 0 {
+            if cycle.is_multiple_of(MONITORED_SET_RELOAD_INTERVAL) {
                 self.reload_monitored_set().await;
             }
 
@@ -105,7 +105,7 @@ impl MempoolProcessor {
                 ));
             }
 
-            if cycle % 100 == 0 {
+            if cycle.is_multiple_of(100) {
                 cleanup::purge_stale(
                     &self.network_id.name,
                     &self.db,
@@ -115,7 +115,7 @@ impl MempoolProcessor {
                 .await;
             }
 
-            if cycle % RECONCILE_INTERVAL_CYCLES == 0 {
+            if cycle.is_multiple_of(RECONCILE_INTERVAL_CYCLES) {
                 self.reconcile_with_mempool().await;
             }
 

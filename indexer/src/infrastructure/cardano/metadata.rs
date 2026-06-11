@@ -182,10 +182,9 @@ async fn fetch_cip68_metadata(
             "logo" | "image" => {
                 let v = entry.get("v")?.get("bytes")?.as_str()?;
                 let raw = String::from_utf8(hex::decode(v).ok()?).ok()?;
-                image_url = Some(if raw.starts_with("ipfs://") {
-                    format!("https://ipfs.io/ipfs/{}", &raw[7..])
-                } else {
-                    raw
+                image_url = Some(match raw.strip_prefix("ipfs://") {
+                    Some(rest) => format!("https://ipfs.io/ipfs/{rest}"),
+                    None => raw,
                 });
             }
             "decimals" => {

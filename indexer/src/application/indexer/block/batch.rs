@@ -40,7 +40,7 @@ impl BatchProcessor {
             height,
             network_id,
             || async { self.transaction_repository.save_batch(batch.clone()).await },
-            |e| BlockProcessorError::DbError(e),
+            BlockProcessorError::DbError,
         )
         .await
     }

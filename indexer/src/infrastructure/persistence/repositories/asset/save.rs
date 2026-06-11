@@ -47,7 +47,7 @@ pub async fn save_or_update_asset(
                 .filter(assets::Column::AppId.eq(&asset.app_id))
                 .one(db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
 
             if existing_nft.is_none() {
                 // Extract metadata from NFT data
@@ -86,7 +86,7 @@ pub async fn save_or_update_asset(
                 Assets::insert(active_model)
                     .exec(db)
                     .await
-                    .map_err(|e| DbError::SeaOrmError(e))?;
+                    .map_err(DbError::SeaOrmError)?;
             }
             // If NFT already exists, do nothing (idempotent)
         }
@@ -100,7 +100,7 @@ pub async fn save_or_update_asset(
                 .filter(assets::Column::AppId.like(&parent_nft_pattern))
                 .one(db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
 
             // Get decimals and metadata from parent NFT or use defaults
             // Note: We only inherit name, symbol, description - NOT image_url
@@ -137,7 +137,7 @@ pub async fn save_or_update_asset(
                 .filter(assets::Column::AppId.eq(&asset.app_id))
                 .one(db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
 
             match existing_token {
                 Some(existing) => {
@@ -150,7 +150,7 @@ pub async fn save_or_update_asset(
                         .filter(charms::Column::Vout.eq(asset.vout_index))
                         .one(db)
                         .await
-                        .map_err(|e| DbError::SeaOrmError(e))?
+                        .map_err(DbError::SeaOrmError)?
                         .is_some();
 
                     if charm_exists {
@@ -173,7 +173,7 @@ pub async fn save_or_update_asset(
                     Assets::update(update_model)
                         .exec(db)
                         .await
-                        .map_err(|e| DbError::SeaOrmError(e))?;
+                        .map_err(DbError::SeaOrmError)?;
                 }
                 None => {
                     // Create new token asset with metadata inherited from parent NFT
@@ -208,7 +208,7 @@ pub async fn save_or_update_asset(
                     Assets::insert(active_model)
                         .exec(db)
                         .await
-                        .map_err(|e| DbError::SeaOrmError(e))?;
+                        .map_err(DbError::SeaOrmError)?;
                 }
             }
         }
@@ -218,7 +218,7 @@ pub async fn save_or_update_asset(
                 .filter(assets::Column::AppId.eq(&asset.app_id))
                 .one(db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
 
             match existing_asset {
                 Some(existing) => {
@@ -228,7 +228,7 @@ pub async fn save_or_update_asset(
                         .filter(charms::Column::Vout.eq(asset.vout_index))
                         .one(db)
                         .await
-                        .map_err(|e| DbError::SeaOrmError(e))?
+                        .map_err(DbError::SeaOrmError)?
                         .is_some();
 
                     if charm_exists {
@@ -249,7 +249,7 @@ pub async fn save_or_update_asset(
                     Assets::update(update_model)
                         .exec(db)
                         .await
-                        .map_err(|e| DbError::SeaOrmError(e))?;
+                        .map_err(DbError::SeaOrmError)?;
                 }
                 None => {
                     let active_model = assets::ActiveModel {
@@ -283,7 +283,7 @@ pub async fn save_or_update_asset(
                     Assets::insert(active_model)
                         .exec(db)
                         .await
-                        .map_err(|e| DbError::SeaOrmError(e))?;
+                        .map_err(DbError::SeaOrmError)?;
                 }
             }
         }
@@ -299,7 +299,7 @@ async fn mark_nft_as_reference(db: &DatabaseConnection, nft_app_id: &str) -> Res
         .filter(assets::Column::AppId.eq(nft_app_id))
         .one(db)
         .await
-        .map_err(|e| DbError::SeaOrmError(e))?;
+        .map_err(DbError::SeaOrmError)?;
 
     if let Some(nft) = nft {
         let update_model = assets::ActiveModel {
@@ -312,7 +312,7 @@ async fn mark_nft_as_reference(db: &DatabaseConnection, nft_app_id: &str) -> Res
         Assets::update(update_model)
             .exec(db)
             .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
+            .map_err(DbError::SeaOrmError)?;
     }
 
     Ok(())
@@ -424,7 +424,7 @@ pub async fn save_batch(
             .filter(assets::Column::AppId.eq(&app_id))
             .one(db)
             .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
+            .map_err(DbError::SeaOrmError)?;
 
         // Extract identity hash for finding parent NFT
         let hash = helpers::extract_hash_from_app_id(&app_id);
@@ -444,7 +444,7 @@ pub async fn save_batch(
             Assets::update(update_model)
                 .exec(db)
                 .await
-                .map_err(|e| DbError::SeaOrmError(e))?;
+                .map_err(DbError::SeaOrmError)?;
         } else {
             // Token doesn't exist - create new with inherited metadata from parent NFT
             let parent_nft_pattern = format!("n/{}/%", hash);
@@ -527,7 +527,7 @@ pub async fn update_nft_metadata(
         .filter(assets::Column::AppId.eq(app_id))
         .one(db)
         .await
-        .map_err(|e| DbError::SeaOrmError(e))?;
+        .map_err(DbError::SeaOrmError)?;
 
     if let Some(asset) = existing {
         let mut active: assets::ActiveModel = asset.into();
@@ -543,7 +543,7 @@ pub async fn update_nft_metadata(
         Assets::update(active)
             .exec(db)
             .await
-            .map_err(|e| DbError::SeaOrmError(e))?;
+            .map_err(DbError::SeaOrmError)?;
     }
 
     Ok(())

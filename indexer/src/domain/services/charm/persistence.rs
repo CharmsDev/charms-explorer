@@ -1,4 +1,4 @@
-///! Charm persistence operations (batch saves)
+//! Charm persistence operations (batch saves)
 use serde_json::Value;
 
 use crate::domain::errors::CharmError;

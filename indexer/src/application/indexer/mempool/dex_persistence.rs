@@ -126,7 +126,7 @@ pub async fn correct_fulfill_classification(
     let is_fulfill_ask = analyzed
         .dex_result
         .as_ref()
-        .map_or(false, |d| d.operation == dex::DexOperation::FulfillAsk);
+        .is_some_and(|d| d.operation == dex::DexOperation::FulfillAsk);
     if !is_fulfill_ask {
         return analyzed;
     }

@@ -102,7 +102,7 @@ impl BitcoinClient {
         } else if let Some(client) = &self.client {
             client
                 .get_block_hash(height)
-                .map_err(|e| BitcoinClientError::RpcError(e))
+                .map_err(BitcoinClientError::RpcError)
         } else {
             Err(BitcoinClientError::ConnectionError(
                 "No client available".to_string(),
@@ -123,7 +123,7 @@ impl BitcoinClient {
         } else if let Some(client) = &self.client {
             client
                 .get_best_block_hash()
-                .map_err(|e| BitcoinClientError::RpcError(e))
+                .map_err(BitcoinClientError::RpcError)
         } else {
             Err(BitcoinClientError::ConnectionError(
                 "No client available".to_string(),
@@ -154,7 +154,7 @@ impl BitcoinClient {
                 client
                     .get_raw_mempool()
                     .map(|txids| txids.iter().map(|t| t.to_string()).collect::<Vec<_>>())
-                    .map_err(|e| BitcoinClientError::RpcError(e))
+                    .map_err(BitcoinClientError::RpcError)
             })
             .await
             .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))?
