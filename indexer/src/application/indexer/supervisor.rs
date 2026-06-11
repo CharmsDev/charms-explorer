@@ -41,6 +41,7 @@ where
             }
             Err(join_err) if join_err.is_panic() => {
                 restarts += 1;
+                crate::utils::metrics::supervisor_restart(name);
                 logging::log_error(&format!(
                     "[{}] supervised task panicked (restart #{}). Backing off {}s.",
                     name,

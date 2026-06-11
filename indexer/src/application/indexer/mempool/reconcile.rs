@@ -212,6 +212,7 @@ async fn revert_mempool_tx(
         "[{}] 🗑️ Reverted dropped mempool tx {}",
         network, txid
     ));
+    crate::utils::metrics::mempool_eviction(network);
 
     Ok(())
 }

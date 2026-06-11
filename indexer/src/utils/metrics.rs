@@ -70,3 +70,27 @@ pub fn mempool_size(network: &str, size: usize) {
     metrics::gauge!("indexer_mempool_size", "network" => network.to_string())
         .set(size as f64);
 }
+
+/// Record that a supervised task panicked and was restarted. `name` is the
+/// supervisor label (e.g. `"mempool/mainnet"`) — same one in the log line.
+pub fn supervisor_restart(name: &str) {
+    metrics::counter!("indexer_supervisor_restarts_total", "name" => name.to_string())
+        .increment(1);
+}
+
+/// Record a DEX order detected (mempool or block). `operation` is e.g.
+/// `"create_ask"`, `"fulfill_bid"`, `"cancel"`.
+pub fn dex_order_detected(network: &str, operation: &str) {
+    metrics::counter!(
+        "indexer_dex_orders_total",
+        "network" => network.to_string(),
+        "operation" => operation.to_string()
+    )
+    .increment(1);
+}
+
+/// Record a mempool tx that was reverted by reconcile (RBF / drop).
+pub fn mempool_eviction(network: &str) {
+    metrics::counter!("indexer_mempool_evictions_total", "network" => network.to_string())
+        .increment(1);
+}

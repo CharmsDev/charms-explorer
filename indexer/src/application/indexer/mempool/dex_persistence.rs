@@ -83,6 +83,10 @@ pub async fn save_dex_order(
                 "[{}] 💾 Mempool DEX order saved: {} ({:?})",
                 network, txid, dex_result.operation
             ));
+            crate::utils::metrics::dex_order_detected(
+                network,
+                dex_operation_label(&dex_result.operation),
+            );
         }
         Err(e) if is_duplicate_key(&e) => {}
         Err(e) => {
@@ -91,6 +95,18 @@ pub async fn save_dex_order(
                 network, txid, e
             ));
         }
+    }
+}
+
+/// Label suitable for a Prometheus metric value (snake_case, low cardinality).
+fn dex_operation_label(op: &dex::DexOperation) -> &'static str {
+    match op {
+        dex::DexOperation::CreateAskOrder => "create_ask",
+        dex::DexOperation::CreateBidOrder => "create_bid",
+        dex::DexOperation::PartialFill => "partial_fill",
+        dex::DexOperation::FulfillAsk => "fulfill_ask",
+        dex::DexOperation::FulfillBid => "fulfill_bid",
+        dex::DexOperation::CancelOrder => "cancel",
     }
 }
 
