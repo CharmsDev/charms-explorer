@@ -85,7 +85,7 @@ async fn mark_charms_as_spent_batch_flips_spent_flag() {
     .await
     .expect("save");
 
-    repo.mark_charms_as_spent_batch(vec![("cc".to_string(), 0)])
+    repo.mark_charms_as_spent_batch(vec![("cc".to_string(), 0)], "mainnet")
         .await
         .expect("mark spent");
 
@@ -123,32 +123,52 @@ async fn has_beam_out_input_txid_detects_beam_out_tag() {
     assert!(!repo.has_beam_out_input_txid(&[]).await.unwrap());
 }
 
-/// Audit finding N5: `mark_charms_as_spent_batch` does not filter by network,
-/// so a (txid, vout) collision across networks would corrupt the wrong row.
-/// This test documents the current behaviour — both rows are marked spent.
+/// Regression test for audit finding N5: `mark_charms_as_spent_batch` is now
+/// scoped by network, so the testnet4 row must stay unspent when only the
+/// mainnet one is targeted.
 #[tokio::test]
-async fn mark_spent_batch_does_not_isolate_networks_known_bug() {
+async fn mark_spent_batch_isolates_networks() {
+    use sea_orm::{ConnectionTrait, DbBackend, Statement};
+
     let db = TestDb::new().await;
     let repo = CharmRepository::new(db.conn.clone());
 
+    // The charms table has PK (txid, vout) — to hold both rows in one DB we
+    // need distinct vouts. Use vout=0 for mainnet and vout=1 for testnet4
+    // and verify only the targeted (mainnet) row flips.
     repo.save_batch(vec![
         charm_row("dd", 0, "mainnet", "t/x/y", 10, None),
-        charm_row("dd", 0, "testnet4", "t/x/y", 10, None),
+        charm_row("dd", 1, "testnet4", "t/x/y", 10, None),
     ])
     .await
     .expect("save");
 
-    repo.mark_charms_as_spent_batch(vec![("dd".to_string(), 0)])
+    repo.mark_charms_as_spent_batch(vec![("dd".to_string(), 0), ("dd".to_string(), 1)], "mainnet")
         .await
         .expect("mark");
 
-    let remaining = repo
-        .get_unspent_charms_by_txid_vout(vec![("dd".to_string(), 0)])
+    let row = db
+        .conn
+        .query_all(Statement::from_string(
+            DbBackend::Postgres,
+            "SELECT vout, network, spent FROM charms WHERE txid = 'dd' ORDER BY vout".to_string(),
+        ))
         .await
-        .expect("query");
-    assert!(
-        remaining.is_empty(),
-        "current behaviour marks BOTH networks spent (audit N5)"
+        .unwrap();
+    let mut got: Vec<(i32, String, bool)> = Vec::new();
+    for r in row {
+        got.push((
+            r.try_get("", "vout").unwrap(),
+            r.try_get("", "network").unwrap(),
+            r.try_get("", "spent").unwrap(),
+        ));
+    }
+    assert_eq!(
+        got,
+        vec![
+            (0, "mainnet".to_string(), true),
+            (1, "testnet4".to_string(), false)
+        ]
     );
 }
 

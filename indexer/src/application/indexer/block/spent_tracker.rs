@@ -34,7 +34,7 @@ pub async fn mark_spent_charms(
             .execute_with_retry_and_logging(
                 || async {
                     charm_service
-                        .mark_charms_as_spent_batch(spent_txid_vouts.clone())
+                        .mark_charms_as_spent_batch(spent_txid_vouts.clone(), &network_id.name)
                         .await
                         .map_err(|e| {
                             crate::infrastructure::persistence::error::DbError::QueryError(

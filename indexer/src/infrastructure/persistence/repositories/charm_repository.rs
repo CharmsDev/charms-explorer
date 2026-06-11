@@ -148,28 +148,31 @@ impl CharmRepository {
         Ok(inserted)
     }
 
-    /// Get charms by Bitcoin address
-    /// Mark multiple charms as spent in a batch using (txid, vout) pairs
+    /// Mark multiple charms as spent in a batch using (txid, vout) pairs.
+    /// Scoped by `network` so collisions across mainnet/testnet do not bleed
+    /// into each other.
     pub async fn mark_charms_as_spent_batch(
         &self,
         txid_vouts: Vec<(String, i32)>,
+        network: &str,
     ) -> Result<(), DbError> {
         if txid_vouts.is_empty() {
             return Ok(());
         }
 
-        // Build VALUES list for efficient IN clause: (txid, vout) IN (VALUES ...)
         let values = txid_vouts
             .iter()
-            .map(|(txid, vout)| format!("('{}', {})", txid, vout))
+            .map(|(txid, vout)| format!("('{}', {})", txid.replace('\'', "''"), vout))
             .collect::<Vec<_>>()
             .join(", ");
 
         let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!(
-                "UPDATE charms SET spent = true WHERE (txid, vout) IN (VALUES {}) AND spent = false",
-                values
+                "UPDATE charms SET spent = true \
+                 WHERE (txid, vout) IN (VALUES {}) AND spent = false AND network = '{}'",
+                values,
+                network.replace('\'', "''"),
             ),
         );
 
@@ -180,28 +183,31 @@ impl CharmRepository {
             .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
-    /// Get charm info for stats_holders updates before marking as spent
-    /// Returns (app_id, address, amount) for charms that will be marked as spent
+    /// Get charm info for stats_holders updates before marking as spent.
+    /// Returns (app_id, address, amount). Scoped by `network`.
     pub async fn get_charms_for_spent_update(
         &self,
         txid_vouts: Vec<(String, i32)>,
+        network: &str,
     ) -> Result<Vec<(String, String, i64)>, DbError> {
         if txid_vouts.is_empty() {
             return Ok(vec![]);
         }
 
-        // Build VALUES list for efficient IN clause
         let values = txid_vouts
             .iter()
-            .map(|(txid, vout)| format!("('{}', {})", txid, vout))
+            .map(|(txid, vout)| format!("('{}', {})", txid.replace('\'', "''"), vout))
             .collect::<Vec<_>>()
             .join(", ");
 
         let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!(
-                "SELECT app_id, address, amount FROM charms WHERE (txid, vout) IN (VALUES {}) AND spent = false AND address IS NOT NULL",
-                values
+                "SELECT app_id, address, amount FROM charms \
+                 WHERE (txid, vout) IN (VALUES {}) \
+                 AND spent = false AND address IS NOT NULL AND network = '{}'",
+                values,
+                network.replace('\'', "''"),
             ),
         );
 

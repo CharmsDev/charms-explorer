@@ -141,22 +141,24 @@ impl CharmService {
             })
     }
 
-    /// Mark multiple charms as spent in a batch using (txid, vout) pairs
-    /// Also updates asset supply and stats_holders with negative amounts
+    /// Mark multiple charms as spent in a batch using (txid, vout) pairs.
+    /// `network` scopes the update so mainnet/testnet rows do not bleed.
+    /// Also updates asset supply and stats_holders with negative amounts.
     pub async fn mark_charms_as_spent_batch(
         &self,
         txid_vouts: Vec<(String, i32)>,
+        network: &str,
     ) -> Result<(), CharmError> {
         // 1. Get charm info before marking as spent (for stats_holders update)
         let charm_info = self
             .charm_repository
-            .get_charms_for_spent_update(txid_vouts.clone())
+            .get_charms_for_spent_update(txid_vouts.clone(), network)
             .await
             .map_err(|e| CharmError::ProcessingError(format!("Failed to get charm info: {}", e)))?;
 
         // 2. Mark charms as spent
         let tracker = SpentTracker::new(&self.charm_repository);
-        tracker.mark_charms_as_spent_batch(txid_vouts).await?;
+        tracker.mark_charms_as_spent_batch(txid_vouts, network).await?;
 
         // 2.5. Update asset supply for spent charms
         for (app_id, _address, amount) in &charm_info {
