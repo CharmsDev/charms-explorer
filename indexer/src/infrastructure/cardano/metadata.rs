@@ -10,9 +10,19 @@ use charms_data::App;
 use cml_core::serialization::RawBytesEncoding;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-static METADATA_CACHE: Mutex<Option<HashMap<String, Option<CardanoTokenMetadata>>>> =
-    Mutex::new(None);
+/// Negative-cache TTL: how long to remember that a fetch returned `None`
+/// before retrying upstream. Positive results are cached permanently.
+const NEGATIVE_CACHE_TTL: Duration = Duration::from_secs(3600);
+
+struct CacheEntry {
+    value: Option<CardanoTokenMetadata>,
+    /// `None` for positive entries (permanent); `Some(expiry)` for negatives.
+    expires_at: Option<Instant>,
+}
+
+static METADATA_CACHE: Mutex<Option<HashMap<String, CacheEntry>>> = Mutex::new(None);
 
 #[derive(Debug, Clone)]
 pub struct CardanoTokenMetadata {
@@ -58,20 +68,31 @@ pub async fn fetch_metadata(app: &App) -> Option<CardanoTokenMetadata> {
     let (policy_id_hex, asset_name_hex) = derive_cardano_ids(app);
     let cache_key = format!("{}{}", policy_id_hex, asset_name_hex);
 
-    // Check cache
     {
         let mut cache = METADATA_CACHE.lock().ok()?;
         let map = cache.get_or_insert_with(HashMap::new);
-        if let Some(cached) = map.get(&cache_key) {
-            return cached.clone();
+        if let Some(entry) = map.get(&cache_key) {
+            match entry.expires_at {
+                None => return entry.value.clone(),                 // positive: permanent
+                Some(exp) if Instant::now() < exp => return entry.value.clone(),
+                _ => { map.remove(&cache_key); }                    // negative expired
+            }
         }
     }
 
     let result = fetch_cip68_metadata(&policy_id_hex, &asset_name_hex).await;
 
-    // Cache result
     if let Ok(mut cache) = METADATA_CACHE.lock() {
-        cache.get_or_insert_with(HashMap::new).insert(cache_key, result.clone());
+        let map = cache.get_or_insert_with(HashMap::new);
+        let entry = CacheEntry {
+            expires_at: if result.is_none() {
+                Some(Instant::now() + NEGATIVE_CACHE_TTL)
+            } else {
+                None
+            },
+            value: result.clone(),
+        };
+        map.insert(cache_key, entry);
     }
 
     result
