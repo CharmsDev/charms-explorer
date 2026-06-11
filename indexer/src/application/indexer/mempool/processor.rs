@@ -369,8 +369,29 @@ async fn update_consumed_order_status(
         }
     };
 
-    // Insert activity row for the fulfill/cancel transaction
+    // Audit N10: short-circuit if we already inserted an activity row for this
+    // fulfill/cancel txid. Without this guard, an RBF-evicted-then-re-seen tx
+    // would re-apply the parent status update on top of any *real* fill that
+    // happened in the meantime, corrupting the order state.
     let activity_order_id = format!("{}:0", txid);
+    match dex_orders::Entity::find_by_id(activity_order_id.clone())
+        .one(db)
+        .await
+    {
+        Ok(Some(_)) => {
+            // Already processed in a previous mempool cycle — do nothing.
+            return;
+        }
+        Ok(None) => {}
+        Err(e) => {
+            logging::log_warning(&format!(
+                "[{}] ⚠️ Failed to check existing activity row {}: {}",
+                network, activity_order_id, e
+            ));
+            return;
+        }
+    }
+
     let now = chrono::Utc::now().naive_utc();
     let activity_model = dex_orders::ActiveModel {
         order_id: Set(activity_order_id.clone()),
@@ -404,16 +425,20 @@ async fn update_consumed_order_status(
                 network, txid, new_status, order_id
             ));
         }
-        Err(e) if is_duplicate_key(&e) => {}
+        Err(e) if is_duplicate_key(&e) => {
+            // Raced with another insert — safe to ignore, but don't touch parent.
+            return;
+        }
         Err(e) => {
             logging::log_warning(&format!(
                 "[{}] ⚠️ Failed to save activity row for {}: {}",
                 network, txid, e
             ));
+            return;
         }
     }
 
-    // Update parent order status
+    // Only update the parent when we actually inserted a new activity row.
     if order.status == "open" || order.status == "partial" {
         let mut active: dex_orders::ActiveModel = order.into();
         active.status = Set(new_status.to_string());

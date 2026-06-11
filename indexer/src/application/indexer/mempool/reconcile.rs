@@ -130,9 +130,18 @@ async fn revert_mempool_tx(
     let escaped_network = network.replace('\'', "''");
 
     // 1. Revert parent order status for FULFILL/CANCEL operations.
-    //    Activity rows have parent_order_id set — restore the parent back to "open".
+    //    Activity rows have parent_order_id set — derive the parent's correct
+    //    status from its `filled_amount` rather than hard-coding "open", so
+    //    we do not clobber a real on-chain partial fill that happened while
+    //    the mempool tx was queued (audit N8).
     let revert_parent_sql = format!(
-        "UPDATE dex_orders SET status = 'open', updated_at = NOW() \
+        "UPDATE dex_orders SET \
+             status = CASE \
+                 WHEN filled_amount >= amount THEN 'filled' \
+                 WHEN filled_amount > 0 THEN 'partial' \
+                 ELSE 'open' \
+             END, \
+             updated_at = NOW() \
          WHERE order_id IN (\
              SELECT parent_order_id FROM dex_orders \
              WHERE txid = '{}' AND network = '{}' AND parent_order_id IS NOT NULL\
