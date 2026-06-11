@@ -55,21 +55,7 @@ async fn run_production_indexer(
 ) {
     let mut network_manager = NetworkManager::new(config.clone());
 
-    match network_manager
-        .initialize(
-            repositories.charm.clone(),
-            repositories.asset.clone(),
-            repositories.stats_holders.clone(),
-            repositories.dex_orders.clone(),
-            repositories.transaction.clone(),
-            repositories.summary.clone(),
-            repositories.block_status.clone(),
-            repositories.utxo.clone(),
-            repositories.monitored_addresses.clone(),
-            repositories.mempool_spends.clone(),
-            repositories.address_transactions.clone(),
-        )
-        .await
+    match network_manager.initialize(&repositories).await
     {
         Ok(_) => {
             logging::log_info("═══════════════════════════════════════════════════════════════");

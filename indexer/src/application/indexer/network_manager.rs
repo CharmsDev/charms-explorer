@@ -12,11 +12,7 @@ use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
-use crate::infrastructure::persistence::repositories::{
-    AddressTransactionsRepository, AssetRepository, BlockStatusRepository, CharmRepository,
-    DexOrdersRepository, MempoolSpendsRepository, MonitoredAddressesRepository,
-    StatsHoldersRepository, SummaryRepository, TransactionRepository, UtxoRepository,
-};
+use crate::infrastructure::persistence::Repositories;
 use crate::utils::logging;
 
 /// Manager for multiple blockchain network processors
@@ -44,80 +40,27 @@ impl NetworkManager {
         }
     }
 
-    /// Initialize processors for all configured networks
-    ///
-    /// Creates and configures blockchain processors for each network defined in the configuration
+    /// Initialize processors for all configured networks.
+    /// Repos are cloned internally per processor as needed.
     pub async fn initialize(
         &mut self,
-        charm_repository: CharmRepository,
-        asset_repository: AssetRepository,
-        stats_holders_repository: StatsHoldersRepository,
-        dex_orders_repository: DexOrdersRepository,
-        transaction_repository: TransactionRepository,
-        summary_repository: SummaryRepository,
-        block_status_repository: BlockStatusRepository,
-        utxo_repository: UtxoRepository,
-        monitored_addresses_repository: MonitoredAddressesRepository,
-        mempool_spends_repository: MempoolSpendsRepository,
-        address_transactions_repository: AddressTransactionsRepository,
+        repos: &Repositories,
     ) -> Result<(), BlockProcessorError> {
-        // Initialize Bitcoin processors (synchronous flow, no queue)
         if self.config.indexer.enable_bitcoin_testnet4 {
-            self.initialize_bitcoin_processor(
-                "testnet4",
-                charm_repository.clone(),
-                asset_repository.clone(),
-                stats_holders_repository.clone(),
-                dex_orders_repository.clone(),
-                transaction_repository.clone(),
-                summary_repository.clone(),
-                block_status_repository.clone(),
-                utxo_repository.clone(),
-                monitored_addresses_repository.clone(),
-                mempool_spends_repository.clone(),
-                address_transactions_repository.clone(),
-            )
-            .await?;
+            self.initialize_bitcoin_processor("testnet4", repos).await?;
         }
-
         if self.config.indexer.enable_bitcoin_mainnet {
-            self.initialize_bitcoin_processor(
-                "mainnet",
-                charm_repository.clone(),
-                asset_repository.clone(),
-                stats_holders_repository.clone(),
-                dex_orders_repository.clone(),
-                transaction_repository.clone(),
-                summary_repository.clone(),
-                block_status_repository.clone(),
-                utxo_repository.clone(),
-                monitored_addresses_repository.clone(),
-                mempool_spends_repository.clone(),
-                address_transactions_repository.clone(),
-            )
-            .await?;
+            self.initialize_bitcoin_processor("mainnet", repos).await?;
         }
-
         // TODO: Initialize Cardano processors when implemented
-
         Ok(())
     }
 
-    /// Initialize a Bitcoin processor for a specific network
+    /// Initialize a Bitcoin processor for a specific network.
     async fn initialize_bitcoin_processor(
         &mut self,
         network: &str,
-        charm_repository: CharmRepository,
-        asset_repository: AssetRepository,
-        stats_holders_repository: StatsHoldersRepository,
-        dex_orders_repository: DexOrdersRepository,
-        transaction_repository: TransactionRepository,
-        summary_repository: SummaryRepository,
-        block_status_repository: BlockStatusRepository,
-        utxo_repository: UtxoRepository,
-        monitored_addresses_repository: MonitoredAddressesRepository,
-        mempool_spends_repository: MempoolSpendsRepository,
-        address_transactions_repository: AddressTransactionsRepository,
+        repos: &Repositories,
     ) -> Result<(), BlockProcessorError> {
         let bitcoin_config = match self.config.get_bitcoin_config(network) {
             Some(config) => config,
@@ -160,22 +103,22 @@ impl NetworkManager {
 
         // Create charm service (synchronous, no queue)
         let charm_service = CharmService::new(
-            charm_repository.clone(),
-            asset_repository,
-            stats_holders_repository,
-            dex_orders_repository,
+            repos.charm.clone(),
+            repos.asset.clone(),
+            repos.stats_holders.clone(),
+            repos.dex_orders.clone(),
         );
 
         let processor = BitcoinProcessor::new(
             bitcoin_client,
             charm_service,
-            transaction_repository,
-            summary_repository,
-            block_status_repository,
-            utxo_repository.clone(),
-            monitored_addresses_repository.clone(),
-            mempool_spends_repository.clone(),
-            address_transactions_repository,
+            repos.transaction.clone(),
+            repos.summary.clone(),
+            repos.block_status.clone(),
+            repos.utxo.clone(),
+            repos.monitored_addresses.clone(),
+            repos.mempool_spends.clone(),
+            repos.address_transactions.clone(),
             self.config.clone(),
             bitcoin_config.genesis_block_height,
         );
@@ -193,13 +136,13 @@ impl NetworkManager {
         // lets `stop_all` wind it down cleanly.
         match BitcoinClient::new(bitcoin_config) {
             Ok(mempool_client) => {
-                let db_conn = mempool_spends_repository.get_connection();
+                let db_conn = repos.mempool_spends.get_connection();
                 let mempool_proc = Arc::new(MempoolProcessor::new(
                     mempool_client,
                     db_conn,
-                    mempool_spends_repository,
-                    utxo_repository,
-                    monitored_addresses_repository,
+                    repos.mempool_spends.clone(),
+                    repos.utxo.clone(),
+                    repos.monitored_addresses.clone(),
                     network_id.clone(),
                 ));
                 let supervisor_name = format!("mempool/{}", network_id.name);
