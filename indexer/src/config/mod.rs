@@ -29,17 +29,18 @@ impl NetworkId {
         }
     }
 
-    /// Get a string representation of the network identifier
-    pub fn to_string(&self) -> String {
-        format!("{:?}-{}", self.network_type, self.name)
-    }
-
     /// Get the blockchain type as a string
     pub fn blockchain_type(&self) -> String {
         match self.network_type {
             NetworkType::Bitcoin => "Bitcoin".to_string(),
             NetworkType::Cardano => "Cardano".to_string(),
         }
+    }
+}
+
+impl std::fmt::Display for NetworkId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}-{}", self.network_type, self.name)
     }
 }
 
@@ -51,7 +52,9 @@ pub enum ProviderType {
 }
 
 impl ProviderType {
-    pub fn from_str(s: &str) -> Self {
+    /// Parse a provider name (case-insensitive). Unknown values default to
+    /// `BitcoinNode`. Not exposed as `FromStr` because parsing is infallible.
+    pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "quicknode" => ProviderType::QuickNode,
             "bitcoin_node" => ProviderType::BitcoinNode,
@@ -152,7 +155,7 @@ impl AppConfig {
             .unwrap_or(true);
 
         if enable_bitcoin_testnet4 {
-            let provider_type = ProviderType::from_str(
+            let provider_type = ProviderType::parse(
                 &env::var("BITCOIN_TESTNET4_PROVIDER")
                     .unwrap_or_else(|_| "bitcoin_node".to_string())
             );
@@ -186,7 +189,7 @@ impl AppConfig {
             .unwrap_or(false);
 
         if enable_bitcoin_mainnet {
-            let provider_type = ProviderType::from_str(
+            let provider_type = ProviderType::parse(
                 &env::var("BITCOIN_MAINNET_PROVIDER")
                     .unwrap_or_else(|_| "bitcoin_node".to_string())
             );
