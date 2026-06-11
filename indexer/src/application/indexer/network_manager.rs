@@ -6,6 +6,7 @@ use tokio::task::JoinHandle;
 use crate::application::indexer::block::BitcoinProcessor;
 use crate::application::indexer::mempool::MempoolProcessor;
 use crate::application::indexer::processor_trait::BlockchainProcessor;
+use crate::application::indexer::supervisor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
@@ -177,24 +178,31 @@ impl NetworkManager {
             Arc::new(Mutex::new(Box::new(processor))),
         );
 
-        // Spawn MempoolProcessor as a parallel background task
-        // Uses a direct RPC BitcoinClient (not SimpleBitcoinClient) for getrawmempool support
+        // Spawn the MempoolProcessor under a supervisor so a panic in any
+        // poll cycle restarts the worker instead of silently killing it
+        // (root cause of the bloque 946,620 incident).
         match BitcoinClient::new(bitcoin_config) {
             Ok(mempool_client) => {
                 let db_conn = mempool_spends_repository.get_connection();
-                let mempool_proc = MempoolProcessor::new(
+                let mempool_proc = Arc::new(MempoolProcessor::new(
                     mempool_client,
                     db_conn,
                     mempool_spends_repository,
                     utxo_repository,
                     monitored_addresses_repository,
                     network_id.clone(),
-                );
+                ));
+                let supervisor_name = format!("mempool/{}", network_id.name);
                 tokio::spawn(async move {
-                    mempool_proc.run().await;
+                    let proc = mempool_proc;
+                    supervisor::supervise(&supervisor_name, move || {
+                        let proc = proc.clone();
+                        async move { proc.run().await }
+                    })
+                    .await;
                 });
                 logging::log_info(&format!(
-                    "[{}] 🔍 MempoolProcessor spawned as background task",
+                    "[{}] 🔍 MempoolProcessor spawned under supervisor",
                     network_id.name
                 ));
             }
