@@ -37,6 +37,10 @@ impl StatsHoldersRepository {
             amount_delta.max(i64::MIN / 2)
         };
 
+        // Idempotency gate (audit N1): the WHERE on the DO UPDATE skips the
+        // increment when `last_updated_block` already matches or exceeds the
+        // current block, so re-processing the same block after a crash will
+        // not double-count balances. New rows always insert normally.
         let stmt = Statement::from_string(
             DbBackend::Postgres,
             format!(
@@ -54,6 +58,7 @@ impl StatsHoldersRepository {
                     END,
                     last_updated_block = {block},
                     updated_at = CURRENT_TIMESTAMP
+                WHERE stats_holders.last_updated_block < {block}
                 "#,
                 app_id = app_id.replace('\'', "''"),
                 address = address.replace('\'', "''"),

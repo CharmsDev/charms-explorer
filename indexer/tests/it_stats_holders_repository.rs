@@ -109,11 +109,11 @@ async fn update_holders_batch_groups_per_app_address_pair() {
     );
 }
 
-/// Audit finding N1 — STILL OPEN: re-processing the same block doubles
-/// balances because the UPSERT increments unconditionally. The fix
-/// requires idempotency keys or DB transactions (planned for T3.4).
+/// Regression test for audit finding N1 (FIXED): re-processing the same
+/// block after a crash must not double the balance. The repository now
+/// gates the DO UPDATE on `last_updated_block < {block}`.
 #[tokio::test]
-async fn reprocessing_doubles_balance_known_bug() {
+async fn reprocessing_same_block_is_idempotent() {
     let db = TestDb::new().await;
     let repo = StatsHoldersRepository::new(db.conn.clone());
 
@@ -127,8 +127,30 @@ async fn reprocessing_doubles_balance_known_bug() {
 
     assert_eq!(
         row(&db.conn, "t/x/y", "bc1qaaa", "mainnet").await,
-        Some((200, 2)),
-        "current behaviour: balance doubles on reprocess (audit N1)"
+        Some((100, 1)),
+        "must not double-count on reprocess (audit N1)"
+    );
+}
+
+/// Higher-block updates still go through — the gate is `< block`, not `<=`.
+#[tokio::test]
+async fn later_block_does_apply_after_idempotent_skip() {
+    let db = TestDb::new().await;
+    let repo = StatsHoldersRepository::new(db.conn.clone());
+
+    repo.update_holder_stats("t/x/y", "bc1qaaa", "mainnet", 100, 100)
+        .await
+        .unwrap();
+    repo.update_holder_stats("t/x/y", "bc1qaaa", "mainnet", 100, 100)
+        .await
+        .unwrap(); // skipped
+    repo.update_holder_stats("t/x/y", "bc1qaaa", "mainnet", 50, 101)
+        .await
+        .unwrap(); // applies
+
+    assert_eq!(
+        row(&db.conn, "t/x/y", "bc1qaaa", "mainnet").await,
+        Some((150, 2))
     );
 }
 
