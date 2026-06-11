@@ -9,6 +9,7 @@ use crate::infrastructure::persistence::repositories::{
     AddressTransactionsRepository, BlockStatusRepository, MempoolSpendsRepository,
     MonitoredAddressesRepository, SummaryRepository, TransactionRepository, UtxoRepository,
 };
+use crate::infrastructure::persistence::Repositories;
 use crate::utils::logging;
 
 use super::batch::BatchProcessor;
@@ -35,24 +36,18 @@ impl BlockProcessor {
     pub fn new(
         bitcoin_client: BitcoinClient,
         charm_service: CharmService,
-        transaction_repository: TransactionRepository,
-        summary_repository: SummaryRepository,
-        block_status_repository: BlockStatusRepository,
-        utxo_repository: UtxoRepository,
-        monitored_addresses_repository: MonitoredAddressesRepository,
-        mempool_spends_repository: MempoolSpendsRepository,
-        address_transactions_repository: AddressTransactionsRepository,
+        repos: &Repositories,
     ) -> Self {
         Self {
             bitcoin_client,
             charm_service,
-            transaction_repository,
-            summary_repository,
-            block_status_repository,
-            utxo_repository,
-            monitored_addresses_repository,
-            mempool_spends_repository,
-            address_transactions_repository,
+            transaction_repository: repos.transaction.clone(),
+            summary_repository: repos.summary.clone(),
+            block_status_repository: repos.block_status.clone(),
+            utxo_repository: repos.utxo.clone(),
+            monitored_addresses_repository: repos.monitored_addresses.clone(),
+            mempool_spends_repository: repos.mempool_spends.clone(),
+            address_transactions_repository: repos.address_transactions.clone(),
             retry_handler: RetryHandler::new(),
         }
     }

@@ -26,6 +26,7 @@ pub use utxo_repository::UtxoRepository;
 use crate::infrastructure::persistence::connection::DbPool;
 
 /// Collection of all repositories backed by a shared connection.
+#[derive(Clone, Debug)]
 pub struct Repositories {
     pub address_transactions: AddressTransactionsRepository,
     pub asset: AssetRepository,

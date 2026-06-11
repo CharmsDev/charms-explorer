@@ -112,13 +112,7 @@ impl NetworkManager {
         let processor = BitcoinProcessor::new(
             bitcoin_client,
             charm_service,
-            repos.transaction.clone(),
-            repos.summary.clone(),
-            repos.block_status.clone(),
-            repos.utxo.clone(),
-            repos.monitored_addresses.clone(),
-            repos.mempool_spends.clone(),
-            repos.address_transactions.clone(),
+            repos,
             self.config.clone(),
             bitcoin_config.genesis_block_height,
         );

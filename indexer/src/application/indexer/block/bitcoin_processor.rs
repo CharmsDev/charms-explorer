@@ -12,10 +12,7 @@ use crate::config::{AppConfig, NetworkId};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
-use crate::infrastructure::persistence::repositories::{
-    AddressTransactionsRepository, BlockStatusRepository, MempoolSpendsRepository,
-    MonitoredAddressesRepository, SummaryRepository, TransactionRepository, UtxoRepository,
-};
+use crate::infrastructure::persistence::Repositories;
 use crate::utils::logging;
 
 use super::processor::BlockProcessor;
@@ -25,13 +22,7 @@ use super::processor::BlockProcessor;
 pub struct BitcoinProcessor {
     bitcoin_client: BitcoinClient,
     charm_service: CharmService,
-    transaction_repository: TransactionRepository,
-    summary_repository: SummaryRepository,
-    block_status_repository: BlockStatusRepository,
-    utxo_repository: UtxoRepository,
-    monitored_addresses_repository: MonitoredAddressesRepository,
-    mempool_spends_repository: MempoolSpendsRepository,
-    address_transactions_repository: AddressTransactionsRepository,
+    repos: Repositories,
     config: AppConfig,
     current_height: u64,
     genesis_block_height: u64,
@@ -41,26 +32,14 @@ impl BitcoinProcessor {
     pub fn new(
         bitcoin_client: BitcoinClient,
         charm_service: CharmService,
-        transaction_repository: TransactionRepository,
-        summary_repository: SummaryRepository,
-        block_status_repository: BlockStatusRepository,
-        utxo_repository: UtxoRepository,
-        monitored_addresses_repository: MonitoredAddressesRepository,
-        mempool_spends_repository: MempoolSpendsRepository,
-        address_transactions_repository: AddressTransactionsRepository,
+        repos: &Repositories,
         config: AppConfig,
         genesis_block_height: u64,
     ) -> Self {
         Self {
             bitcoin_client,
             charm_service,
-            transaction_repository,
-            summary_repository,
-            block_status_repository,
-            utxo_repository,
-            monitored_addresses_repository,
-            mempool_spends_repository,
-            address_transactions_repository,
+            repos: repos.clone(),
             current_height: genesis_block_height,
             config,
             genesis_block_height,
@@ -75,13 +54,7 @@ impl BitcoinProcessor {
         BlockProcessor::new(
             self.bitcoin_client.clone(),
             self.charm_service.clone(),
-            self.transaction_repository.clone(),
-            self.summary_repository.clone(),
-            self.block_status_repository.clone(),
-            self.utxo_repository.clone(),
-            self.monitored_addresses_repository.clone(),
-            self.mempool_spends_repository.clone(),
-            self.address_transactions_repository.clone(),
+            &self.repos,
         )
     }
 
@@ -92,7 +65,7 @@ impl BitcoinProcessor {
         ));
 
         match self
-            .block_status_repository
+            .repos.block_status
             .get_last_processed_block(self.network_id())
             .await
         {
@@ -129,7 +102,7 @@ impl BitcoinProcessor {
 
         loop {
             let pending_blocks = self
-                .block_status_repository
+                .repos.block_status
                 .get_pending_blocks(self.network_id(), 10000)
                 .await
                 .map_err(|e| BlockProcessorError::ProcessingError(format!("DB error: {}", e)))?;
@@ -249,11 +222,11 @@ impl BitcoinProcessor {
                         ));
 
                         let _ = self
-                            .block_status_repository
+                            .repos.block_status
                             .mark_downloaded(self.current_height as i32, None, 0, self.network_id())
                             .await;
                         let _ = self
-                            .block_status_repository
+                            .repos.block_status
                             .mark_processed(self.current_height as i32, 0, self.network_id())
                             .await;
                         self.current_height += 1;
@@ -282,7 +255,7 @@ impl BitcoinProcessor {
     /// doesn't fan out into thousands of individual queries (audit N13).
     async fn confirm_pending_blocks(&self, latest_height: u64) {
         let unconfirmed = match self
-            .block_status_repository
+            .repos.block_status
             .get_unconfirmed_blocks(self.network_id())
             .await
         {
@@ -307,7 +280,7 @@ impl BitcoinProcessor {
         }
 
         match self
-            .block_status_repository
+            .repos.block_status
             .mark_confirmed_batch(&to_confirm, self.network_id())
             .await
         {
