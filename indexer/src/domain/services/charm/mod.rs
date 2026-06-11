@@ -189,8 +189,7 @@ impl CharmService {
                 .into_iter()
                 .filter_map(|(app_id, address, amount)| {
                     if app_id.starts_with("t/") {
-                        // Token: convert t/ to n/ for consolidation, use actual negative amount
-                        let nft_app_id = app_id.replacen("t/", "n/", 1);
+                        let nft_app_id = crate::domain::services::app_id::token_to_nft(&app_id);
                         Some((nft_app_id, address, -amount, 0))
                     } else if app_id.starts_with("n/") {
                         // NFT: keep n/ app_id, use -1 (ownership count)

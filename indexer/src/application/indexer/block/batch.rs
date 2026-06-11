@@ -80,7 +80,7 @@ impl BatchProcessor {
                     if let Some(addr) = address {
                         if *amount > 0 && !addr.is_empty() {
                             if app_id.starts_with("t/") {
-                                let nft_app_id = app_id.replacen("t/", "n/", 1);
+                                let nft_app_id = crate::domain::services::app_id::token_to_nft(app_id);
                                 return Some((
                                     nft_app_id,
                                     addr.clone(),

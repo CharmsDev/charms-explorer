@@ -268,7 +268,7 @@ async fn build_asset_requests(
 
     for (_txid, app_id, amount) in &input_amounts {
         let nft_app_id = if app_id.starts_with("t/") {
-            app_id.replacen("t/", "n/", 1)
+            crate::domain::services::app_id::token_to_nft(app_id)
         } else {
             app_id.clone()
         };
@@ -366,7 +366,7 @@ async fn fetch_cardano_metadata_for_beaming(
 
 fn normalize_app_id(app_id: &str, asset_type: &str) -> String {
     if asset_type == "token" {
-        app_id.replacen("t/", "n/", 1)
+        crate::domain::services::app_id::token_to_nft(app_id)
     } else {
         app_id.to_string()
     }

@@ -95,7 +95,7 @@ pub async fn process_block_from_cache(
                     // Collect stats_holders update
                     if asset.amount > 0 {
                         if asset.app_id.starts_with("t/") {
-                            let nft_app_id = asset.app_id.replacen("t/", "n/", 1);
+                            let nft_app_id = crate::domain::services::app_id::token_to_nft(&asset.app_id);
                             holder_updates.push((
                                 nft_app_id,
                                 addr.clone(),

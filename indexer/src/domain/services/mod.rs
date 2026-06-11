@@ -1,4 +1,5 @@
 pub mod address_extractor;
+pub mod app_id;
 pub mod charm; // Modular charm service
 pub mod dex; // DEX detection for Charms Cast
 pub mod native_charm_parser;
