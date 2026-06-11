@@ -1,31 +1,44 @@
-use log::{debug, error, info, warn};
+//! Logging facade.
+//!
+//! Internally writes through `tracing`; the `log` crate calls inside our
+//! dependencies are bridged via `tracing-subscriber`'s `log` feature so
+//! everything ends up in the same pipeline.
 
-/// Initialize the logger
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
+
+/// Initialise the global tracing subscriber.
+///
+/// Reads `RUST_LOG` for filter directives (e.g. `RUST_LOG=info,sqlx=warn`).
+/// Defaults to `info` for the indexer, `warn` for noisy DB drivers.
+/// Also installs `tracing-log`'s `LogTracer` so transitive `log::...` calls
+/// from dependencies (sqlx, reqwest, …) flow through the same pipeline.
 pub fn init_logger() {
-    let mut builder = env_logger::Builder::from_default_env();
-    builder
-        .filter_level(log::LevelFilter::Info)
-        .filter_module("sqlx", log::LevelFilter::Warn)
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("info,sqlx=warn")
+    });
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer().with_target(false))
         .init();
+
+    let _ = tracing_log::LogTracer::init();
 }
 
-/// Log an informational message
+/// Plain informational message. Prefer `tracing::info!(...)` macros with
+/// structured fields in new code.
 pub fn log_info(message: &str) {
-    info!("{}", message);
+    tracing::info!("{}", message);
 }
 
-/// Log a debug message
 pub fn log_debug(message: &str) {
-    debug!("{}", message);
+    tracing::debug!("{}", message);
 }
 
-/// Log a warning message
 pub fn log_warning(message: &str) {
-    warn!("{}", message);
+    tracing::warn!("{}", message);
 }
 
-/// Log an error message
 pub fn log_error(message: &str) {
-    error!("{}", message);
+    tracing::error!("{}", message);
 }
-
