@@ -34,12 +34,16 @@ impl BatchProcessor {
             return Ok(());
         }
 
+        let tuples: Vec<_> = batch
+            .into_iter()
+            .map(TransactionBatchItem::into_tuple)
+            .collect();
         self.execute_batch_save(
             "transaction",
-            batch.len(),
+            tuples.len(),
             height,
             network_id,
-            || async { self.transaction_repository.save_batch(batch.clone()).await },
+            || async { self.transaction_repository.save_batch(tuples.clone()).await },
             BlockProcessorError::DbError,
         )
         .await
@@ -125,12 +129,13 @@ impl BatchProcessor {
             return Ok(());
         }
 
+        let tuples: Vec<_> = batch.into_iter().map(AssetBatchItem::into_tuple).collect();
         self.execute_batch_save(
             "asset",
-            batch.len(),
+            tuples.len(),
             height,
             network_id,
-            || async { self.charm_service.save_asset_batch(batch.clone()).await },
+            || async { self.charm_service.save_asset_batch(tuples.clone()).await },
             |e| BlockProcessorError::ProcessingError(format!("Failed to save asset batch: {}", e)),
         )
         .await
@@ -180,19 +185,54 @@ impl BatchProcessor {
 }
 
 /// Transaction batch item for bulk operations
-pub type TransactionBatchItem = (
-    String,         // txid
-    u64,            // height
-    i64,            // position
-    Value,          // raw_json
-    Value,          // charm_data
-    i32,            // confirmations
-    bool,           // is_confirmed
-    String,         // blockchain
-    String,         // network
-    Option<String>, // tags
-    Option<String>, // tx_type
-);
+/// Transaction batch item for bulk operations.
+#[derive(Debug, Clone)]
+pub struct TransactionBatchItem {
+    pub txid: String,
+    pub block_height: u64,
+    pub position: i64,
+    pub raw_json: Value,
+    pub charm_data: Value,
+    pub confirmations: i32,
+    pub is_confirmed: bool,
+    pub blockchain: String,
+    pub network: String,
+    pub tags: Option<String>,
+    pub tx_type: Option<String>,
+}
+
+impl TransactionBatchItem {
+    /// Repos still consume the historical tuple shape; preserves wire format.
+    pub fn into_tuple(
+        self,
+    ) -> (
+        String,
+        u64,
+        i64,
+        Value,
+        Value,
+        i32,
+        bool,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+    ) {
+        (
+            self.txid,
+            self.block_height,
+            self.position,
+            self.raw_json,
+            self.charm_data,
+            self.confirmations,
+            self.is_confirmed,
+            self.blockchain,
+            self.network,
+            self.tags,
+            self.tx_type,
+        )
+    }
+}
 
 /// Charm batch item for bulk operations.
 #[derive(Debug, Clone)]
@@ -244,22 +284,67 @@ impl CharmBatchItem {
     }
 }
 
-/// Asset batch item for bulk operations
-pub type AssetBatchItem = (
-    String,         // app_id
-    String,         // txid
-    i32,            // vout
-    u64,            // block_height
-    String,         // asset_type
-    u64,            // supply
-    String,         // blockchain
-    String,         // network
-    Option<String>, // name
-    Option<String>, // symbol
-    Option<String>, // description
-    Option<String>, // image_url
-    Option<u8>,     // decimals
-    Option<String>, // cardano_policy_id
-    Option<String>, // cardano_asset_name
-    Option<String>, // cardano_fingerprint
-);
+/// Asset batch item for bulk operations.
+#[derive(Debug, Clone)]
+pub struct AssetBatchItem {
+    pub app_id: String,
+    pub txid: String,
+    pub vout: i32,
+    pub block_height: u64,
+    pub asset_type: String,
+    pub supply: u64,
+    pub blockchain: String,
+    pub network: String,
+    pub name: Option<String>,
+    pub symbol: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
+    pub decimals: Option<u8>,
+    pub cardano_policy_id: Option<String>,
+    pub cardano_asset_name: Option<String>,
+    pub cardano_fingerprint: Option<String>,
+}
+
+impl AssetBatchItem {
+    /// Repos still consume the historical tuple shape; preserves wire format.
+    #[allow(clippy::type_complexity)]
+    pub fn into_tuple(
+        self,
+    ) -> (
+        String,
+        String,
+        i32,
+        u64,
+        String,
+        u64,
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+        Option<u8>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) {
+        (
+            self.app_id,
+            self.txid,
+            self.vout,
+            self.block_height,
+            self.asset_type,
+            self.supply,
+            self.blockchain,
+            self.network,
+            self.name,
+            self.symbol,
+            self.description,
+            self.image_url,
+            self.decimals,
+            self.cardano_policy_id,
+            self.cardano_asset_name,
+            self.cardano_fingerprint,
+        )
+    }
+}

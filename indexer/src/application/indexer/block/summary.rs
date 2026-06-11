@@ -54,7 +54,7 @@ impl SummaryUpdater {
 
         let confirmed_transactions = transaction_batch
             .iter()
-            .filter(|tx| tx.6)
+            .filter(|tx| tx.is_confirmed)
             .count() as i64;
 
         let current_summary = self

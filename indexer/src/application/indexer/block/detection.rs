@@ -164,19 +164,19 @@ pub async fn detect_charms(
             ));
         }
 
-        transaction_batch.push((
-            txid.clone(),
-            height,
-            tx_pos as i64,
-            json!({ "hex": tx_hex, "txid": txid }),
-            analyzed.charm_json.clone(),
-            confirmations as i32,
-            true,
-            blockchain.to_string(),
-            network.to_string(),
-            analyzed.tags.clone(),
-            Some(analyzed.tx_type.clone()),
-        ));
+        transaction_batch.push(TransactionBatchItem {
+            txid: txid.clone(),
+            block_height: height,
+            position: tx_pos as i64,
+            raw_json: json!({ "hex": tx_hex, "txid": txid }),
+            charm_data: analyzed.charm_json.clone(),
+            confirmations: confirmations as i32,
+            is_confirmed: true,
+            blockchain: blockchain.to_string(),
+            network: network.to_string(),
+            tags: analyzed.tags.clone(),
+            tx_type: Some(analyzed.tx_type.clone()),
+        });
 
         // Extract per-vout addresses (preserving index alignment, OP_RETURN outputs map to None)
         let vout_addresses: Vec<Option<String>> = {
@@ -317,24 +317,24 @@ async fn build_asset_requests(
             // For beaming: always populate metadata (NFTs AND tokens)
             let use_metadata = is_nft || analyzed.is_beaming;
 
-            Some((
-                asset.app_id.clone(),
-                analyzed.txid.clone(),
-                0i32,
-                height,
-                asset.asset_type.clone(),
+            Some(AssetBatchItem {
+                app_id: asset.app_id.clone(),
+                txid: analyzed.txid.clone(),
+                vout: 0i32,
+                block_height: height,
+                asset_type: asset.asset_type.clone(),
                 supply,
-                blockchain.to_string(),
-                network.to_string(),
-                if use_metadata { name.clone() } else { None },
-                if use_metadata { symbol.clone() } else { None },
-                if use_metadata { description.clone() } else { None },
-                if use_metadata { image_url.clone() } else { None },
-                if use_metadata { decimals } else { None },
-                cardano_policy_id.clone(),
-                cardano_asset_name.clone(),
-                cardano_fingerprint.clone(),
-            ))
+                blockchain: blockchain.to_string(),
+                network: network.to_string(),
+                name: if use_metadata { name.clone() } else { None },
+                symbol: if use_metadata { symbol.clone() } else { None },
+                description: if use_metadata { description.clone() } else { None },
+                image_url: if use_metadata { image_url.clone() } else { None },
+                decimals: if use_metadata { decimals } else { None },
+                cardano_policy_id: cardano_policy_id.clone(),
+                cardano_asset_name: cardano_asset_name.clone(),
+                cardano_fingerprint: cardano_fingerprint.clone(),
+            })
         })
         .collect()
 }
