@@ -25,6 +25,12 @@ lint:
 coverage:
 	@cargo llvm-cov --all-targets --html --output-dir target/llvm-cov
 
+# Apply pending SQL migrations to the database in $DATABASE_URL.
+# Idempotent — already-applied migrations are skipped via seaql_migrations.
+.PHONY: migrate
+migrate:
+	@cargo run --release --bin migrate
+
 # Development server - kills any previous instances before starting
 .PHONY: dev
 dev: stop
