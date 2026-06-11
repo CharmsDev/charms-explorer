@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::time;
+use tokio_util::sync::CancellationToken;
 
 use crate::application::indexer::processor_trait::BlockchainProcessor;
 use crate::config::{AppConfig, NetworkId};
@@ -330,11 +331,22 @@ impl BlockchainProcessor for BitcoinProcessor {
         self.bitcoin_client.network_id()
     }
 
-    async fn start_processing(&mut self) -> Result<(), BlockProcessorError> {
+    async fn start_processing(
+        &mut self,
+        cancel: CancellationToken,
+    ) -> Result<(), BlockProcessorError> {
         self.process_pending_blocks_from_cache().await?;
         self.initialize_block_height().await;
 
         loop {
+            if cancel.is_cancelled() {
+                logging::log_info(&format!(
+                    "[{}] 🛑 BlockProcessor stopping (cancellation requested)",
+                    self.network_id().name
+                ));
+                return Ok(());
+            }
+
             if let Err(e) = self.process_available_blocks().await {
                 logging::log_error(&format!(
                     "[{}] ❌ Error processing blocks: {}.",
@@ -343,10 +355,10 @@ impl BlockchainProcessor for BitcoinProcessor {
                 ));
             }
 
-            time::sleep(Duration::from_millis(
-                self.config.indexer.process_interval_ms,
-            ))
-            .await;
+            tokio::select! {
+                _ = time::sleep(Duration::from_millis(self.config.indexer.process_interval_ms)) => {}
+                _ = cancel.cancelled() => return Ok(()),
+            }
         }
     }
 

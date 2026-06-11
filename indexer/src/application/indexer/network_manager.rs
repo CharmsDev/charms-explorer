@@ -242,14 +242,17 @@ impl NetworkManager {
         Ok(())
     }
 
-    /// Start a specific processor
+    /// Start a specific processor.
+    /// Hands the processor the shared cancellation token so a graceful
+    /// shutdown winds it down between block iterations.
     pub async fn start_processor(&mut self, network_key: &str) -> Result<(), BlockProcessorError> {
         if let Some(processor) = self.processors.get(network_key) {
             let processor_clone = processor.clone();
+            let cancel = self.shutdown.clone();
 
             let handle = tokio::spawn(async move {
                 let mut processor = processor_clone.lock().await;
-                processor.start_processing().await
+                processor.start_processing(cancel).await
             });
 
             self.tasks.insert(network_key.to_string(), handle);
@@ -263,16 +266,32 @@ impl NetworkManager {
         }
     }
 
-    /// Graceful shutdown: fire the cancellation token, await background
-    /// workers (mempool supervisors) until they wind down or the timeout
-    /// elapses, then abort any block-processor task that still hasn't
-    /// noticed (those don't observe the token yet).
+    /// Graceful shutdown: fire the cancellation token, await both block
+    /// processors and background workers (mempool supervisors) until they
+    /// wind down or the per-task timeout elapses, then abort anything that
+    /// did not honour the cancellation in time.
     pub async fn stop_all(&mut self) {
         const SHUTDOWN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
         self.shutdown.cancel();
         logging::log_info("Shutdown signalled, waiting for workers...");
 
+        // Block processors: they observe the token between cycles.
+        let tasks = std::mem::take(&mut self.tasks);
+        for (name, handle) in tasks {
+            match tokio::time::timeout(SHUTDOWN_TIMEOUT, handle).await {
+                Ok(Ok(Ok(()))) => {}
+                Ok(Ok(Err(e))) => {
+                    logging::log_warning(&format!("processor {name} exited with error: {e}"))
+                }
+                Ok(Err(e)) => logging::log_warning(&format!("processor {name} join error: {e}")),
+                Err(_) => {
+                    logging::log_warning(&format!("processor {name} did not stop in time; aborting"));
+                }
+            }
+        }
+
+        // Mempool supervisors (already cancellation-aware).
         let background = std::mem::take(&mut self.background_tasks);
         for handle in background {
             match tokio::time::timeout(SHUTDOWN_TIMEOUT, handle).await {
@@ -280,10 +299,6 @@ impl NetworkManager {
                 Ok(Err(e)) => logging::log_warning(&format!("background task join error: {e}")),
                 Err(_) => logging::log_warning("background task did not stop within timeout"),
             }
-        }
-
-        for (_, handle) in self.tasks.drain() {
-            handle.abort();
         }
 
         logging::log_info("All processors stopped");
