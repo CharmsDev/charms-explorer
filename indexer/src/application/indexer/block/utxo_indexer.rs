@@ -24,7 +24,7 @@ pub async fn register_charm_addresses(
 ) {
     let addresses: Vec<String> = charm_batch
         .iter()
-        .filter_map(|(_, _, _, _, _, _, _, address, _, _, _)| address.clone())
+        .filter_map(|c| c.address.clone())
         .filter(|addr| !addr.is_empty())
         .collect::<std::collections::HashSet<_>>()
         .into_iter()

@@ -217,7 +217,7 @@ impl BlockProcessor {
         );
         crate::utils::metrics::current_height(&network_id.name, height);
         for charm in &charm_batch {
-            crate::utils::metrics::charm_detected(&network_id.name, &charm.4);
+            crate::utils::metrics::charm_detected(&network_id.name, &charm.asset_type);
         }
 
         Ok(())

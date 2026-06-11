@@ -60,47 +60,42 @@ impl BatchProcessor {
             return Ok(());
         }
 
-        // Save charms (ON CONFLICT DO NOTHING handles duplicates)
+        // Compute stats_holders updates BEFORE consuming the batch.
+        // Safe: mempool never updates stats_holders, so there's no double-counting.
+        // For tokens (t/): use actual amount as balance delta.
+        // For NFTs   (n/): use 1 as balance delta (ownership count).
+        let holder_updates: Vec<(String, String, i64, i32)> = batch
+            .iter()
+            .filter_map(|c| {
+                let addr = c.address.as_ref()?;
+                if c.amount <= 0 || addr.is_empty() {
+                    return None;
+                }
+                if c.app_id.starts_with("t/") {
+                    Some((
+                        crate::domain::services::app_id::token_to_nft(&c.app_id),
+                        addr.clone(),
+                        c.amount,
+                        c.block_height as i32,
+                    ))
+                } else if c.app_id.starts_with("n/") {
+                    Some((c.app_id.clone(), addr.clone(), 1_i64, c.block_height as i32))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Save charms (ON CONFLICT DO NOTHING handles duplicates).
+        // Repos still consume the historical tuple shape; convert at the boundary.
+        let tuples: Vec<_> = batch.into_iter().map(CharmBatchItem::into_tuple).collect();
         let _inserted = self
             .charm_service
-            .save_batch(batch.clone())
+            .save_batch(tuples)
             .await
             .map_err(|e| {
                 BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e))
             })?;
-
-        // Update stats_holders for ALL charms in this block.
-        // Safe: mempool never updates stats_holders, so there's no double-counting.
-        // For tokens (t/): use actual amount as balance delta
-        // For NFTs (n/): use 1 as balance delta (ownership count)
-        let holder_updates: Vec<(String, String, i64, i32)> = batch
-            .iter()
-            .filter_map(
-                |(_, _, block_height, _, _, _, _, address, app_id, amount, _)| {
-                    if let Some(addr) = address {
-                        if *amount > 0 && !addr.is_empty() {
-                            if app_id.starts_with("t/") {
-                                let nft_app_id = crate::domain::services::app_id::token_to_nft(app_id);
-                                return Some((
-                                    nft_app_id,
-                                    addr.clone(),
-                                    *amount,
-                                    *block_height as i32,
-                                ));
-                            } else if app_id.starts_with("n/") {
-                                return Some((
-                                    app_id.clone(),
-                                    addr.clone(),
-                                    1_i64,
-                                    *block_height as i32,
-                                ));
-                            }
-                        }
-                    }
-                    None
-                },
-            )
-            .collect();
 
         if !holder_updates.is_empty() {
             if let Err(e) = self
@@ -199,20 +194,55 @@ pub type TransactionBatchItem = (
     Option<String>, // tx_type
 );
 
-/// Charm batch item for bulk operations
-pub type CharmBatchItem = (
-    String,         // txid
-    i32,            // vout
-    u64,            // height
-    Value,          // data
-    String,         // asset_type
-    String,         // blockchain
-    String,         // network
-    Option<String>, // address
-    String,         // app_id
-    i64,            // amount
-    Option<String>, // tags
-);
+/// Charm batch item for bulk operations.
+#[derive(Debug, Clone)]
+pub struct CharmBatchItem {
+    pub txid: String,
+    pub vout: i32,
+    pub block_height: u64,
+    pub data: Value,
+    pub asset_type: String,
+    pub blockchain: String,
+    pub network: String,
+    pub address: Option<String>,
+    pub app_id: String,
+    pub amount: i64,
+    pub tags: Option<String>,
+}
+
+impl CharmBatchItem {
+    /// Repos still consume the historical 11-tuple shape; this preserves
+    /// the wire format until they migrate too.
+    pub fn into_tuple(
+        self,
+    ) -> (
+        String,
+        i32,
+        u64,
+        Value,
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        i64,
+        Option<String>,
+    ) {
+        (
+            self.txid,
+            self.vout,
+            self.block_height,
+            self.data,
+            self.asset_type,
+            self.blockchain,
+            self.network,
+            self.address,
+            self.app_id,
+            self.amount,
+            self.tags,
+        )
+    }
+}
 
 /// Asset batch item for bulk operations
 pub type AssetBatchItem = (

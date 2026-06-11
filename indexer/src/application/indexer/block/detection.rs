@@ -210,19 +210,19 @@ pub async fn detect_charms(
                 .get(asset.vout_index as usize)
                 .and_then(|a| a.clone());
             let is_beamed_out = analyzed.beamed_out_indices.contains(&(asset.vout_index as usize));
-            charm_batch.push((
-                txid.clone(),
-                asset.vout_index,
-                height,
-                analyzed.charm_json.clone(),
-                asset.asset_type.clone(),
-                blockchain.to_string(),
-                network.to_string(),
+            charm_batch.push(CharmBatchItem {
+                txid: txid.clone(),
+                vout: asset.vout_index,
+                block_height: height,
+                data: analyzed.charm_json.clone(),
+                asset_type: asset.asset_type.clone(),
+                blockchain: blockchain.to_string(),
+                network: network.to_string(),
                 address,
-                asset.app_id.clone(),
-                if is_beamed_out { 0i64 } else { asset.amount as i64 },
-                analyzed.tags.clone(),
-            ));
+                app_id: asset.app_id.clone(),
+                amount: if is_beamed_out { 0i64 } else { asset.amount as i64 },
+                tags: analyzed.tags.clone(),
+            });
         }
 
         let asset_requests = build_asset_requests(

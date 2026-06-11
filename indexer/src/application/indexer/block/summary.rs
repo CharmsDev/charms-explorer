@@ -115,7 +115,7 @@ impl SummaryUpdater {
 fn calculate_asset_counts(charm_batch: &[CharmBatchItem]) -> AssetCounts {
     let mut counts = AssetCounts::default();
     for charm_item in charm_batch {
-        match charm_item.4.as_str() {
+        match charm_item.asset_type.as_str() {
             "nft" => counts.nft_count += 1,
             "token" => counts.token_count += 1,
             _ => counts.other_count += 1,
