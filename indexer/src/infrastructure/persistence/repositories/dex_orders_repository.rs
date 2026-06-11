@@ -21,6 +21,7 @@ impl DexOrdersRepository {
     }
 
     /// Save a DEX order
+    #[allow(clippy::too_many_arguments)]
     pub async fn save_order(
         &self,
         txid: &str,

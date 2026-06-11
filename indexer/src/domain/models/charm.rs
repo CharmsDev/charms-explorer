@@ -57,6 +57,7 @@ impl Charm {
     /// Creates a new Charm with specified parameters
     /// Updated: Removed charmid parameter, added app_id and amount
     /// Updated: block_height is now Option<u64>, added mempool_detected_at
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         txid: String,
         vout: i32,

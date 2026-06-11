@@ -15,6 +15,7 @@ use super::spent_tracker;
 
 /// Process a block from cached transactions in database (reindex mode).
 /// Uses data from transactions table instead of fetching from Bitcoin node.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_block_from_cache(
     height: u64,
     network_id: &NetworkId,

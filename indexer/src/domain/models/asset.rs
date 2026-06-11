@@ -40,6 +40,7 @@ pub struct Asset {
 
 impl Asset {
     /// Creates a new Asset with specified parameters
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         app_id: String,
         txid: String,
