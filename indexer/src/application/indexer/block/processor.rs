@@ -58,6 +58,11 @@ impl BlockProcessor {
     }
 
     /// Process a single block: detect → save → mark spent → update stats
+    #[tracing::instrument(
+        name = "block",
+        skip_all,
+        fields(network = %network_id.name, height),
+    )]
     pub async fn process_block(
         &self,
         height: u64,

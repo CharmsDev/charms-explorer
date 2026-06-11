@@ -70,9 +70,16 @@ impl MempoolProcessor {
 
     /// Main loop — polls mempool every POLL_INTERVAL_SECS until `cancel` fires.
     pub async fn run(&self, cancel: tokio_util::sync::CancellationToken) {
+        use tracing::Instrument;
+        self.run_inner(cancel)
+            .instrument(tracing::info_span!("mempool", network = %self.network_id.name))
+            .await
+    }
+
+    async fn run_inner(&self, cancel: tokio_util::sync::CancellationToken) {
         logging::log_info(&format!(
-            "[{}] 🔍 MempoolProcessor started (poll every {}s)",
-            self.network_id.name, POLL_INTERVAL_SECS
+            "🔍 MempoolProcessor started (poll every {}s)",
+            POLL_INTERVAL_SECS
         ));
 
         let mut cycle: u64 = 0;
@@ -115,8 +122,8 @@ impl MempoolProcessor {
             }
         }
         logging::log_info(&format!(
-            "[{}] 🛑 MempoolProcessor stopped after {} cycles",
-            self.network_id.name, cycle
+            "🛑 MempoolProcessor stopped after {} cycles",
+            cycle
         ));
     }
 
