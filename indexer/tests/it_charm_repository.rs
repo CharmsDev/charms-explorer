@@ -113,14 +113,22 @@ async fn has_beam_out_input_txid_detects_beam_out_tag() {
     .expect("save");
 
     assert!(repo
-        .has_beam_out_input_txid(&["beam_out_txid".to_string()])
+        .has_beam_out_input_txid(&["beam_out_txid".to_string()], "mainnet")
         .await
         .unwrap());
     assert!(!repo
-        .has_beam_out_input_txid(&["plain_txid".to_string()])
+        .has_beam_out_input_txid(&["plain_txid".to_string()], "mainnet")
         .await
         .unwrap());
-    assert!(!repo.has_beam_out_input_txid(&[]).await.unwrap());
+    assert!(!repo
+        .has_beam_out_input_txid(&[], "mainnet")
+        .await
+        .unwrap());
+    // Network isolation — same txid on another network must not match.
+    assert!(!repo
+        .has_beam_out_input_txid(&["beam_out_txid".to_string()], "testnet4")
+        .await
+        .unwrap());
 }
 
 /// Regression test for audit finding N5: `mark_charms_as_spent_batch` is now

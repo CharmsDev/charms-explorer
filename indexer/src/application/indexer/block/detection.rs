@@ -46,11 +46,12 @@ pub async fn detect_charms(
 
         // Detect ADA→BTC claims: spells that create tokens but have no beam marker.
         // Heuristic: users commonly fund the Bitcoin claim tx with outputs from their prior
-        // BTC→ADA beam-out. If any input txid is a known beam-out, classify as beam-in.
+        // BTC→ADA beam-out. If any input txid is a known beam-out on this network,
+        // classify as beam-in.
         if !analyzed.is_beaming && !analyzed.asset_infos.is_empty() {
             match charm_service
                 .get_charm_repository()
-                .has_beam_out_input_txid(&input_txids)
+                .has_beam_out_input_txid(&input_txids, network)
                 .await
             {
                 Ok(true) => {
