@@ -163,19 +163,42 @@ pub struct AssetInfo {
 fn extract_amount_from_charm_data(charm_data: &charms_data::Data) -> u64 {
     // Case 1: plain integer (simple token transfer)
     if let Ok(amount) = charm_data.value::<u64>() {
+        if amount > i64::MAX as u64 {
+            crate::utils::logging::log_warning(&format!(
+                "charm amount={} clipped to i64::MAX",
+                amount
+            ));
+        }
         return amount.min(i64::MAX as u64);
     }
     if let Ok(amount) = charm_data.value::<i64>() {
+        if amount < 0 {
+            crate::utils::logging::log_warning(&format!(
+                "charm amount={} is negative, treating as 0",
+                amount
+            ));
+        }
         return amount.max(0) as u64;
     }
 
     // Case 2: complex struct (DEX order, etc.) — deserialize to JSON and look for `amount`
     if let Ok(json_val) = charm_data.value::<serde_json::Value>() {
         if let Some(amount) = json_val.get("amount").and_then(|v| v.as_u64()) {
+            if amount > i64::MAX as u64 {
+                crate::utils::logging::log_warning(&format!(
+                    "charm amount={} (from json) clipped to i64::MAX",
+                    amount
+                ));
+            }
             return amount.min(i64::MAX as u64);
         }
     }
 
+    if !charm_data.is_empty() {
+        crate::utils::logging::log_warning(
+            "could not extract amount from charm data — defaulting to 0",
+        );
+    }
     0
 }
 

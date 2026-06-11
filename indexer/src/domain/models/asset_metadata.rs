@@ -96,6 +96,12 @@ impl AssetMetadata {
             metadata: &mut AssetMetadata,
         ) {
             if let Some(decimals) = obj.get("decimals").and_then(|v| v.as_u64()) {
+                if decimals > 18 {
+                    crate::utils::logging::log_warning(&format!(
+                        "asset metadata decimals={} capped to 18",
+                        decimals
+                    ));
+                }
                 metadata.decimals = decimals.min(18) as u8;
             }
             if metadata.name.is_none() {

@@ -47,6 +47,10 @@ pub async fn process_block_from_cache(
     for tx in &cached_txs {
         let tx_hex = tx.raw.get("hex").and_then(|v| v.as_str()).unwrap_or("");
         if tx_hex.is_empty() {
+            logging::log_warning(&format!(
+                "[{}] reindex skipped tx {} (missing raw hex)",
+                network, tx.txid
+            ));
             continue;
         }
 
