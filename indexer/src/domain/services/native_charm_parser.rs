@@ -193,6 +193,88 @@ fn determine_asset_type_from_app(app: &charms_data::App) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use charms_data::Data;
+
+    #[test]
+    fn amount_plain_u64() {
+        let d = Data::from(&42u64);
+        assert_eq!(extract_amount_from_charm_data(&d), 42);
+    }
+
+    #[test]
+    fn amount_plain_i64_positive() {
+        let d = Data::from(&100i64);
+        assert_eq!(extract_amount_from_charm_data(&d), 100);
+    }
+
+    #[test]
+    fn amount_negative_i64_clamps_to_zero() {
+        // Documents current behavior: negative amounts are silently clamped.
+        let d = Data::from(&-50i64);
+        assert_eq!(extract_amount_from_charm_data(&d), 0);
+    }
+
+    #[test]
+    fn amount_u64_above_i64_max_is_clipped() {
+        // Documents current behavior: large u64 is clipped to i64::MAX.
+        let d = Data::from(&(i64::MAX as u64 + 100));
+        assert_eq!(extract_amount_from_charm_data(&d), i64::MAX as u64);
+    }
+
+    #[test]
+    fn amount_object_with_amount_field() {
+        let d = Data::from(&serde_json::json!({"amount": 777, "extra": "ignored"}));
+        assert_eq!(extract_amount_from_charm_data(&d), 777);
+    }
+
+    #[test]
+    fn amount_object_without_amount_field_returns_zero() {
+        // Known issue B1: silent zero on missing field — kept as regression marker.
+        let d = Data::from(&serde_json::json!({"other": 1}));
+        assert_eq!(extract_amount_from_charm_data(&d), 0);
+    }
+
+    #[test]
+    fn amount_string_returns_zero() {
+        // Known issue B1: malformed charm data silently yields zero amount.
+        let d = Data::from(&"not a number");
+        assert_eq!(extract_amount_from_charm_data(&d), 0);
+    }
+
+    #[test]
+    fn amount_empty_data_returns_zero() {
+        assert_eq!(extract_amount_from_charm_data(&Data::empty()), 0);
+    }
+
+    #[test]
+    fn determine_asset_type_token() {
+        let app = charms_data::App {
+            tag: charms_data::TOKEN,
+            identity: charms_data::B32([0u8; 32]),
+            vk: charms_data::B32([0u8; 32]),
+        };
+        assert_eq!(determine_asset_type_from_app(&app), "token");
+    }
+
+    #[test]
+    fn determine_asset_type_nft() {
+        let app = charms_data::App {
+            tag: charms_data::NFT,
+            identity: charms_data::B32([0u8; 32]),
+            vk: charms_data::B32([0u8; 32]),
+        };
+        assert_eq!(determine_asset_type_from_app(&app), "nft");
+    }
+
+    #[test]
+    fn determine_asset_type_other() {
+        let app = charms_data::App {
+            tag: 'x',
+            identity: charms_data::B32([0u8; 32]),
+            vk: charms_data::B32([0u8; 32]),
+        };
+        assert_eq!(determine_asset_type_from_app(&app), "unknown");
+    }
 
     /// Regression test: real production tx 7269cf1b (V10, OP_RETURN, mock=false)
     /// was silently dropped by the mempool processor because extract_and_verify_charm(mock=true)
@@ -373,6 +455,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires manual fixture at /tmp/spell_tx.hex; run with --ignored"]
     fn test_extract_spell_97dc8dd9_from_file() {
         // Reads hex from /tmp/spell_tx.hex (run: curl mempool.space/api/tx/97dc8dd9.../hex > /tmp/spell_tx.hex)
         let tx_hex = std::fs::read_to_string("/tmp/spell_tx.hex")
