@@ -63,6 +63,16 @@ impl SummaryUpdater {
             .await
             .map_err(BlockProcessorError::DbError)?;
 
+        // Idempotency gate (audit N7): if the summary already advanced past
+        // this block, a re-processed run must not add the deltas a second
+        // time. Skip the entire update — bitcoin_node_* metadata will be
+        // refreshed by the next non-duplicate block.
+        if let Some(ref s) = current_summary {
+            if s.last_processed_block >= height as i32 {
+                return Ok(());
+            }
+        }
+
         let totals = calculate_totals(
             current_summary,
             charm_batch,
