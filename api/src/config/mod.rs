@@ -57,15 +57,17 @@ impl ApiConfig {
         let database_url =
             env::var("DATABASE_URL").expect("DATABASE_URL environment variable must be set");
 
-        // Network configuration
+        // Network configuration.
+        // Defaults: mainnet ON, testnet4 OFF. testnet4 code paths remain in
+        // the binary but require an explicit env override to activate.
         let enable_bitcoin_testnet4 = env::var("ENABLE_BITCOIN_TESTNET4")
-            .unwrap_or_else(|_| "true".to_string())
-            .parse::<bool>()
-            .unwrap_or(true);
-        let enable_bitcoin_mainnet = env::var("ENABLE_BITCOIN_MAINNET")
             .unwrap_or_else(|_| "false".to_string())
             .parse::<bool>()
             .unwrap_or(false);
+        let enable_bitcoin_mainnet = env::var("ENABLE_BITCOIN_MAINNET")
+            .unwrap_or_else(|_| "true".to_string())
+            .parse::<bool>()
+            .unwrap_or(true);
         let enable_cardano = env::var("ENABLE_CARDANO")
             .unwrap_or_else(|_| "false".to_string())
             .parse::<bool>()

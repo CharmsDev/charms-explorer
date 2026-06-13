@@ -148,11 +148,13 @@ impl AppConfig {
         // Create Bitcoin configurations map
         let mut bitcoin_configs = HashMap::new();
 
-        // Load Bitcoin testnet4 configuration if enabled
+        // Load Bitcoin testnet4 configuration if enabled.
+        // Default OFF: mainnet-only is the supported configuration; testnet4
+        // code paths are kept latent but require explicit opt-in.
         let enable_bitcoin_testnet4 = env::var("ENABLE_BITCOIN_TESTNET4")
-            .unwrap_or_else(|_| "true".to_string())
+            .unwrap_or_else(|_| "false".to_string())
             .parse::<bool>()
-            .unwrap_or(true);
+            .unwrap_or(false);
 
         if enable_bitcoin_testnet4 {
             let provider_type = ProviderType::parse(
@@ -182,11 +184,12 @@ impl AppConfig {
             );
         }
 
-        // Load Bitcoin mainnet configuration if enabled
+        // Load Bitcoin mainnet configuration if enabled. Default ON: this is
+        // the supported configuration for the production indexer.
         let enable_bitcoin_mainnet = env::var("ENABLE_BITCOIN_MAINNET")
-            .unwrap_or_else(|_| "false".to_string())
+            .unwrap_or_else(|_| "true".to_string())
             .parse::<bool>()
-            .unwrap_or(false);
+            .unwrap_or(true);
 
         if enable_bitcoin_mainnet {
             let provider_type = ProviderType::parse(
