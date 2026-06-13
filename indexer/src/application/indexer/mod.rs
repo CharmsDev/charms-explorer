@@ -1,7 +1,6 @@
 //! Production Indexer Module
 //!
 //! Real-time blockchain indexing for new blocks and mempool.
-//! For historical reindexing, see `application::reindexer`.
 
 pub mod block;
 pub mod mempool;

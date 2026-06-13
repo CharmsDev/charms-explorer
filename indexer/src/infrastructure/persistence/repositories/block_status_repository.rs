@@ -3,8 +3,7 @@
 
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use std::fmt;
 
@@ -34,25 +33,6 @@ impl BlockStatusRepository {
     /// Borrow the underlying connection (used by the reorg recovery path).
     pub fn get_connection(&self) -> DatabaseConnection {
         self.conn.clone()
-    }
-
-    /// Get pending blocks (downloaded but not processed)
-    pub async fn get_pending_blocks(
-        &self,
-        network_id: &NetworkId,
-        limit: u64,
-    ) -> Result<Vec<i32>, DbError> {
-        let results = block_status::Entity::find()
-            .filter(block_status::Column::Network.eq(network_id.name.clone()))
-            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
-            .filter(block_status::Column::Downloaded.eq(true))
-            .filter(block_status::Column::Processed.eq(false))
-            .order_by_asc(block_status::Column::BlockHeight)
-            .limit(limit)
-            .all(&self.conn)
-            .await?;
-
-        Ok(results.into_iter().map(|b| b.block_height).collect())
     }
 
     /// Get the highest processed block height

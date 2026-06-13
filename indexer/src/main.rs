@@ -1,7 +1,6 @@
 //! Charms Indexer - Bitcoin blockchain indexer for Charms protocol
 //!
-//! Unified indexer that handles both live indexing and reindexing from cached data.
-//! Uses block_status table to track downloaded/processed state.
+//! Live indexer. Uses block_status to track downloaded/processed state.
 //!
 //! ## Usage
 //!

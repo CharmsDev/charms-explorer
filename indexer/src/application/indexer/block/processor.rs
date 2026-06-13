@@ -242,22 +242,4 @@ impl BlockProcessor {
         Ok(())
     }
 
-    /// Process a block from cached transactions (reindex mode)
-    pub async fn process_block_from_cache(
-        &self,
-        height: u64,
-        network_id: &NetworkId,
-    ) -> Result<(), BlockProcessorError> {
-        super::reindex::process_block_from_cache(
-            height,
-            network_id,
-            &self.bitcoin_client,
-            &self.charm_service,
-            &self.transaction_repository,
-            &self.block_status_repository,
-            &self.monitored_addresses_repository,
-            &self.retry_handler,
-        )
-        .await
-    }
 }

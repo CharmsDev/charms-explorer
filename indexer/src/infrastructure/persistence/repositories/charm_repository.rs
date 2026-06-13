@@ -314,8 +314,8 @@ impl CharmRepository {
             .unwrap_or(false))
     }
 
-    /// Get unspent charms by block height and network
-    /// Returns (app_id, address, amount) for stats_holders updates during reindex
+    /// Get unspent charms by block height and network.
+    /// Returns (app_id, address, amount) for stats_holders updates.
     pub async fn get_unspent_charms_by_block(
         &self,
         block_height: i32,

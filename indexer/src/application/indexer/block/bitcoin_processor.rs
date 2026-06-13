@@ -1,5 +1,5 @@
-//! Top-level Bitcoin block processor: owns the main loop (live + reindex)
-//! and delegates per-block work to `BlockProcessor`.
+//! Top-level Bitcoin block processor: owns the live loop and delegates
+//! per-block work to `BlockProcessor`.
 
 use std::time::Duration;
 
@@ -17,7 +17,7 @@ use crate::utils::logging;
 
 use super::processor::BlockProcessor;
 
-/// Top-level processor: handles the block processing loop (live + reindex).
+/// Top-level processor: handles the live block processing loop.
 #[derive(Debug)]
 pub struct BitcoinProcessor {
     bitcoin_client: BitcoinClient,
@@ -96,76 +96,6 @@ impl BitcoinProcessor {
         }
     }
 
-    /// Process pending blocks from cache (reindex mode).
-    pub async fn process_pending_blocks_from_cache(&self) -> Result<(), BlockProcessorError> {
-        let mut total_processed: usize = 0;
-
-        loop {
-            let pending_blocks = self
-                .repos.block_status
-                .get_pending_blocks(self.network_id(), 10000)
-                .await
-                .map_err(|e| BlockProcessorError::ProcessingError(format!("DB error: {}", e)))?;
-
-            if pending_blocks.is_empty() {
-                if total_processed == 0 {
-                    logging::log_info(&format!(
-                        "[{}] ✅ No pending blocks to reindex",
-                        self.network_id().name
-                    ));
-                } else {
-                    logging::log_info(&format!(
-                        "[{}] ✅ Reindex complete: {} total blocks processed",
-                        self.network_id().name,
-                        total_processed
-                    ));
-                }
-                return Ok(());
-            }
-
-            let batch_size = pending_blocks.len();
-            logging::log_info(&format!(
-                "[{}] ♻️ Starting reindex batch of {} pending blocks (total so far: {})",
-                self.network_id().name,
-                batch_size,
-                total_processed
-            ));
-
-            for (i, height) in pending_blocks.iter().enumerate() {
-                let bp = self.create_block_processor();
-                if let Err(e) = bp
-                    .process_block_from_cache(*height as u64, self.network_id())
-                    .await
-                {
-                    logging::log_error(&format!(
-                        "[{}] ❌ Error reindexing block {}: {}",
-                        self.network_id().name,
-                        height,
-                        e
-                    ));
-                }
-
-                if (i + 1) % 100 == 0 {
-                    logging::log_info(&format!(
-                        "[{}] ♻️ Reindex progress: {}/{} blocks, {} total — height: {}",
-                        self.network_id().name,
-                        i + 1,
-                        batch_size,
-                        total_processed + i + 1,
-                        height
-                    ));
-                }
-            }
-
-            total_processed += batch_size;
-            logging::log_info(&format!(
-                "[{}] ✅ Batch complete: {} blocks, {} total processed",
-                self.network_id().name,
-                batch_size,
-                total_processed
-            ));
-        }
-    }
 
     pub async fn process_available_blocks(&mut self) -> Result<(), BlockProcessorError> {
         let latest_height = self.bitcoin_client.get_block_count().await.map_err(|e| {
@@ -265,7 +195,7 @@ impl BitcoinProcessor {
     }
 
     /// Retroactively confirm blocks with 6+ confirmations.
-    /// Issues a single batch UPDATE so a long backlog (e.g. after a reindex)
+    /// Issues a single batch UPDATE so a long backlog of unconfirmed blocks
     /// doesn't fan out into thousands of individual queries (audit N13).
     async fn confirm_pending_blocks(&self, latest_height: u64) {
         let unconfirmed = match self
@@ -322,7 +252,6 @@ impl BlockchainProcessor for BitcoinProcessor {
         &mut self,
         cancel: CancellationToken,
     ) -> Result<(), BlockProcessorError> {
-        self.process_pending_blocks_from_cache().await?;
         self.initialize_block_height().await;
 
         loop {

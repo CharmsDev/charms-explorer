@@ -1,7 +1,7 @@
 //! Unified transaction analyzer — single source of truth for charm detection.
 //!
-//! All code paths (block processing, mempool, reindex) use this module
-//! to parse a raw transaction hex and extract charm/spell/DEX data.
+//! All code paths (block processing, mempool) use this module to parse a
+//! raw transaction hex and extract charm/spell/DEX data.
 //! No persistence happens here — callers decide how to save.
 
 use serde_json::{json, Value};
