@@ -18,6 +18,7 @@ pub mod detection;
 pub mod mempool_consolidator;
 pub mod processor;
 pub mod reindex;
+pub mod reorg;
 pub mod retry;
 pub mod spent_tracker;
 pub mod summary;

@@ -94,3 +94,9 @@ pub fn mempool_eviction(network: &str) {
     metrics::counter!("indexer_mempool_evictions_total", "network" => network.to_string())
         .increment(1);
 }
+
+/// Record a chain reorg detected by the block processor.
+pub fn reorg_detected(network: &str, depth: u64) {
+    metrics::counter!("indexer_reorgs_total", "network" => network.to_string()).increment(1);
+    metrics::histogram!("indexer_reorg_depth", "network" => network.to_string()).record(depth as f64);
+}

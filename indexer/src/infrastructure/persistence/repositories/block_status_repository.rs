@@ -31,6 +31,11 @@ impl BlockStatusRepository {
         Self { conn }
     }
 
+    /// Borrow the underlying connection (used by the reorg recovery path).
+    pub fn get_connection(&self) -> DatabaseConnection {
+        self.conn.clone()
+    }
+
     /// Get pending blocks (downloaded but not processed)
     pub async fn get_pending_blocks(
         &self,
