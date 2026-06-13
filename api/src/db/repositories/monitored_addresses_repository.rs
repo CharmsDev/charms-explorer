@@ -41,6 +41,7 @@ impl MonitoredAddressesRepository {
         address: &str,
         network: &str,
         seed_height: i32,
+        seed_block_hash: Option<&str>,
     ) -> Result<bool, String> {
         let now = chrono::Utc::now();
         let model = monitored_addresses::ActiveModel {
@@ -49,6 +50,7 @@ impl MonitoredAddressesRepository {
             source: Set("api".to_string()),
             seeded_at: Set(Some(now)),
             seed_height: Set(Some(seed_height)),
+            seed_block_hash: Set(seed_block_hash.map(|s| s.to_string())),
             created_at: Set(now),
         };
 
@@ -61,6 +63,7 @@ impl MonitoredAddressesRepository {
                 .update_columns([
                     monitored_addresses::Column::SeededAt,
                     monitored_addresses::Column::SeedHeight,
+                    monitored_addresses::Column::SeedBlockHash,
                 ])
                 .to_owned(),
             )
@@ -74,9 +77,18 @@ impl MonitoredAddressesRepository {
         }
     }
 
-    /// Check if an address is monitored AND has been seeded with UTXOs.
-    /// Returns false if the address is not monitored or if seeded_at is NULL
-    /// (registered by indexer/backfill but never had BTC UTXOs fetched).
+    /// Check if an address is monitored AND has been seeded with UTXOs AND
+    /// the seed cursor is still consistent with the indexer's chain view.
+    ///
+    /// Returns false in any of these cases:
+    /// - address not monitored
+    /// - `seeded_at IS NULL` (indexer/backfill row, no UTXOs fetched yet)
+    /// - `seed_block_hash` is set but does NOT match the indexer's stored
+    ///   `block_status.block_hash` at `seed_height` — a reorg between the
+    ///   seed and the first indexed block invalidated the snapshot.
+    ///
+    /// Returning false in the mismatch case forces the caller to re-seed,
+    /// closing the Maestro↔node handoff gap.
     pub async fn is_seeded(&self, address: &str, network: &str) -> Result<bool, String> {
         let result = monitored_addresses::Entity::find()
             .filter(monitored_addresses::Column::Address.eq(address))
@@ -85,9 +97,52 @@ impl MonitoredAddressesRepository {
             .await
             .map_err(|e| format!("DB query failed: {}", e))?;
 
-        match result {
-            Some(model) => Ok(model.seeded_at.is_some()),
-            None => Ok(false),
+        let Some(model) = result else {
+            return Ok(false);
+        };
+        if model.seeded_at.is_none() {
+            return Ok(false);
+        }
+
+        // Legacy rows (no hash captured) are assumed valid.
+        let (Some(expected_hash), Some(height)) = (&model.seed_block_hash, model.seed_height)
+        else {
+            return Ok(true);
+        };
+
+        self.seed_cursor_matches(network, height, expected_hash).await
+    }
+
+    /// Verify that the seed cursor still matches the indexer's view.
+    /// Returns true when:
+    /// - the indexer hasn't reached `height` yet (no `block_status` row), OR
+    /// - the indexer's stored block_hash equals `expected_hash`.
+    async fn seed_cursor_matches(
+        &self,
+        network: &str,
+        height: i32,
+        expected_hash: &str,
+    ) -> Result<bool, String> {
+        use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement};
+
+        #[derive(FromQueryResult)]
+        struct Row {
+            block_hash: Option<String>,
+        }
+
+        let row = Row::find_by_statement(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT block_hash FROM block_status \
+             WHERE block_height = $1 AND network = $2 LIMIT 1",
+            [height.into(), network.into()],
+        ))
+        .one(&self.conn)
+        .await
+        .map_err(|e| format!("seed cursor lookup: {}", e))?;
+
+        match row.and_then(|r| r.block_hash) {
+            Some(stored) => Ok(stored == expected_hash),
+            None => Ok(true),
         }
     }
 

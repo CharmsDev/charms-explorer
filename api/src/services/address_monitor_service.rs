@@ -84,27 +84,18 @@ impl AddressMonitorService {
             ).await
         };
 
-        // 6. Get current chain height for seed_height
-        let seed_height = if !maestro_api_key.is_empty() {
-            match maestro_service::get_chain_tip(http_client, maestro_api_key).await {
-                Ok(tip) => tip.height as i32,
-                Err(_) => {
-                    match WalletService::get_chain_tip_quicknode(http_client, quicknode_url).await {
-                        Ok(tip) => tip.height as i32,
-                        Err(_) => 0,
-                    }
-                }
-            }
-        } else {
-            match WalletService::get_chain_tip_quicknode(http_client, quicknode_url).await {
-                Ok(tip) => tip.height as i32,
-                Err(_) => 0,
-            }
-        };
+        // 6. Capture chain tip (height + hash) — used as the hand-off cursor
+        // so the indexer can validate continuity once it takes over.
+        let (seed_height, seed_block_hash) = Self::capture_tip(
+            http_client,
+            maestro_api_key,
+            quicknode_url,
+        )
+        .await;
 
         // 7. Register the address as monitored
         let _ = monitored_repo
-            .register_seeded(address, network, seed_height)
+            .register_seeded(address, network, seed_height, seed_block_hash.as_deref())
             .await;
 
         // 8. Release advisory lock
@@ -131,6 +122,30 @@ impl AddressMonitorService {
                 Ok(false)
             }
         }
+    }
+
+    /// Capture chain tip from Maestro (preferred) → QuickNode (fallback).
+    /// Returns `(height, Some(hash))` on success, `(0, None)` if both fail.
+    /// The hash is the cursor used by the indexer to validate handoff
+    /// continuity — without it we cannot detect a reorg that happened
+    /// between the seed and the first indexed block.
+    async fn capture_tip(
+        http_client: &reqwest::Client,
+        maestro_api_key: &str,
+        quicknode_url: &str,
+    ) -> (i32, Option<String>) {
+        if !maestro_api_key.is_empty() {
+            if let Ok(tip) = maestro_service::get_chain_tip(http_client, maestro_api_key).await {
+                return (tip.height as i32, Some(tip.hash));
+            }
+        }
+        if !quicknode_url.is_empty() {
+            if let Ok(tip) = WalletService::get_chain_tip_quicknode(http_client, quicknode_url).await
+            {
+                return (tip.height as i32, Some(tip.hash));
+            }
+        }
+        (0, None)
     }
 
     /// Fetch UTXOs and tx history from Maestro and insert into DB tables.

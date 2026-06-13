@@ -15,6 +15,8 @@ pub struct Model {
     pub seeded_at: Option<DateTime<Utc>>,
     #[sea_orm(nullable)]
     pub seed_height: Option<i32>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub seed_block_hash: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
