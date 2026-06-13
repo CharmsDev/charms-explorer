@@ -82,10 +82,16 @@ yarn-error.log*
 /indexer/target
 /webapp/.vercel
 /_bkp
+/.bkp/
 indexer/pid.txt
 indexer/.indexer.pid
 /api/_bkp
 /tmp/
+
+# Coverage / local audit artifacts (kept local, not part of public repo)
+indexer/COVERAGE.md
+**/coverage/
+target/llvm-cov*
 
 # Project-specific directories to ignore
 **/_rjj/
