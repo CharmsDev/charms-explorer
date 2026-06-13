@@ -45,6 +45,10 @@ const MIGRATIONS: &[(&str, &str)] = &[
             "../../../database/migrations/m20260611_000001_stats_holders_network_column.sql"
         ),
     ),
+    (
+        "m20260613_000001_mainnet_readiness",
+        include_str!("../../../database/migrations/m20260613_000001_mainnet_readiness.sql"),
+    ),
 ];
 
 #[tokio::main]

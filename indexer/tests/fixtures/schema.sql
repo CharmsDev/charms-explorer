@@ -110,6 +110,7 @@ CREATE TABLE address_utxos (
     value         BIGINT  NOT NULL,
     script_pubkey TEXT    NOT NULL DEFAULT '',
     block_height  INTEGER,
+    source        TEXT    CHECK (source IS NULL OR source IN ('maestro', 'node', 'backfill')),
     PRIMARY KEY (txid, vout, network)
 );
 
@@ -127,19 +128,20 @@ CREATE TABLE address_transactions (
 );
 
 CREATE TABLE block_status (
-    block_height   INTEGER     NOT NULL,
-    network        TEXT        NOT NULL,
-    blockchain     TEXT        NOT NULL,
-    downloaded     BOOLEAN     NOT NULL DEFAULT FALSE,
-    processed      BOOLEAN     NOT NULL DEFAULT FALSE,
-    confirmed      BOOLEAN     NOT NULL DEFAULT FALSE,
-    block_hash     TEXT,
-    tx_count       INTEGER,
-    charm_count    INTEGER,
-    downloaded_at  TIMESTAMPTZ,
-    processed_at   TIMESTAMPTZ,
-    created_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    block_height          INTEGER     NOT NULL,
+    network               TEXT        NOT NULL,
+    blockchain            TEXT        NOT NULL,
+    downloaded            BOOLEAN     NOT NULL DEFAULT FALSE,
+    processed             BOOLEAN     NOT NULL DEFAULT FALSE,
+    confirmed             BOOLEAN     NOT NULL DEFAULT FALSE,
+    block_hash            TEXT        NOT NULL DEFAULT 'unknown',
+    previous_block_hash   TEXT,
+    tx_count              INTEGER,
+    charm_count           INTEGER,
+    downloaded_at         TIMESTAMPTZ,
+    processed_at          TIMESTAMPTZ,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (block_height, network, blockchain)
 );
 
@@ -178,11 +180,34 @@ CREATE TABLE mempool_spends (
 );
 
 CREATE TABLE monitored_addresses (
+    address          TEXT        NOT NULL,
+    network          TEXT        NOT NULL,
+    source           TEXT        NOT NULL,
+    seeded_at        TIMESTAMPTZ,
+    seed_height      INTEGER,
+    seed_block_hash  TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (address, network)
+);
+
+CREATE TABLE reorg_events (
+    id            SERIAL      PRIMARY KEY,
+    network       TEXT        NOT NULL,
+    from_height   INTEGER     NOT NULL,
+    depth         INTEGER     NOT NULL,
+    detected_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    recovered_at  TIMESTAMPTZ
+);
+
+CREATE TABLE sync_discrepancies (
+    id           SERIAL      PRIMARY KEY,
     address      TEXT        NOT NULL,
     network      TEXT        NOT NULL,
-    source       TEXT        NOT NULL,
-    seeded_at    TIMESTAMPTZ,
-    seed_height  INTEGER,
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (address, network)
+    txid         TEXT        NOT NULL,
+    vout         INTEGER     NOT NULL,
+    source_a     TEXT        NOT NULL,
+    source_b     TEXT        NOT NULL,
+    value_a      BIGINT,
+    value_b      BIGINT,
+    detected_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
