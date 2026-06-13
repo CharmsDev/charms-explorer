@@ -180,6 +180,7 @@ impl BlockProcessor {
             .mark_downloaded(
                 height as i32,
                 Some(&block_hash.to_string()),
+                Some(&block.header.prev_blockhash.to_string()),
                 block.txdata.len() as i32,
                 network_id,
             )

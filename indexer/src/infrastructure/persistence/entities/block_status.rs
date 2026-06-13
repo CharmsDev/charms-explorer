@@ -18,6 +18,8 @@ pub struct Model {
     pub confirmed: bool,
     #[sea_orm(column_type = "Text", nullable)]
     pub block_hash: Option<String>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub previous_block_hash: Option<String>,
     pub tx_count: Option<i32>,
     pub charm_count: Option<i32>,
     #[sea_orm(column_type = "TimestampWithTimeZone", nullable)]

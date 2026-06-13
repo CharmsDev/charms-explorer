@@ -71,12 +71,12 @@ impl BlockStatusRepository {
         &self,
         block_height: i32,
         block_hash: Option<&str>,
+        previous_block_hash: Option<&str>,
         tx_count: i32,
         network_id: &NetworkId,
     ) -> Result<(), DbError> {
         let now = Utc::now();
 
-        // Try to find existing record
         let existing = block_status::Entity::find()
             .filter(block_status::Column::BlockHeight.eq(block_height))
             .filter(block_status::Column::Network.eq(network_id.name.clone()))
@@ -85,24 +85,24 @@ impl BlockStatusRepository {
             .await?;
 
         if let Some(model) = existing {
-            // Update existing record
             let mut update_model: block_status::ActiveModel = model.into();
             update_model.downloaded = Set(true);
             update_model.block_hash = Set(block_hash.map(|s| s.to_string()));
+            update_model.previous_block_hash = Set(previous_block_hash.map(|s| s.to_string()));
             update_model.tx_count = Set(Some(tx_count));
             update_model.downloaded_at = Set(Some(now.into()));
             update_model.updated_at = Set(now.into());
             update_model.update(&self.conn).await?;
         } else {
-            // Insert new record
             let new_record = block_status::ActiveModel {
                 block_height: Set(block_height),
                 network: Set(network_id.name.clone()),
                 blockchain: Set(network_id.blockchain_type()),
                 downloaded: Set(true),
                 processed: Set(false),
-                confirmed: Set(false), // Will be updated when block is confirmed
+                confirmed: Set(false),
                 block_hash: Set(block_hash.map(|s| s.to_string())),
+                previous_block_hash: Set(previous_block_hash.map(|s| s.to_string())),
                 tx_count: Set(Some(tx_count)),
                 charm_count: Set(None),
                 downloaded_at: Set(Some(now.into())),
@@ -114,6 +114,37 @@ impl BlockStatusRepository {
         }
 
         Ok(())
+    }
+
+    /// Get the stored hash for a height/network (returns None if not downloaded yet).
+    pub async fn get_block_hash(
+        &self,
+        block_height: i32,
+        network_id: &NetworkId,
+    ) -> Result<Option<String>, DbError> {
+        let row = block_status::Entity::find()
+            .filter(block_status::Column::BlockHeight.eq(block_height))
+            .filter(block_status::Column::Network.eq(network_id.name.clone()))
+            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
+            .one(&self.conn)
+            .await?;
+        Ok(row.and_then(|r| r.block_hash))
+    }
+
+    /// Delete all block_status rows above `height` for `network_id`.
+    /// Used by the reorg recovery path.
+    pub async fn delete_above(
+        &self,
+        height: i32,
+        network_id: &NetworkId,
+    ) -> Result<u64, DbError> {
+        let result = block_status::Entity::delete_many()
+            .filter(block_status::Column::BlockHeight.gt(height))
+            .filter(block_status::Column::Network.eq(network_id.name.clone()))
+            .filter(block_status::Column::Blockchain.eq(network_id.blockchain_type()))
+            .exec(&self.conn)
+            .await?;
+        Ok(result.rows_affected)
     }
 
     /// Mark a block as processed

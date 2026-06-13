@@ -9,6 +9,7 @@ pub mod charms;
 pub mod dex_orders;
 pub mod mempool_spends; // Tracks UTXOs spent by unconfirmed txs
 pub mod monitored_addresses;
+pub mod reorg_events;
 pub mod spells; // New spells entity
 pub mod stats_holders; //
 pub mod summary;

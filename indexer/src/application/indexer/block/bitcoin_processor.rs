@@ -223,7 +223,13 @@ impl BitcoinProcessor {
 
                         let _ = self
                             .repos.block_status
-                            .mark_downloaded(self.current_height as i32, None, 0, self.network_id())
+                            .mark_downloaded(
+                                self.current_height as i32,
+                                None,
+                                None,
+                                0,
+                                self.network_id(),
+                            )
                             .await;
                         let _ = self
                             .repos.block_status

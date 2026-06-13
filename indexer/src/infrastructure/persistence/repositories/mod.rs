@@ -6,6 +6,7 @@ pub mod charm_repository;
 pub mod dex_orders_repository;
 pub mod mempool_spends_repository;
 pub mod monitored_addresses_repository;
+pub mod reorg_events_repository;
 pub mod stats_holders_repository;
 pub mod summary_repository;
 pub mod transaction_repository;
@@ -18,6 +19,7 @@ pub use charm_repository::CharmRepository;
 pub use dex_orders_repository::DexOrdersRepository;
 pub use mempool_spends_repository::MempoolSpendsRepository;
 pub use monitored_addresses_repository::MonitoredAddressesRepository;
+pub use reorg_events_repository::ReorgEventsRepository;
 pub use stats_holders_repository::StatsHoldersRepository;
 pub use summary_repository::SummaryRepository;
 pub use transaction_repository::TransactionRepository;
@@ -39,6 +41,7 @@ pub struct Repositories {
     pub utxo: UtxoRepository,
     pub monitored_addresses: MonitoredAddressesRepository,
     pub mempool_spends: MempoolSpendsRepository,
+    pub reorg_events: ReorgEventsRepository,
 }
 
 impl Repositories {
@@ -55,7 +58,8 @@ impl Repositories {
             transaction: TransactionRepository::new(conn.clone()),
             utxo: UtxoRepository::new(conn.clone()),
             monitored_addresses: MonitoredAddressesRepository::new(conn.clone()),
-            mempool_spends: MempoolSpendsRepository::new(conn),
+            mempool_spends: MempoolSpendsRepository::new(conn.clone()),
+            reorg_events: ReorgEventsRepository::new(conn),
         }
     }
 }
