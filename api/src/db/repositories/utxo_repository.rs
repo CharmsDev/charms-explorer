@@ -8,7 +8,11 @@ use sea_orm::{
 
 use crate::entity::address_utxos;
 
-/// A single UTXO to be inserted (used by on-demand seeding)
+/// A single UTXO to be inserted (used by on-demand seeding).
+/// `source` is the provenance label written to `address_utxos.source`.
+/// API seeding always writes `maestro` (regardless of which external
+/// provider supplied the data); the indexer writes `node` and takes
+/// precedence on conflict.
 pub struct UtxoInsert {
     pub txid: String,
     pub vout: i32,
@@ -17,6 +21,7 @@ pub struct UtxoInsert {
     pub script_pubkey: String,
     pub block_height: i32,
     pub network: String,
+    pub source: String,
 }
 
 /// Repository for the address_utxos table
@@ -64,6 +69,7 @@ impl UtxoRepository {
                     value: Set(u.value),
                     script_pubkey: Set(u.script_pubkey.clone()),
                     block_height: Set(u.block_height),
+                    source: Set(Some(u.source.clone())),
                 })
                 .collect();
 

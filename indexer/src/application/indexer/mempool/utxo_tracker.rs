@@ -88,6 +88,7 @@ pub async fn track_mempool_utxos(
                     script_pubkey: format!("{:x}", output.script_pubkey),
                     block_height: 0, // 0 = unconfirmed/mempool
                     network: network.to_string(),
+                    source: "node".to_string(),
                 });
             }
         }

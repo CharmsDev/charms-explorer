@@ -172,6 +172,7 @@ impl AddressMonitorService {
                     script_pubkey: u.script_pubkey.clone(),
                     block_height: 0,
                     network: network.to_string(),
+                    source: "maestro".to_string(),
                 })
                 .collect();
             let count = inserts.len();
@@ -235,6 +236,7 @@ impl AddressMonitorService {
                     script_pubkey: u.script_pubkey.clone(),
                     block_height: 0,
                     network: network.to_string(),
+                    source: "maestro".to_string(),
                 })
                 .collect();
             let count = inserts.len();

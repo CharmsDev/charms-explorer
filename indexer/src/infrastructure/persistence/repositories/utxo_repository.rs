@@ -16,7 +16,10 @@ impl fmt::Debug for UtxoRepository {
     }
 }
 
-/// A single UTXO to be inserted
+/// A single UTXO to be inserted.
+/// `source` is the provenance label persisted in `address_utxos.source`
+/// (one of `node`, `maestro`, `backfill`). The indexer always writes
+/// `node` and overrides snapshots from external providers.
 #[derive(Debug, Clone)]
 pub struct UtxoInsert {
     pub txid: String,
@@ -26,6 +29,7 @@ pub struct UtxoInsert {
     pub script_pubkey: String,
     pub block_height: i32,
     pub network: String,
+    pub source: String,
 }
 
 impl UtxoRepository {
@@ -47,7 +51,7 @@ impl UtxoRepository {
                 .iter()
                 .map(|u| {
                     format!(
-                        "('{}', {}, '{}', '{}', {}, '{}', {})",
+                        "('{}', {}, '{}', '{}', {}, '{}', {}, '{}')",
                         u.txid.replace('\'', "''"),
                         u.vout,
                         u.network.replace('\'', "''"),
@@ -55,12 +59,23 @@ impl UtxoRepository {
                         u.value,
                         u.script_pubkey.replace('\'', "''"),
                         u.block_height,
+                        u.source.replace('\'', "''"),
                     )
                 })
                 .collect();
 
+            // Indexer is authoritative: overwrite external snapshots
+            // (source != 'node') with the on-chain value.
             let sql = format!(
-                "INSERT INTO address_utxos (txid, vout, network, address, value, script_pubkey, block_height) VALUES {} ON CONFLICT (txid, vout, network) DO NOTHING",
+                "INSERT INTO address_utxos (txid, vout, network, address, value, script_pubkey, block_height, source) \
+                 VALUES {} \
+                 ON CONFLICT (txid, vout, network) DO UPDATE SET \
+                   address = EXCLUDED.address, \
+                   value = EXCLUDED.value, \
+                   script_pubkey = EXCLUDED.script_pubkey, \
+                   block_height = EXCLUDED.block_height, \
+                   source = EXCLUDED.source \
+                 WHERE address_utxos.source IS DISTINCT FROM 'node'",
                 values.join(", ")
             );
 

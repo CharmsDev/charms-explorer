@@ -124,6 +124,7 @@ pub async fn update_monitored_utxos(
                         script_pubkey: format!("{:x}", output.script_pubkey),
                         block_height: height as i32,
                         network: network_str.clone(),
+                        source: "node".to_string(),
                     });
                 }
             }
