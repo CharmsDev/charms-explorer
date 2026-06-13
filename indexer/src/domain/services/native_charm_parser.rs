@@ -15,11 +15,18 @@ use charms_client::{V7, V10};
 pub struct NativeCharmParser;
 
 impl NativeCharmParser {
-    /// Spell verification key for CURRENT_VERSION (V14)
+    /// Spell verification key for CURRENT_VERSION (V15).
     /// Source: charms-lib SPELL_VK constant
-    /// The library uses this for CURRENT_VERSION and falls back to hardcoded VKs for older versions
-    pub const SPELL_VK: &'static str =
-        "0x001a2396afb7e376736d9cf82d33c0dec55cb66866bf7f141fdaa92ab70a0506";
+    /// (`00425796f4c4fa050043eee14d801b4f935244e44aad6a28de0cd5cb3de0ae52`).
+    /// charms-client::spell_vk() uses this only when spell.version == CURRENT_VERSION;
+    /// for older versions it dispatches to the hardcoded VxN_SPELL_VK constants
+    /// in charms-client.
+    pub const SPELL_VK: [u8; 32] = [
+        0x00, 0x42, 0x57, 0x96, 0xf4, 0xc4, 0xfa, 0x05,
+        0x00, 0x43, 0xee, 0xe1, 0x4d, 0x80, 0x1b, 0x4f,
+        0x93, 0x52, 0x44, 0xe4, 0x4a, 0xad, 0x6a, 0x28,
+        0xde, 0x0c, 0xd5, 0xcb, 0x3d, 0xe0, 0xae, 0x52,
+    ];
 
     /// Extract and verify a charm from a transaction hex string
     ///
@@ -36,7 +43,7 @@ impl NativeCharmParser {
         let tx: Tx = tx_hex.try_into()?;
 
         // Extract and verify spell using the EnchantedTx trait method
-        let normalized_spell = tx.extract_and_verify_spell(Self::SPELL_VK, mock)?;
+        let normalized_spell = tx.extract_and_verify_spell(&Self::SPELL_VK, mock)?;
 
         Ok(normalized_spell)
     }
@@ -333,9 +340,9 @@ mod tests {
 
     #[test]
     fn test_spell_vk_constant() {
-        // SPELL_VK is the only runtime check that this constant is wired up
-        // correctly — the prefix is what `extract_and_verify_charm` matches on.
-        assert!(NativeCharmParser::SPELL_VK.starts_with("0x"));
+        // Wiring sanity: SPELL_VK is 32 bytes and is not all zeros.
+        assert_eq!(NativeCharmParser::SPELL_VK.len(), 32);
+        assert!(NativeCharmParser::SPELL_VK.iter().any(|b| *b != 0));
     }
 
     #[test]
