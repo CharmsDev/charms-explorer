@@ -23,7 +23,8 @@ use config::ApiConfig;
 use db::DbPool;
 use handlers::{
     AppState, MaestroCircuitBreaker,
-    broadcast_wallet_transaction, diagnose_database, get_asset_by_id, get_asset_counts,
+    broadcast_wallet_transaction, diagnose_database, diagnostics_address,
+    get_asset_by_id, get_asset_counts,
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
     get_charms, get_charms_by_address, get_charms_by_type, get_charms_count_by_type,
     get_all_orders, get_indexer_status, get_open_orders, get_order_by_id, get_orders_by_asset,
@@ -141,6 +142,10 @@ async fn main() {
         .route("/health", get(health_check))
         .route("/status", get(get_indexer_status))
         .route("/diagnose", get(diagnose_database))
+        .route(
+            "/internal/diagnostics/address/{network}/{address}",
+            get(diagnostics_address),
+        )
         // Charms
         .route("/charms", get(get_charms))
         .route("/charms/count", get(get_charm_numbers))
