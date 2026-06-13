@@ -208,6 +208,14 @@ impl BitcoinProcessor {
                 Ok(()) => {
                     self.current_height += 1;
                 }
+                Err(BlockProcessorError::ReorgRolledBackTo(h)) => {
+                    logging::log_warning(&format!(
+                        "[{}] 🔄 Reorg rolled back to height {}; resuming",
+                        self.network_id().name,
+                        h
+                    ));
+                    self.current_height = h + 1;
+                }
                 Err(BlockProcessorError::BitcoinClientError(ref e)) => {
                     let error_msg = e.to_string().to_lowercase();
                     if error_msg.contains("pruned")

@@ -7,12 +7,14 @@ use crate::domain::services::CharmService;
 use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::repositories::{
     AddressTransactionsRepository, BlockStatusRepository, MempoolSpendsRepository,
-    MonitoredAddressesRepository, SummaryRepository, TransactionRepository, UtxoRepository,
+    MonitoredAddressesRepository, ReorgEventsRepository, SummaryRepository,
+    TransactionRepository, UtxoRepository,
 };
 use crate::infrastructure::persistence::Repositories;
 use crate::utils::logging;
 
 use super::batch::BatchProcessor;
+use super::reorg::{self, ReorgDecision};
 use super::retry::RetryHandler;
 use super::summary::SummaryUpdater;
 use super::{detection, mempool_consolidator, spent_tracker, utxo_indexer};
@@ -29,6 +31,7 @@ pub struct BlockProcessor {
     monitored_addresses_repository: MonitoredAddressesRepository,
     mempool_spends_repository: MempoolSpendsRepository,
     address_transactions_repository: AddressTransactionsRepository,
+    reorg_events_repository: ReorgEventsRepository,
     retry_handler: RetryHandler,
 }
 
@@ -48,6 +51,7 @@ impl BlockProcessor {
             monitored_addresses_repository: repos.monitored_addresses.clone(),
             mempool_spends_repository: repos.mempool_spends.clone(),
             address_transactions_repository: repos.address_transactions.clone(),
+            reorg_events_repository: repos.reorg_events.clone(),
             retry_handler: RetryHandler::new(),
         }
     }
@@ -80,6 +84,25 @@ impl BlockProcessor {
             .get_block(&block_hash)
             .await
             .map_err(BlockProcessorError::BitcoinClientError)?;
+
+        // STEP -1: Reorg guard. If the previous-block hash doesn't match what
+        // we have stored, roll back to the common ancestor and signal the
+        // caller to resume from there.
+        match reorg::check_and_recover(
+            height,
+            &block,
+            network_id,
+            &self.bitcoin_client,
+            &self.block_status_repository,
+            &self.reorg_events_repository,
+        )
+        .await?
+        {
+            ReorgDecision::None => {}
+            ReorgDecision::RolledBackTo(h) => {
+                return Err(BlockProcessorError::ReorgRolledBackTo(h));
+            }
+        }
 
         // STEP 0: Promote mempool entries to confirmed
         mempool_consolidator::consolidate(

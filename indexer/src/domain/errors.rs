@@ -55,6 +55,8 @@ pub enum BlockProcessorError {
     DbError(DbError),
     ConfigError(String),
     ProcessingError(String),
+    /// Reorg recovered: caller should resume from `height + 1`.
+    ReorgRolledBackTo(u64),
 }
 
 impl fmt::Display for BlockProcessorError {
@@ -65,6 +67,9 @@ impl fmt::Display for BlockProcessorError {
             BlockProcessorError::DbError(e) => write!(f, "Database error: {}", e),
             BlockProcessorError::ConfigError(msg) => write!(f, "Configuration error: {}", msg),
             BlockProcessorError::ProcessingError(msg) => write!(f, "Processing error: {}", msg),
+            BlockProcessorError::ReorgRolledBackTo(h) => {
+                write!(f, "Reorg rolled back to height {}", h)
+            }
         }
     }
 }

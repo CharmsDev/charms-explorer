@@ -38,7 +38,7 @@ pub enum ReorgDecision {
 /// there is no prior entry in `block_status`.
 pub async fn check_and_recover(
     height: u64,
-    block: &bitcoin::Block,
+    block: &bitcoincore_rpc::bitcoin::Block,
     network_id: &NetworkId,
     bitcoin_client: &BitcoinClient,
     block_status: &BlockStatusRepository,
