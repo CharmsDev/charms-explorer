@@ -71,10 +71,10 @@ async fn main() {
         }
 
         let tx = conn.begin().await.expect("begin transaction");
-        if let Err(e) = tx
-            .execute(Statement::from_string(DbBackend::Postgres, sql.to_string()))
-            .await
-        {
+        // `execute_unprepared` runs the raw SQL through the simple query
+        // protocol, which accepts multiple semicolon-separated statements.
+        // `execute` would prepare it and reject anything past the first `;`.
+        if let Err(e) = tx.execute_unprepared(sql).await {
             logging::log_error(&format!("✗ {} failed: {}", version, e));
             tx.rollback().await.ok();
             std::process::exit(1);
