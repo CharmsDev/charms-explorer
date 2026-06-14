@@ -9,8 +9,11 @@ use crate::domain::services::CharmService;
 use super::retry::RetryHandler;
 
 /// Collect all (txid, vout) pairs being spent in a block and mark them as spent.
+/// `height` is propagated to `stats_holders.last_updated_block` so the
+/// negative balance delta clears the idempotency gate.
 pub async fn mark_spent_charms(
     block: &bitcoin::Block,
+    height: u64,
     network_id: &NetworkId,
     charm_service: &CharmService,
     retry_handler: &RetryHandler,
@@ -30,11 +33,16 @@ pub async fn mark_spent_charms(
     }
 
     if !spent_txid_vouts.is_empty() {
+        let block_height = height as i32;
         retry_handler
             .execute_with_retry_and_logging(
                 || async {
                     charm_service
-                        .mark_charms_as_spent_batch(spent_txid_vouts.clone(), &network_id.name)
+                        .mark_charms_as_spent_batch(
+                            spent_txid_vouts.clone(),
+                            &network_id.name,
+                            block_height,
+                        )
                         .await
                         .map_err(|e| {
                             crate::infrastructure::persistence::error::DbError::QueryError(

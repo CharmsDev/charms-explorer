@@ -149,6 +149,7 @@ impl BlockProcessor {
         // STEP 5: Mark spent charms
         spent_tracker::mark_spent_charms(
             &block,
+            height,
             network_id,
             &self.charm_service,
             &self.retry_handler,

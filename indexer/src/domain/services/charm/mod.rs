@@ -144,11 +144,16 @@ impl CharmService {
 
     /// Mark multiple charms as spent in a batch using (txid, vout) pairs.
     /// `network` scopes the update so mainnet/testnet rows do not bleed.
-    /// Also updates asset supply and stats_holders with negative amounts.
+    /// `block_height` is the height of the block doing the spending; it
+    /// feeds the `stats_holders.last_updated_block` gate so the negative
+    /// delta is actually applied (passing 0 here would short-circuit the
+    /// `last_updated_block < block` clause and silently swallow the
+    /// decrement — the original bug).
     pub async fn mark_charms_as_spent_batch(
         &self,
         txid_vouts: Vec<(String, i32)>,
         network: &str,
+        block_height: i32,
     ) -> Result<(), CharmError> {
         // 1. Get charm info before marking as spent (for stats_holders update)
         let charm_info = self
@@ -193,10 +198,10 @@ impl CharmService {
                 .filter_map(|(app_id, address, amount)| {
                     if app_id.starts_with("t/") {
                         let nft_app_id = crate::domain::services::app_id::token_to_nft(&app_id);
-                        Some((nft_app_id, address, -amount, 0))
+                        Some((nft_app_id, address, -amount, block_height))
                     } else if app_id.starts_with("n/") {
                         // NFT: keep n/ app_id, use -1 (ownership count)
-                        Some((app_id, address, -1_i64, 0))
+                        Some((app_id, address, -1_i64, block_height))
                     } else {
                         None
                     }

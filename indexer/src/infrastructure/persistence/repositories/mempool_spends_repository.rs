@@ -51,9 +51,17 @@ impl MempoolSpendsRepository {
             })
             .collect();
 
+        // Last-spender-wins: under RBF / double-spend in the mempool the
+        // newest spending tx is what the API should report as the pending
+        // consumer of the UTXO. DO NOTHING would freeze the first observed
+        // spender even after it is dropped, leaving stale rows once the
+        // reconcile loop cleans the original tx.
         let sql = format!(
             "INSERT INTO mempool_spends (spending_txid, spent_txid, spent_vout, network, detected_at) \
-             VALUES {} ON CONFLICT (spent_txid, spent_vout, network) DO NOTHING",
+             VALUES {} \
+             ON CONFLICT (spent_txid, spent_vout, network) DO UPDATE SET \
+               spending_txid = EXCLUDED.spending_txid, \
+               detected_at = EXCLUDED.detected_at",
             values.join(", ")
         );
 
