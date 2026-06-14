@@ -252,7 +252,18 @@ impl BlockchainProcessor for BitcoinProcessor {
         &mut self,
         cancel: CancellationToken,
     ) -> Result<(), BlockProcessorError> {
+        // Exponential backoff: on consecutive failures (typically Bitcoin RPC
+        // outages) the sleep doubles up to MAX_BACKOFF_MS so the indexer does
+        // not flood logs nor hammer the node. Resets to the base interval on
+        // the next successful cycle. Honours the cancellation token at every
+        // sleep so graceful shutdown stays responsive.
+        const MAX_BACKOFF_MS: u64 = 30_000;
+
         self.initialize_block_height().await;
+
+        let base_ms = self.config.indexer.process_interval_ms;
+        let mut backoff_ms = base_ms;
+        let mut consecutive_errors: u32 = 0;
 
         loop {
             if cancel.is_cancelled() {
@@ -263,16 +274,37 @@ impl BlockchainProcessor for BitcoinProcessor {
                 return Ok(());
             }
 
-            if let Err(e) = self.process_available_blocks().await {
-                logging::log_error(&format!(
-                    "[{}] ❌ Error processing blocks: {}.",
-                    self.network_id().name,
-                    e
-                ));
+            match self.process_available_blocks().await {
+                Ok(()) => {
+                    if consecutive_errors > 0 {
+                        logging::log_info(&format!(
+                            "[{}] ✅ Recovered after {} consecutive RPC error(s); resuming normal cadence",
+                            self.network_id().name,
+                            consecutive_errors
+                        ));
+                    }
+                    consecutive_errors = 0;
+                    backoff_ms = base_ms;
+                }
+                Err(e) => {
+                    consecutive_errors += 1;
+                    // Log on first failure, then every 10th to avoid flooding
+                    // when an outage lasts hours.
+                    if consecutive_errors == 1 || consecutive_errors.is_multiple_of(10) {
+                        logging::log_error(&format!(
+                            "[{}] ❌ Error processing blocks (n={}, next retry in {}ms): {}",
+                            self.network_id().name,
+                            consecutive_errors,
+                            backoff_ms,
+                            e
+                        ));
+                    }
+                    backoff_ms = (backoff_ms.saturating_mul(2)).min(MAX_BACKOFF_MS);
+                }
             }
 
             tokio::select! {
-                _ = time::sleep(Duration::from_millis(self.config.indexer.process_interval_ms)) => {}
+                _ = time::sleep(Duration::from_millis(backoff_ms)) => {}
                 _ = cancel.cancelled() => return Ok(()),
             }
         }
