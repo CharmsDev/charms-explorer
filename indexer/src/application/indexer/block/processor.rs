@@ -136,8 +136,8 @@ impl BlockProcessor {
             .save_transaction_batch(transaction_batch.clone(), height, network_id)
             .await?;
 
-        // STEP 3: Save charms
-        batch_processor
+        // STEP 3: Save charms; gather POSITIVE holder deltas (don't apply yet).
+        let add_deltas = batch_processor
             .save_charm_batch(charm_batch.clone(), height, network_id)
             .await?;
 
@@ -146,8 +146,8 @@ impl BlockProcessor {
             .save_asset_batch(asset_batch, height, network_id)
             .await?;
 
-        // STEP 5: Mark spent charms
-        spent_tracker::mark_spent_charms(
+        // STEP 5: Mark spent charms; gather NEGATIVE holder deltas (don't apply yet).
+        let sub_deltas = spent_tracker::mark_spent_charms(
             &block,
             height,
             network_id,
@@ -155,6 +155,16 @@ impl BlockProcessor {
             &self.retry_handler,
         )
         .await?;
+
+        // STEP 5.0: Merge add + sub deltas into a single net update per
+        // (app_id, address) and apply it once. Splitting the writes across
+        // two `update_holders_batch` calls in the same block re-trips the
+        // `last_updated_block < block` gate at the repo layer (anomaly A1):
+        // the second call always sees `last_updated_block == block` and
+        // silently drops the negative delta. Net-then-apply removes the
+        // race without weakening the gate's crash-recovery guarantee.
+        self.apply_merged_holder_updates(add_deltas, sub_deltas, network_id)
+            .await;
 
         // STEP 5.5a: Auto-register charm addresses for monitoring
         utxo_indexer::register_charm_addresses(
@@ -243,4 +253,47 @@ impl BlockProcessor {
         Ok(())
     }
 
+    /// Merge the additive deltas from `save_charm_batch` with the
+    /// subtractive deltas from `mark_spent_charms` by (app_id, address)
+    /// and apply a single `update_holders_batch` call. Zero-net entries are
+    /// skipped (their balance did not change). `last_updated_block` is the
+    /// max height seen on either side so the gate at the repo advances.
+    async fn apply_merged_holder_updates(
+        &self,
+        adds: Vec<(String, String, i64, i32)>,
+        subs: Vec<(String, String, i64, i32)>,
+        network_id: &NetworkId,
+    ) {
+        if adds.is_empty() && subs.is_empty() {
+            return;
+        }
+        let mut merged: std::collections::HashMap<(String, String), (i64, i32)> =
+            std::collections::HashMap::with_capacity(adds.len() + subs.len());
+        for (app_id, address, delta, block_height) in adds.into_iter().chain(subs) {
+            let entry = merged
+                .entry((app_id, address))
+                .or_insert((0i64, block_height));
+            entry.0 = entry.0.saturating_add(delta);
+            entry.1 = entry.1.max(block_height);
+        }
+        let updates: Vec<(String, String, i64, i32)> = merged
+            .into_iter()
+            .filter(|(_, (delta, _))| *delta != 0)
+            .map(|((app_id, address), (delta, h))| (app_id, address, delta, h))
+            .collect();
+        if updates.is_empty() {
+            return;
+        }
+        if let Err(e) = self
+            .charm_service
+            .get_stats_holders_repository()
+            .update_holders_batch(updates, &network_id.name)
+            .await
+        {
+            logging::log_warning(&format!(
+                "[{}] Failed to apply merged stats_holders update: {}",
+                network_id.name, e
+            ));
+        }
+    }
 }

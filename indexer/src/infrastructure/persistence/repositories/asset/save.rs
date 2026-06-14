@@ -431,21 +431,28 @@ pub async fn save_batch(
         let hash = helpers::extract_hash_from_app_id(&app_id);
 
         if let Some(existing) = existing_token {
-            // Token exists - add mint amount to existing supply
+            // Asset.total_supply semantics: highest declared supply observed
+            // in any spell for this token, NOT the running sum of every charm
+            // output the indexer processes. Transfer txs carry the same
+            // declared supply as the original mint, so re-summing the spell
+            // value on each transfer caused anomaly A2 (6× over-count).
+            // Genuine secondary mints will still bump the value because the
+            // new spell will declare a larger supply.
             let old_supply = existing.total_supply.unwrap_or(Decimal::ZERO);
-            let new_supply = old_supply + mint_amount;
+            let new_supply = std::cmp::max(old_supply, mint_amount);
 
-            let update_model = assets::ActiveModel {
-                id: Set(existing.id),
-                total_supply: Set(Some(new_supply)),
-                updated_at: Set(now.into()),
-                ..Default::default()
-            };
-
-            Assets::update(update_model)
-                .exec(db)
-                .await
-                .map_err(DbError::SeaOrmError)?;
+            if new_supply != old_supply {
+                let update_model = assets::ActiveModel {
+                    id: Set(existing.id),
+                    total_supply: Set(Some(new_supply)),
+                    updated_at: Set(now.into()),
+                    ..Default::default()
+                };
+                Assets::update(update_model)
+                    .exec(db)
+                    .await
+                    .map_err(DbError::SeaOrmError)?;
+            }
         } else {
             // Token doesn't exist - create new with inherited metadata from parent NFT
             let parent_nft_pattern = format!("n/{}/%", hash);

@@ -154,6 +154,69 @@ async fn later_block_does_apply_after_idempotent_skip() {
     );
 }
 
+/// Regression for anomaly A1: within a single block, an address can both
+/// gain and lose balance (the classic "spend with change" pattern). The
+/// repo's idempotency gate (`last_updated_block < block`) requires the
+/// caller to MERGE the additive and subtractive deltas to a single net
+/// value before invoking `update_holders_batch`. This test enforces that
+/// contract by replaying the merged delta directly.
+#[tokio::test]
+async fn within_block_merged_delta_lands_correctly() {
+    let db = TestDb::new().await;
+    let repo = StatsHoldersRepository::new(db.conn.clone());
+
+    repo.update_holders_batch(
+        vec![("n/x/y".to_string(), "addrA".to_string(), 100, 100)],
+        "mainnet",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        row(&db.conn, "n/x/y", "addrA", "mainnet").await,
+        Some((100, 1))
+    );
+
+    // Block 101: A spent 100, received 90 change. Block processor merges
+    // (+90) and (-100) into a single (-10) net delta.
+    repo.update_holders_batch(
+        vec![("n/x/y".to_string(), "addrA".to_string(), -10, 101)],
+        "mainnet",
+    )
+    .await
+    .unwrap();
+    // total_amount correctly reflects the net change. charm_count is
+    // a coarse heuristic derived from the sign of the merged delta and is
+    // not strictly equal to "unspent UTXOs"; it is tracked separately in
+    // _rjj/log/test-mainnet-from-genesis.md as anomaly A1b (open).
+    let after = row(&db.conn, "n/x/y", "addrA", "mainnet").await.unwrap();
+    assert_eq!(after.0, 90, "total_amount must reflect net delta");
+}
+
+/// Companion to the merged-delta test: when the merged delta zeroes out
+/// the balance (sender spends entire holdings, no change), the row is
+/// removed by `cleanup_zero_holders` instead of lingering as a ghost row.
+#[tokio::test]
+async fn within_block_full_spend_drops_to_zero() {
+    let db = TestDb::new().await;
+    let repo = StatsHoldersRepository::new(db.conn.clone());
+
+    repo.update_holders_batch(
+        vec![("n/x/y".to_string(), "addrA".to_string(), 100, 100)],
+        "mainnet",
+    )
+    .await
+    .unwrap();
+
+    repo.update_holders_batch(
+        vec![("n/x/y".to_string(), "addrA".to_string(), -100, 101)],
+        "mainnet",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(row(&db.conn, "n/x/y", "addrA", "mainnet").await, None);
+}
+
 /// Regression test for audit finding N2 (FIXED): mainnet and testnet4
 /// balances for the same (app_id, address) live in separate rows.
 #[tokio::test]

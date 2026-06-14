@@ -144,17 +144,20 @@ impl CharmService {
 
     /// Mark multiple charms as spent in a batch using (txid, vout) pairs.
     /// `network` scopes the update so mainnet/testnet rows do not bleed.
-    /// `block_height` is the height of the block doing the spending; it
-    /// feeds the `stats_holders.last_updated_block` gate so the negative
-    /// delta is actually applied (passing 0 here would short-circuit the
-    /// `last_updated_block < block` clause and silently swallow the
-    /// decrement — the original bug).
+    /// `block_height` tags the returned negative deltas so the block
+    /// processor can merge them with the additive deltas before calling
+    /// `update_holders_batch` once per (app_id, address) per block.
+    ///
+    /// This function NO LONGER touches `stats_holders` directly — the
+    /// per-step idempotency gate `last_updated_block < block` would reject
+    /// the second call when the same address both gained and lost balance
+    /// within one block (anomaly A1).
     pub async fn mark_charms_as_spent_batch(
         &self,
         txid_vouts: Vec<(String, i32)>,
         network: &str,
         block_height: i32,
-    ) -> Result<(), CharmError> {
+    ) -> Result<Vec<(String, String, i64, i32)>, CharmError> {
         // 1. Get charm info before marking as spent (for stats_holders update)
         let charm_info = self
             .charm_repository
@@ -166,60 +169,29 @@ impl CharmService {
         let tracker = SpentTracker::new(&self.charm_repository);
         tracker.mark_charms_as_spent_batch(txid_vouts, network).await?;
 
-        // 2.5. Update asset supply for spent charms
-        for (app_id, _address, amount) in &charm_info {
-            // Determine asset_type from app_id prefix
-            let asset_type = if app_id.starts_with("t/") {
-                "token"
-            } else if app_id.starts_with("n/") {
-                "nft"
-            } else {
-                "other"
-            };
+        // No longer decrement asset.total_supply on spent. After anomaly A2
+        // the field represents the highest declared spell supply (an upper
+        // bound that does not change on transfers); decrementing it on
+        // spent would drift toward zero as transfers happen even though no
+        // tokens left the system. Circulating supply is derived from
+        // `charms WHERE NOT spent` at query time when needed.
 
-            if let Err(e) = self
-                .asset_repository
-                .update_supply_on_spent(app_id, *amount, asset_type)
-                .await
-            {
-                crate::utils::logging::log_warning(&format!(
-                    "[CharmService] Failed to update supply for {}: {}",
-                    app_id, e
-                ));
-            }
-        }
-
-        // 3. Update stats_holders with negative amounts (reduce balances)
-        // For tokens (t/): use -amount as balance delta
-        // For NFTs (n/): use -1 as balance delta (NFT ownership count, not the raw amount)
-        if !charm_info.is_empty() {
-            let holder_updates: Vec<(String, String, i64, i32)> = charm_info
-                .into_iter()
-                .filter_map(|(app_id, address, amount)| {
-                    if app_id.starts_with("t/") {
-                        let nft_app_id = crate::domain::services::app_id::token_to_nft(&app_id);
-                        Some((nft_app_id, address, -amount, block_height))
-                    } else if app_id.starts_with("n/") {
-                        // NFT: keep n/ app_id, use -1 (ownership count)
-                        Some((app_id, address, -1_i64, block_height))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            if let Err(e) = self
-                .stats_holders_repository
-                .update_holders_batch(holder_updates, network)
-                .await
-            {
-                crate::utils::logging::log_warning(&format!(
-                    "[CharmService] Failed to update stats_holders for spent charms: {}",
-                    e
-                ));
-            }
-        }
-
-        Ok(())
+        // 3. Build the negative holder deltas and return them — DO NOT apply
+        // here. The block processor merges them with the additive deltas
+        // and applies a single net update per (app_id, address) per block.
+        let holder_updates: Vec<(String, String, i64, i32)> = charm_info
+            .into_iter()
+            .filter_map(|(app_id, address, amount)| {
+                if app_id.starts_with("t/") {
+                    let nft_app_id = crate::domain::services::app_id::token_to_nft(&app_id);
+                    Some((nft_app_id, address, -amount, block_height))
+                } else if app_id.starts_with("n/") {
+                    Some((app_id, address, -1_i64, block_height))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        Ok(holder_updates)
     }
 }

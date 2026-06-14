@@ -50,24 +50,26 @@ impl BatchProcessor {
     }
 
     /// Save charm batch with retry logic.
-    /// Updates stats_holders for ALL charms in the block.
-    /// This is safe because mempool never touches stats_holders — it only tracks
-    /// confirmed balances. Whether a charm was new or promoted from mempool,
-    /// the block processor is the single writer to stats_holders.
+    ///
+    /// Returns the positive holder deltas that the block processor must merge
+    /// with the negative deltas coming from `mark_spent_charms` before
+    /// calling `update_holders_batch` ONCE per block. Doing one merged update
+    /// per (app_id, address) preserves the `last_updated_block < block` gate
+    /// (crash-recovery safety) while still letting within-block adds + spends
+    /// net correctly — the bug captured as anomaly A1 in the test report.
     pub async fn save_charm_batch(
         &self,
         batch: Vec<CharmBatchItem>,
-        height: u64,
-        network_id: &NetworkId,
-    ) -> Result<(), BlockProcessorError> {
+        _height: u64,
+        _network_id: &NetworkId,
+    ) -> Result<Vec<(String, String, i64, i32)>, BlockProcessorError> {
         if batch.is_empty() {
-            return Ok(());
+            return Ok(Vec::new());
         }
 
-        // Compute stats_holders updates BEFORE consuming the batch.
-        // Safe: mempool never updates stats_holders, so there's no double-counting.
-        // For tokens (t/): use actual amount as balance delta.
-        // For NFTs   (n/): use 1 as balance delta (ownership count).
+        // Compute positive holder deltas. For tokens (t/) use the on-chain
+        // amount; for NFTs (n/) use 1 (ownership count). All deltas carry
+        // the block height so the gate at the repo layer can advance.
         let holder_updates: Vec<(String, String, i64, i32)> = batch
             .iter()
             .filter_map(|c| {
@@ -101,21 +103,7 @@ impl BatchProcessor {
                 BlockProcessorError::ProcessingError(format!("Failed to save charm batch: {}", e))
             })?;
 
-        if !holder_updates.is_empty() {
-            if let Err(e) = self
-                .charm_service
-                .get_stats_holders_repository()
-                .update_holders_batch(holder_updates, &network_id.name)
-                .await
-            {
-                logging::log_warning(&format!(
-                    "[{}] Failed to update stats_holders for new charms at block {}: {}",
-                    network_id.name, height, e
-                ));
-            }
-        }
-
-        Ok(())
+        Ok(holder_updates)
     }
 
     /// Save asset batch with retry logic
