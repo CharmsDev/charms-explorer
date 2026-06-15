@@ -103,8 +103,15 @@ impl NativeCharmParser {
     pub fn extract_asset_info(spell: &NormalizedSpell) -> Vec<AssetInfo> {
         let mut assets = Vec::new();
 
-        // Extract information from spell outputs (NormalizedCharms)
+        // Extract information from spell outputs (NormalizedCharms).
+        // `NormalizedCharms = BTreeMap<u32, Data>` iterates by ascending
+        // app_index, so any DEX-struct entry (typically at app_index 0)
+        // is processed BEFORE its raw-value sibling at the same vout.
+        // We dedupe by (vout, resolved app_id) keeping the first occurrence
+        // to drop wrapper entries — see anomaly A3.
         for (output_index, normalized_charms) in spell.tx.outs.iter().enumerate() {
+            let mut seen_app_ids: std::collections::HashSet<String> =
+                std::collections::HashSet::new();
             // Each output can contain multiple charms
             for (app_index, charm_data) in normalized_charms.iter() {
                 // Get the app from the spell's app_public_inputs
@@ -134,6 +141,17 @@ impl NativeCharmParser {
                         } else {
                             (app.to_string(), determine_asset_type_from_app(app))
                         };
+
+                    // A3 fix: a DEX-ask output exposes the token both via the
+                    // DEX struct (correct amount, lower app_index) and via a
+                    // raw u64 wrapper (sats quantity, higher app_index). The
+                    // raw wrapper resolves to the same app_id once
+                    // app_public_inputs[i] is read. Dropping it here keeps
+                    // `stats_holders` from accreting the sats quantity as
+                    // phantom token balance.
+                    if !seen_app_ids.insert(app_id.clone()) {
+                        continue;
+                    }
 
                     let asset_info = AssetInfo {
                         app_id,
