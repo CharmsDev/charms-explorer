@@ -68,16 +68,22 @@ impl BatchProcessor {
         }
 
         // Compute positive holder deltas. For tokens (t/) use the on-chain
-        // amount; for NFTs (n/) use 1 (ownership count). All deltas carry
-        // the block height so the gate at the repo layer can advance.
+        // amount; for NFTs (n/) use 1 (ownership count) — NFTs carry
+        // amount=0 by protocol convention, so we must NOT gate them on
+        // `amount > 0`. Anomaly A7: the previous `amount <= 0` filter
+        // silently dropped every NFT holder update from the live path,
+        // hiding the bug whenever a rebuild had populated the rows.
         let holder_updates: Vec<(String, String, i64, i32)> = batch
             .iter()
             .filter_map(|c| {
                 let addr = c.address.as_ref()?;
-                if c.amount <= 0 || addr.is_empty() {
+                if addr.is_empty() {
                     return None;
                 }
                 if c.app_id.starts_with("t/") {
+                    if c.amount <= 0 {
+                        return None;
+                    }
                     Some((
                         crate::domain::services::app_id::token_to_nft(&c.app_id),
                         addr.clone(),
