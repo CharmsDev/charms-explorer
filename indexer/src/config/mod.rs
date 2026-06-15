@@ -122,6 +122,19 @@ pub struct IndexerConfig {
     pub enable_bitcoin_mainnet: bool,
     /// Enable Cardano networks
     pub enable_cardano: bool,
+    /// BTC auto-seeder: proactively pull historical UTXOs via Maestro for
+    /// every monitored (charm-holder) address that has not been seeded yet.
+    pub btc_auto_seeder_enabled: bool,
+    /// How many unseeded addresses the worker pulls per loop iteration.
+    pub btc_auto_seeder_batch_size: u64,
+    /// Maximum concurrent Maestro requests in-flight.
+    pub btc_auto_seeder_concurrency: usize,
+    /// Sleep between batches when work exists, milliseconds.
+    pub btc_auto_seeder_batch_interval_ms: u64,
+    /// Sleep when no unseeded addresses remain, milliseconds.
+    pub btc_auto_seeder_idle_interval_ms: u64,
+    /// Maestro API key (PRIVATE). Empty disables the seeder.
+    pub private_maestro_api_key: String,
 }
 
 /// Application configuration
@@ -294,6 +307,27 @@ impl AppConfig {
             enable_bitcoin_testnet4,
             enable_bitcoin_mainnet,
             enable_cardano,
+            btc_auto_seeder_enabled: env::var("ENABLE_BTC_AUTO_SEEDER")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse::<bool>()
+                .unwrap_or(true),
+            btc_auto_seeder_batch_size: env::var("BTC_AUTO_SEEDER_BATCH_SIZE")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse::<u64>()
+                .unwrap_or(10),
+            btc_auto_seeder_concurrency: env::var("BTC_AUTO_SEEDER_CONCURRENCY")
+                .unwrap_or_else(|_| "5".to_string())
+                .parse::<usize>()
+                .unwrap_or(5),
+            btc_auto_seeder_batch_interval_ms: env::var("BTC_AUTO_SEEDER_BATCH_INTERVAL_MS")
+                .unwrap_or_else(|_| "5000".to_string())
+                .parse::<u64>()
+                .unwrap_or(5000),
+            btc_auto_seeder_idle_interval_ms: env::var("BTC_AUTO_SEEDER_IDLE_INTERVAL_MS")
+                .unwrap_or_else(|_| "30000".to_string())
+                .parse::<u64>()
+                .unwrap_or(30000),
+            private_maestro_api_key: env::var("PRIVATE_MAESTRO_API_KEY").unwrap_or_default(),
         };
 
         Self {

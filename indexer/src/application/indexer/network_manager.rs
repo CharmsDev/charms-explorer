@@ -164,7 +164,69 @@ impl NetworkManager {
             }
         }
 
+        // Spawn the BTC AddressSeeder under the same supervise() so a panic
+        // restarts it instead of silently leaving charm-holder addresses
+        // un-seeded. Disabled cleanly via env when Maestro is not configured.
+        self.spawn_btc_seeder_if_enabled(network_id.clone(), repos);
+
         Ok(())
+    }
+
+    fn spawn_btc_seeder_if_enabled(&mut self, network_id: NetworkId, repos: &Repositories) {
+        if !self.config.indexer.btc_auto_seeder_enabled {
+            logging::log_info(&format!(
+                "[{}] 🌱 AddressSeeder disabled (ENABLE_BTC_AUTO_SEEDER=false)",
+                network_id.name
+            ));
+            return;
+        }
+        let api_key = self.config.indexer.private_maestro_api_key.clone();
+        if api_key.is_empty() {
+            logging::log_warning(&format!(
+                "[{}] 🌱 AddressSeeder skipped: PRIVATE_MAESTRO_API_KEY is empty",
+                network_id.name
+            ));
+            return;
+        }
+        use crate::application::indexer::seeder::{AddressSeeder, SeederConfig};
+        use crate::infrastructure::maestro::MaestroClient;
+        use std::time::Duration;
+
+        let cfg = SeederConfig {
+            batch_size: self.config.indexer.btc_auto_seeder_batch_size,
+            max_concurrent: self.config.indexer.btc_auto_seeder_concurrency,
+            idle_interval: Duration::from_millis(
+                self.config.indexer.btc_auto_seeder_idle_interval_ms,
+            ),
+            batch_interval: Duration::from_millis(
+                self.config.indexer.btc_auto_seeder_batch_interval_ms,
+            ),
+        };
+        let maestro = MaestroClient::new(api_key);
+        let cancel = self.shutdown.clone();
+        let supervisor_name = format!("seeder/{}", network_id.name);
+        let network_name = network_id.name.clone();
+        let repos = repos.clone();
+        let handle = tokio::spawn(async move {
+            supervisor::supervise(&supervisor_name, move || {
+                let seeder = AddressSeeder::new(
+                    network_name.clone(),
+                    repos.clone(),
+                    maestro.clone(),
+                    cfg.clone(),
+                );
+                let cancel = cancel.clone();
+                async move {
+                    seeder.run(cancel).await;
+                }
+            })
+            .await;
+        });
+        self.background_tasks.push(handle);
+        logging::log_info(&format!(
+            "[{}] 🌱 AddressSeeder spawned under supervisor",
+            network_id.name
+        ));
     }
 
     /// Start all processors

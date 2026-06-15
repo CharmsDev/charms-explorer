@@ -6,6 +6,7 @@ pub mod block;
 pub mod mempool;
 pub mod network_manager;
 pub mod processor_trait;
+pub mod seeder;
 pub mod supervisor;
 
 pub use block::BitcoinProcessor;
