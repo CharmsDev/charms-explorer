@@ -5,16 +5,21 @@ use sea_orm::entity::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-// Updated to use composite primary key (txid, vout)
-// Removed charmid field, added app_id field
-// Added support for mempool tracking with nullable block_height
+// Composite PK (txid, vout, app_id) — a single UTXO may carry multiple
+// distinct charm tokens (different app_indices in the NormalizedCharms
+// map). The PK was (txid, vout) until anomaly A5; that lost multi-token
+// outputs on `ON CONFLICT DO NOTHING`. `mark_charms_as_spent_batch`
+// still matches on (txid, vout) so spending a UTXO flips every token in
+// it.
 #[derive(Clone, Debug, PartialEq, Eq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "charms")]
 pub struct Model {
-    #[sea_orm(primary_key, column_type = "Text")]
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
     pub txid: String,
-    #[sea_orm(primary_key)]
+    #[sea_orm(primary_key, auto_increment = false)]
     pub vout: i32,
+    #[sea_orm(primary_key, auto_increment = false, column_type = "Text")]
+    pub app_id: String,
     #[sea_orm(nullable)]
     pub block_height: Option<i32>,
     pub data: Value,
@@ -28,8 +33,6 @@ pub struct Model {
     #[sea_orm(column_type = "Text", nullable)]
     pub address: Option<String>,
     pub spent: bool,
-    #[sea_orm(column_type = "Text")]
-    pub app_id: String,
     pub amount: i64,
     // TIMESTAMPTZ in DB → must use DateTimeWithTimeZone, NOT NaiveDateTime
     #[sea_orm(nullable)]

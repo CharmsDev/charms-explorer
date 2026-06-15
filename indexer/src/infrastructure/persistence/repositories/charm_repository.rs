@@ -123,10 +123,11 @@ impl CharmRepository {
             ));
         }
 
+        // PK is (txid, vout, app_id) — multi-token UTXOs persist as N rows.
         let sql = format!(
             "INSERT INTO charms (txid, vout, block_height, data, date_created, asset_type, blockchain, network, address, spent, app_id, amount, mempool_detected_at, tags, verified) \
              VALUES {} \
-             ON CONFLICT (txid, vout) DO NOTHING \
+             ON CONFLICT (txid, vout, app_id) DO NOTHING \
              RETURNING txid, vout",
             values_parts.join(", ")
         );

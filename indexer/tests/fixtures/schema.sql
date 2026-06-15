@@ -19,7 +19,9 @@ CREATE TABLE charms (
     mempool_detected_at TIMESTAMPTZ,
     tags                TEXT,
     verified            BOOLEAN     NOT NULL DEFAULT TRUE,
-    PRIMARY KEY (txid, vout)
+    -- Composite PK including app_id supports multi-token UTXOs (a single
+    -- output can carry N distinct charm tokens, one row per token).
+    PRIMARY KEY (txid, vout, app_id)
 );
 
 CREATE TABLE transactions (
