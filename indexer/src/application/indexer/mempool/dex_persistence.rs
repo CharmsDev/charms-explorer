@@ -261,9 +261,29 @@ pub async fn update_consumed_order_status(
     }
 
     if order.status == "open" || order.status == "partial" {
+        let parent_amount = order.amount;
+        let parent_quantity = order.quantity;
         let mut active: dex_orders::ActiveModel = order.into();
         active.status = Set(new_status.to_string());
         active.updated_at = Set(chrono::Utc::now().naive_utc());
+        // A6: when the parent flips to 'filled', mark its filled_amount /
+        // filled_quantity as fully consumed. Without this, every filled
+        // order shows filled_amount=0 (UI reports "0% filled" forever).
+        // CANCEL must NOT touch filled_amount — the order is voided, not
+        // consumed.
+        //
+        // Approximation: true partial-fulfill accounting (incrementing
+        // filled_amount by the actual delta consumed by THIS fulfill tx)
+        // would require parsing each fulfill tx's consumed portion from
+        // the spell. For now, a 'filled' status implies full consumption,
+        // which is correct for all_or_none orders and for partial orders
+        // that get a single fulfill. Multi-step partial fulfills are
+        // covered by the next-fulfill-flips-to-filled invariant rather
+        // than running deltas.
+        if new_status == "filled" {
+            active.filled_amount = Set(parent_amount);
+            active.filled_quantity = Set(parent_quantity);
+        }
         match active.update(db).await {
             Ok(_) => {
                 logging::log_info(&format!(
