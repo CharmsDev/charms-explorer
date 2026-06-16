@@ -45,7 +45,12 @@ pub async fn detect_charms(
     {
         let input_txids: Vec<String> = input_utxos.iter().map(|(t, _)| t.clone()).collect();
 
-        let mut analyzed = match tx_analyzer::analyze_tx(&txid, &tx_hex, network) {
+        let mut analyzed = match tx_analyzer::analyze_tx(
+            &txid,
+            &tx_hex,
+            network,
+            tx_analyzer::VerifyMode::Strict,
+        ) {
             Some(a) => a,
             None => continue,
         };

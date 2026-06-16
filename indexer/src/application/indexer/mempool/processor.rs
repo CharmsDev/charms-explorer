@@ -55,7 +55,12 @@ pub async fn process_tx_with_hex(
     let raw_hex_clone = raw_hex.to_string();
     let network = network_id.name.clone();
     let analyzed = tokio::task::spawn_blocking(move || {
-        tx_analyzer::analyze_tx(&txid_owned, &raw_hex_clone, &network)
+        tx_analyzer::analyze_tx(
+            &txid_owned,
+            &raw_hex_clone,
+            &network,
+            tx_analyzer::VerifyMode::Permissive,
+        )
     })
     .await
     .map_err(|e| format!("spawn_blocking join error: {}", e))?;

@@ -104,16 +104,10 @@ impl BlockProcessor {
             }
         }
 
-        // STEP 0: Promote mempool entries to confirmed
-        mempool_consolidator::consolidate(
-            &block,
-            height,
-            network_id,
-            &self.mempool_spends_repository,
-        )
-        .await;
-
-        // STEP 1: Detect charms from all transactions
+        // STEP 1: Detect charms from all transactions (Strict ZK).
+        // Runs BEFORE the mempool consolidator so we know exactly which
+        // block txids passed verification — the consolidator then promotes
+        // only those mempool rows and purges the rest. Plan 15.
         let dex_repo = self.charm_service.get_dex_orders_repository();
         let (transaction_batch, charm_batch, asset_batch) = detection::detect_charms(
             &block,
@@ -123,6 +117,20 @@ impl BlockProcessor {
             "Bitcoin",
             &self.charm_service,
             Some(dex_repo),
+        )
+        .await;
+
+        // STEP 0: Consolidate mempool, informed by the verified set.
+        let verified_txids: std::collections::HashSet<String> = transaction_batch
+            .iter()
+            .map(|t| t.txid.clone())
+            .collect();
+        mempool_consolidator::consolidate(
+            &block,
+            height,
+            network_id,
+            &self.mempool_spends_repository,
+            &verified_txids,
         )
         .await;
 

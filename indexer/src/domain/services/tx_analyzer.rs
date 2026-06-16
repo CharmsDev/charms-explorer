@@ -35,19 +35,33 @@ pub struct AnalyzedTx {
 /// Returns None if the tx does not contain a charm spell.
 /// This is intentionally a free function, not a method on a struct,
 /// because it needs no state — only the raw bytes and the network name.
-pub fn analyze_tx(txid: &str, raw_hex: &str, network: &str) -> Option<AnalyzedTx> {
-    // 1. Verify ZK proof. If verification fails, reject the transaction entirely.
-    //    We only index charms with valid proofs.
-    let spell = match NativeCharmParser::extract_and_verify_charm(raw_hex, false) {
-        Ok(s) => s,
-        Err(_) => {
-            // Fallback for unsupported versions (V11+) where we don't have the VK yet.
-            // Parse without verification so we can still detect and display them.
-            match NativeCharmParser::extract_spell_no_verify(raw_hex) {
-                Ok(s) if s.version > charms_client::V10 => s,
-                _ => return None,
-            }
-        }
+/// Two verification modes (Plan 15):
+///   * `Strict` — used by the block path. Demands a valid ZK proof against
+///     the canonical VK chain (V0..V_CURRENT). A failure here MUST keep
+///     the spell out of confirmed tables.
+///   * `Permissive` — used by the mempool path. Parses the spell structure
+///     without verifying its proof so the explorer can show pending
+///     activity in real time. Anything written by the permissive path
+///     carries the "pending" markers (`block_height IS NULL` / `= 0`,
+///     `status='pending'`) and never touches `stats_holders` / `assets` /
+///     confirmed rows. On block confirmation, the block path re-evaluates
+///     in Strict mode and the consolidator either promotes the row or
+///     purges it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerifyMode {
+    Strict,
+    Permissive,
+}
+
+pub fn analyze_tx(
+    txid: &str,
+    raw_hex: &str,
+    network: &str,
+    mode: VerifyMode,
+) -> Option<AnalyzedTx> {
+    let spell = match mode {
+        VerifyMode::Strict => NativeCharmParser::extract_and_verify_charm(raw_hex, false).ok()?,
+        VerifyMode::Permissive => NativeCharmParser::extract_spell_no_verify(raw_hex).ok()?,
     };
 
     // 2. Build charm JSON (same structure used by all paths)
@@ -205,9 +219,11 @@ mod tests {
 
     #[test]
     fn test_analyze_non_charm_tx() {
-        // A random hex that is NOT a charm tx should return None
-        let result = analyze_tx("abc123", "0200000001abcd", "mainnet");
-        assert!(result.is_none());
+        // A random hex that is NOT a charm tx should return None in both modes
+        assert!(analyze_tx("abc123", "0200000001abcd", "mainnet", VerifyMode::Strict).is_none());
+        assert!(
+            analyze_tx("abc123", "0200000001abcd", "mainnet", VerifyMode::Permissive).is_none()
+        );
     }
 
     #[test]
@@ -221,6 +237,7 @@ mod tests {
             "97dc8dd9d239a86efc0d7bf6154eb960001973d10d417b1f2bbb806771b2c26d",
             &hex,
             "mainnet",
+            VerifyMode::Strict,
         );
         assert!(result.is_some(), "should parse known charm tx");
         let analyzed = result.unwrap();
