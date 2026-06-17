@@ -121,6 +121,27 @@ impl DexOrdersRepository {
         Ok(())
     }
 
+    /// Mark a parent order as fully filled in a single update.
+    pub async fn update_status_filled(
+        &self,
+        order_id: &str,
+        amount: i64,
+        quantity: i64,
+    ) -> Result<(), DbError> {
+        if let Some(order) = dex_orders::Entity::find_by_id(order_id.to_string())
+            .one(&self.conn)
+            .await?
+        {
+            let mut m: dex_orders::ActiveModel = order.into();
+            m.status = Set("filled".to_string());
+            m.filled_amount = Set(amount);
+            m.filled_quantity = Set(quantity);
+            m.updated_at = Set(chrono::Utc::now().naive_utc());
+            m.update(&self.conn).await?;
+        }
+        Ok(())
+    }
+
     /// Save a FULFILL/CANCEL activity row by copying data from the parent order.
     /// The new row gets its own order_id (based on the fulfill/cancel txid) and
     /// links back to the parent via parent_order_id.

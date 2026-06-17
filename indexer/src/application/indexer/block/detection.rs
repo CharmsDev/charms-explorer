@@ -139,8 +139,15 @@ pub async fn detect_charms(
                                         network, height, txid, e
                                     )),
                                 }
-                                // Update parent order status
-                                if let Err(e) = repo.update_status(&parent_order_id, new_status).await {
+                                // A9: when status flips to filled, also mark the
+                                // parent fully consumed so UI "% filled" is correct.
+                                // Block-path equivalent of A6 (mempool path).
+                                let res = if new_status == "filled" {
+                                    repo.update_status_filled(&parent_order_id, parent.amount, parent.quantity).await
+                                } else {
+                                    repo.update_status(&parent_order_id, new_status).await
+                                };
+                                if let Err(e) = res {
                                     logging::log_warning(&format!(
                                         "[{}] ⚠️ Block {}: Failed to update parent order {} status: {}",
                                         network, height, parent_order_id, e
