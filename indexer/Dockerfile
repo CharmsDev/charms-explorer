@@ -5,7 +5,11 @@
 FROM rust:bookworm AS builder
 WORKDIR /app
 COPY . .
-RUN cargo build --release --bin charms-indexer
+# --locked forces use of Cargo.lock without re-resolving. Needed because the
+# upstream charms-client workspace pins `bitcoin = "^0.32.100"` (yanked on
+# crates.io) and a fresh resolve in Docker would fail. Cargo.lock has the
+# exact commit and version, which is still installable.
+RUN cargo build --release --bin charms-indexer --locked
 
 # Runtime stage: Lightweight image with binaries
 FROM debian:bookworm-slim

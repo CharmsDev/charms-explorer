@@ -330,15 +330,26 @@ async fn build_asset_requests(
         .filter_map(|asset| {
             let nft_app_id = normalize_app_id(&asset.app_id, &asset.asset_type);
             let net_change = net_changes.get(&nft_app_id).copied().unwrap_or(0);
-            if net_change == 0 {
+            let is_nft = asset.asset_type == "nft";
+
+            // NFTs always persist as identity rows (supply=1) so tokens can
+            // inherit name/symbol/image from them. Tokens still need a
+            // positive net_change (otherwise the spell is a pure transfer
+            // and the row already exists).
+            if !is_nft && net_change == 0 {
                 return None;
             }
 
-            let supply = net_change.max(0) as u64;
-            let is_nft = asset.asset_type == "nft";
+            let supply = if is_nft { 1 } else { net_change.max(0) as u64 };
 
-            // For beaming: always populate metadata (NFTs AND tokens)
-            let use_metadata = is_nft || analyzed.is_beaming;
+            // Populate metadata for NFTs (identity source) and for tokens
+            // produced alongside an NFT in the same tx (mint with metadata).
+            // Beaming txs always carry on-chain metadata.
+            let has_nft_companion = analyzed
+                .asset_infos
+                .iter()
+                .any(|a| a.app_id.starts_with("n/"));
+            let use_metadata = is_nft || analyzed.is_beaming || has_nft_companion;
 
             Some(AssetBatchItem {
                 app_id: asset.app_id.clone(),

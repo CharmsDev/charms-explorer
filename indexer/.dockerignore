@@ -1,6 +1,9 @@
 # Rust build artifacts
 target/
-Cargo.lock
+# Cargo.lock IS shipped to the builder. Upstream charms-client pins
+# bitcoin = "^0.32.100" (yanked on crates.io); without the lock, fresh
+# resolution in Docker fails. With the lock + --locked flag the exact
+# commit and version are used.
 
 # Database files
 db/
