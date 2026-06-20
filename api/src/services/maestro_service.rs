@@ -83,6 +83,7 @@ pub async fn get_utxos(
                     value,
                     script_pubkey: String::new(),
                     confirmations,
+                    block_height: if confirmed { Some(block_height as u32) } else { None },
                 })
             })
             .collect();
@@ -187,12 +188,15 @@ async fn get_utxos_indexed_with_mempool(
                 indexed_vout
             };
 
+            let conf = u["confirmations"].as_u64().unwrap_or(0) as u32;
+            let bh = u["block_height"].as_u64().map(|h| h as u32);
             all_utxos.push(Utxo {
                 txid: txid_str,
                 vout: real_vout,
                 value,
                 script_pubkey: String::new(),
-                confirmations: u["confirmations"].as_u64().unwrap_or(0) as u32,
+                confirmations: conf,
+                block_height: bh,
             });
         }
 
@@ -265,6 +269,7 @@ async fn supplement_with_mempool(
                             value,
                             script_pubkey: String::new(),
                             confirmations: 0,
+                            block_height: None,
                         });
                     }
                 }

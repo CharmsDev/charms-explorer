@@ -67,10 +67,14 @@ impl AddressMonitorService {
             return monitored_repo.is_seeded(address, network).await;
         }
 
-        // 4. Double-check after acquiring lock (another request may have finished)
-        if monitored_repo.is_seeded(address, network).await? {
-            let _ = monitored_repo.release_advisory_lock(address, network).await;
-            return Ok(true);
+        // 4. Double-check after acquiring lock (another request may have just
+        //    refreshed). Only short-circuit when the seed is also FRESH —
+        //    otherwise the lock + refresh path is the whole point.
+        if let Some(age) = monitored_repo.seed_age_seconds(address, network).await.ok().flatten() {
+            if age < MEMPOOL_REFRESH_SECS {
+                let _ = monitored_repo.release_advisory_lock(address, network).await;
+                return Ok(true);
+            }
         }
 
         // 5. Seed UTXOs + tx history: Maestro first → QuickNode fallback
@@ -174,7 +178,8 @@ impl AddressMonitorService {
         let (utxos, txs) =
             maestro_service::get_address_info(http_client, maestro_api_key, network, address).await?;
 
-        // Insert UTXOs
+        // Insert UTXOs. block_height comes from the provider's `status.block_height`
+        // (or `height` for indexed responses); 0 means mempool.
         let utxo_count = if !utxos.is_empty() {
             let inserts: Vec<crate::db::repositories::utxo_repository::UtxoInsert> = utxos
                 .iter()
@@ -184,7 +189,7 @@ impl AddressMonitorService {
                     address: address.to_string(),
                     value: u.value as i64,
                     script_pubkey: u.script_pubkey.clone(),
-                    block_height: 0,
+                    block_height: u.block_height.map(|h| h as i32).unwrap_or(0),
                     network: network.to_string(),
                     source: "maestro".to_string(),
                 })
@@ -238,7 +243,8 @@ impl AddressMonitorService {
         let (utxos, txs) =
             WalletService::get_address_quicknode(http_client, quicknode_url, address).await?;
 
-        // Insert UTXOs
+        // Insert UTXOs. block_height comes from the provider's `status.block_height`
+        // (or `height` for indexed responses); 0 means mempool.
         let utxo_count = if !utxos.is_empty() {
             let inserts: Vec<crate::db::repositories::utxo_repository::UtxoInsert> = utxos
                 .iter()
@@ -248,7 +254,7 @@ impl AddressMonitorService {
                     address: address.to_string(),
                     value: u.value as i64,
                     script_pubkey: u.script_pubkey.clone(),
-                    block_height: 0,
+                    block_height: u.block_height.map(|h| h as i32).unwrap_or(0),
                     network: network.to_string(),
                     source: "maestro".to_string(),
                 })

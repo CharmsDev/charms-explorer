@@ -16,6 +16,11 @@ pub struct Utxo {
     pub value: u64,
     pub script_pubkey: String,
     pub confirmations: u32,
+    /// Block height at which this UTXO confirmed. `None` (or 0) = mempool.
+    /// Esplora providers expose `status.block_height` for confirmed outputs;
+    /// it is the source of truth, not `confirmations` (which is a derived count).
+    #[serde(default)]
+    pub block_height: Option<u32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -130,6 +135,7 @@ impl WalletService {
                     value: r.value as u64,
                     script_pubkey: r.script_pubkey,
                     confirmations,
+                    block_height: if r.block_height > 0 { Some(r.block_height as u32) } else { None },
                 }
             })
             .collect();
@@ -193,12 +199,15 @@ impl WalletService {
             .map(|u| {
                 let value_str = u["value"].as_str().unwrap_or("0");
                 let value: u64 = value_str.parse().unwrap_or(0);
+                let conf = u["confirmations"].as_u64().unwrap_or(0) as u32;
+                let bh = u["height"].as_u64().map(|h| h as u32);
                 Utxo {
                     txid: u["txid"].as_str().unwrap_or("").to_string(),
                     vout: u["vout"].as_u64().unwrap_or(0) as u32,
                     value,
                     script_pubkey: String::new(),
-                    confirmations: u["confirmations"].as_u64().unwrap_or(0) as u32,
+                    confirmations: conf,
+                    block_height: bh,
                 }
             })
             .collect();
@@ -447,6 +456,7 @@ impl WalletService {
                                 value: u.amount.to_sat(),
                                 script_pubkey: u.script_pub_key.to_string(),
                                 confirmations: u.height as u32,
+                                block_height: if u.height > 0 { Some(u.height as u32) } else { None },
                             })
                             .collect();
                         return Ok(utxos);

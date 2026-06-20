@@ -2,7 +2,7 @@
 // All queries use SeaORM ORM — no raw SQL.
 
 use sea_orm::{
-    ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
+    ColumnTrait, ConnectionTrait, DatabaseConnection, EntityTrait, PaginatorTrait, QueryFilter,
     QueryOrder,
 };
 
@@ -50,8 +50,10 @@ impl UtxoRepository {
             .map_err(|e| format!("DB query failed: {}", e))
     }
 
-    /// Insert a batch of UTXOs (used by on-demand seeding from QuickNode)
-    /// Uses ON CONFLICT DO NOTHING via SeaORM's on_conflict
+    /// Insert/refresh a batch of UTXOs (on-demand seeding from Esplora/QuickNode).
+    /// On conflict the API path UPDATES block_height + value, mirroring the
+    /// snapshot from the provider. Rows owned by the indexer (`source='node'`)
+    /// are NOT overwritten — they are authoritative for confirmed state.
     pub async fn insert_batch(&self, utxos: &[UtxoInsert]) -> Result<usize, String> {
         if utxos.is_empty() {
             return Ok(0);
@@ -59,38 +61,47 @@ impl UtxoRepository {
 
         let mut total = 0usize;
         for chunk in utxos.chunks(500) {
-            let models: Vec<address_utxos::ActiveModel> = chunk
+            let values: Vec<String> = chunk
                 .iter()
-                .map(|u| address_utxos::ActiveModel {
-                    txid: Set(u.txid.clone()),
-                    vout: Set(u.vout),
-                    network: Set(u.network.clone()),
-                    address: Set(u.address.clone()),
-                    value: Set(u.value),
-                    script_pubkey: Set(u.script_pubkey.clone()),
-                    block_height: Set(u.block_height),
-                    source: Set(Some(u.source.clone())),
+                .map(|u| {
+                    format!(
+                        "('{}', {}, '{}', '{}', {}, '{}', {}, '{}')",
+                        u.txid.replace('\'', "''"),
+                        u.vout,
+                        u.network.replace('\'', "''"),
+                        u.address.replace('\'', "''"),
+                        u.value,
+                        u.script_pubkey.replace('\'', "''"),
+                        u.block_height,
+                        u.source.replace('\'', "''"),
+                    )
                 })
                 .collect();
 
-            let result = address_utxos::Entity::insert_many(models)
-                .on_conflict(
-                    sea_orm::sea_query::OnConflict::columns([
-                        address_utxos::Column::Txid,
-                        address_utxos::Column::Vout,
-                        address_utxos::Column::Network,
-                    ])
-                    .do_nothing()
-                    .to_owned(),
-                )
-                .exec(&self.conn)
+            // API refresh overrides external snapshots only; the indexer's
+            // 'node' rows stay untouched.
+            let sql = format!(
+                "INSERT INTO address_utxos (txid, vout, network, address, value, script_pubkey, block_height, source) \
+                 VALUES {} \
+                 ON CONFLICT (txid, vout, network) DO UPDATE SET \
+                   value = EXCLUDED.value, \
+                   block_height = EXCLUDED.block_height, \
+                   script_pubkey = CASE WHEN EXCLUDED.script_pubkey = '' THEN address_utxos.script_pubkey ELSE EXCLUDED.script_pubkey END, \
+                   source = EXCLUDED.source \
+                 WHERE address_utxos.source IS DISTINCT FROM 'node'",
+                values.join(", ")
+            );
+
+            let result = self
+                .conn
+                .execute(sea_orm::Statement::from_string(
+                    sea_orm::DbBackend::Postgres,
+                    sql,
+                ))
                 .await;
 
             match result {
-                Ok(_) => total += chunk.len(),
-                Err(sea_orm::DbErr::RecordNotInserted) => {
-                    // All rows conflicted — nothing inserted, not an error
-                }
+                Ok(r) => total += r.rows_affected() as usize,
                 Err(e) => return Err(format!("DB insert failed: {}", e)),
             }
         }
