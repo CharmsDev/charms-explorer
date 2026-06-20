@@ -117,6 +117,7 @@ pub async fn get_wallet_utxos(
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let qn = quicknode_url(&state).to_string();
+    let network = params.network.clone();
 
     let min_value = params.min_value;
 
@@ -125,7 +126,7 @@ pub async fn get_wallet_utxos(
     // so a success here may come from either esplora or indexed endpoint.
     let result = if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::get_utxos(&state.http_client, &mk, &address, min_value, Some(&qn)).await {
+        match maestro_service::get_utxos(&state.http_client, &mk, &network, &address, min_value, Some(&qn)).await {
             Ok(utxos) => {
                 state.maestro_cb.record_success();
                 Ok(utxos)
@@ -259,12 +260,13 @@ pub async fn get_wallet_transaction(
 pub async fn get_wallet_tx_hex(
     State(state): State<AppState>,
     Path(txid): Path<String>,
-    Query(_params): Query<NetworkQuery>,
+    Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = params.network.clone();
     // Try Maestro first
     if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::get_tx_hex(&state.http_client, &mk, &txid).await {
+        match maestro_service::get_tx_hex(&state.http_client, &mk, &network, &txid).await {
             Ok(hex) => {
                 state.maestro_cb.record_success();
                 return Ok(Json(serde_json::json!({ "txid": txid, "hex": hex })));
@@ -293,6 +295,11 @@ pub async fn get_wallet_prev_txs(
     State(state): State<AppState>,
     Json(body): Json<serde_json::Value>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
+    let network = body
+        .get("network")
+        .and_then(|v| v.as_str())
+        .unwrap_or("mainnet")
+        .to_string();
     let txids: Vec<String> = body
         .get("txids")
         .and_then(|v| v.as_array())
@@ -318,9 +325,10 @@ pub async fn get_wallet_prev_txs(
             let state = state.clone();
             let txid = txid.clone();
             let mk = mk.clone();
+            let network = network.clone();
             tokio::spawn(async move {
                 if has_maestro {
-                    match maestro_service::get_tx_hex(&state.http_client, &mk, &txid).await {
+                    match maestro_service::get_tx_hex(&state.http_client, &mk, &network, &txid).await {
                         Ok(hex) => return (txid, Ok(hex)),
                         Err(e) => {
                             tracing::warn!("prev-txs: Maestro failed for {}: {}", txid, e);
@@ -372,7 +380,7 @@ pub async fn broadcast_wallet_transaction(
     // Backup: Maestro
     if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::broadcast_transaction(&state.http_client, &mk, raw_tx).await {
+        match maestro_service::broadcast_transaction(&state.http_client, &mk, network, raw_tx).await {
             Ok(txid) => {
                 state.maestro_cb.record_success();
                 tracing::info!("Broadcast: Maestro accepted {}", txid);
@@ -403,11 +411,12 @@ pub async fn get_wallet_fee_estimate(
     Query(params): Query<FeeEstimateQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let blocks = params.blocks.unwrap_or(6);
+    let network = params.network.clone();
 
     // Try Maestro first
     if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::get_fee_estimate(&state.http_client, &mk, blocks).await {
+        match maestro_service::get_fee_estimate(&state.http_client, &mk, &network, blocks).await {
             Ok(estimate) => {
                 state.maestro_cb.record_success();
                 return Ok(Json(serde_json::json!(estimate)));
@@ -781,7 +790,7 @@ pub async fn get_wallet_utxos_batch(
                 // Maestro first (if available and circuit breaker closed)
                 let result = if maestro_available(&state) {
                     let mk = maestro_key(&state).to_string();
-                    match maestro_service::get_utxos(&state.http_client, &mk, &address, min_value, Some(&qn)).await {
+                    match maestro_service::get_utxos(&state.http_client, &mk, &network, &address, min_value, Some(&qn)).await {
                         Ok(utxos) => {
                             state.maestro_cb.record_success();
                             Ok(utxos)
@@ -1009,7 +1018,7 @@ async fn resolve_charm_balances_live(
     let real_utxos: std::collections::HashSet<(String, u32)> = if maestro_available(state) {
         let mk = maestro_key(state).to_string();
         match maestro_service::get_utxos(
-            &state.http_client, &mk, address, None,
+            &state.http_client, &mk, network, address, None,
             Some(&state.config.bitcoin_mainnet_quicknode_endpoint),
         ).await {
             Ok(utxos) => utxos.iter().map(|u| (u.txid.clone(), u.vout)).collect(),
@@ -1142,11 +1151,12 @@ pub async fn get_wallet_chain_tip(
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let http = state.http_client.clone();
+    let network = params.network.clone();
 
     // Try Maestro first
     if maestro_available(&state) {
         let mk = maestro_key(&state).to_string();
-        match maestro_service::get_chain_tip(&http, &mk).await {
+        match maestro_service::get_chain_tip(&http, &mk, &network).await {
             Ok(tip) => {
                 state.maestro_cb.record_success();
                 return Ok(Json(serde_json::json!(tip)));

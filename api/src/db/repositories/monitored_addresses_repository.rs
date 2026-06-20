@@ -89,6 +89,25 @@ impl MonitoredAddressesRepository {
     ///
     /// Returning false in the mismatch case forces the caller to re-seed,
     /// closing the Maestro↔node handoff gap.
+    /// Seconds elapsed since the last seed, if `seeded_at` is set.
+    /// Returns `Ok(None)` when the row is missing or the seed timestamp is null.
+    pub async fn seed_age_seconds(
+        &self,
+        address: &str,
+        network: &str,
+    ) -> Result<Option<i64>, String> {
+        let result = monitored_addresses::Entity::find()
+            .filter(monitored_addresses::Column::Address.eq(address))
+            .filter(monitored_addresses::Column::Network.eq(network))
+            .one(&self.conn)
+            .await
+            .map_err(|e| format!("DB query failed: {}", e))?;
+        let Some(model) = result else { return Ok(None) };
+        let Some(seeded_at) = model.seeded_at else { return Ok(None) };
+        let now = chrono::Utc::now();
+        Ok(Some((now - seeded_at).num_seconds()))
+    }
+
     pub async fn is_seeded(&self, address: &str, network: &str) -> Result<bool, String> {
         let result = monitored_addresses::Entity::find()
             .filter(monitored_addresses::Column::Address.eq(address))

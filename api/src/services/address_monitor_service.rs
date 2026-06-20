@@ -35,10 +35,22 @@ impl AddressMonitorService {
         address: &str,
         network: &str,
     ) -> Result<bool, String> {
-        // 1. Check if already seeded (monitored + has BTC UTXOs from QuickNode)
-        //    Addresses registered by indexer/backfill have seeded_at = NULL,
-        //    so they still need their BTC UTXOs fetched on first balance query.
-        if monitored_repo.is_seeded(address, network).await? {
+        // 1. Soft refresh: a row marked `seeded` is still re-fetched from the
+        //    provider when its last seed is older than MEMPOOL_REFRESH. The
+        //    indexer only updates `address_utxos` at block confirmation, so a
+        //    fresh mempool tx to a monitored address would otherwise stay
+        //    invisible until the next block. Charm-bearing addresses still
+        //    get the indexer's mempool processing for charms; this covers
+        //    plain BTC UTXOs.
+        const MEMPOOL_REFRESH_SECS: i64 = 15;
+        let seed_age = monitored_repo.seed_age_seconds(address, network).await.ok().flatten();
+        if let Some(age) = seed_age {
+            if age < MEMPOOL_REFRESH_SECS {
+                return Ok(true);
+            }
+            // Stale: fall through to re-seed.
+        } else if monitored_repo.is_seeded(address, network).await? {
+            // No age tracked but seeded → legacy / no providers configured.
             return Ok(true);
         }
 
@@ -90,6 +102,7 @@ impl AddressMonitorService {
             http_client,
             maestro_api_key,
             quicknode_url,
+            network,
         )
         .await;
 
@@ -133,9 +146,10 @@ impl AddressMonitorService {
         http_client: &reqwest::Client,
         maestro_api_key: &str,
         quicknode_url: &str,
+        network: &str,
     ) -> (i32, Option<String>) {
         if !maestro_api_key.is_empty() {
-            if let Ok(tip) = maestro_service::get_chain_tip(http_client, maestro_api_key).await {
+            if let Ok(tip) = maestro_service::get_chain_tip(http_client, maestro_api_key, network).await {
                 return (tip.height as i32, Some(tip.hash));
             }
         }
@@ -158,7 +172,7 @@ impl AddressMonitorService {
         network: &str,
     ) -> Result<(usize, usize), String> {
         let (utxos, txs) =
-            maestro_service::get_address_info(http_client, maestro_api_key, address).await?;
+            maestro_service::get_address_info(http_client, maestro_api_key, network, address).await?;
 
         // Insert UTXOs
         let utxo_count = if !utxos.is_empty() {
