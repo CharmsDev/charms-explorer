@@ -136,15 +136,16 @@ pub async fn get_order_by_id(
     Ok(order.as_ref().map(model_to_response))
 }
 
-/// Get all orders for a specific asset (any status)
+/// Get all orders for a specific asset (any status), network-scoped.
 pub async fn get_orders_by_asset(
     state: &AppState,
     asset_app_id: &str,
+    network: &str,
 ) -> ExplorerResult<DexOrdersListResponse> {
     let orders = state
         .repositories
         .dex_orders
-        .find_by_asset(asset_app_id)
+        .find_by_asset(asset_app_id, network)
         .await
         .map_err(|e| {
             tracing::warn!("Database error in get_orders_by_asset: {:?}", e);

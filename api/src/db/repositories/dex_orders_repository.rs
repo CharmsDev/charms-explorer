@@ -50,10 +50,15 @@ impl DexOrdersRepository {
         Ok(result)
     }
 
-    /// Find all orders by asset (any status)
-    pub async fn find_by_asset(&self, asset_app_id: &str) -> Result<Vec<dex_orders::Model>, DbError> {
+    /// Find all orders by asset (any status), network-scoped.
+    pub async fn find_by_asset(
+        &self,
+        asset_app_id: &str,
+        network: &str,
+    ) -> Result<Vec<dex_orders::Model>, DbError> {
         let results = dex_orders::Entity::find()
             .filter(dex_orders::Column::AssetAppId.eq(asset_app_id))
+            .filter(dex_orders::Column::Network.eq(network))
             .order_by_desc(dex_orders::Column::CreatedAt)
             .all(&self.conn)
             .await?;

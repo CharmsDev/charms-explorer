@@ -64,13 +64,15 @@ pub async fn get_order_by_id(
     Ok(Json(response))
 }
 
-/// GET /dex/orders/by-asset/{asset_app_id}
-/// Returns all orders (any status) for a specific asset
+/// GET /dex/orders/by-asset/{asset_app_id}?network=...
+/// Returns all orders (any status) for a specific asset, network-scoped.
 pub async fn get_orders_by_asset(
     State(state): State<AppState>,
     Path(asset_app_id): Path<String>,
+    Query(params): Query<AllOrdersQuery>,
 ) -> ExplorerResult<Json<DexOrdersListResponse>> {
-    let response = dex_orders_service::get_orders_by_asset(&state, &asset_app_id).await?;
+    let network = params.network.as_deref().unwrap_or("mainnet");
+    let response = dex_orders_service::get_orders_by_asset(&state, &asset_app_id, network).await?;
     Ok(Json(response))
 }
 
