@@ -42,9 +42,11 @@ pub async fn save_or_update_asset(
 
     match asset_type {
         "nft" => {
-            // NFT creation: check if already exists
+            // NFT creation: check if already exists (per network — the same
+            // app_id can legitimately exist on mainnet and testnet4).
             let existing_nft = Assets::find()
                 .filter(assets::Column::AppId.eq(&asset.app_id))
+                .filter(assets::Column::Network.eq(&asset.network))
                 .one(db)
                 .await
                 .map_err(DbError::SeaOrmError)?;
@@ -98,6 +100,7 @@ pub async fn save_or_update_asset(
             let parent_nft = Assets::find()
                 .filter(assets::Column::AssetType.eq("nft"))
                 .filter(assets::Column::AppId.like(&parent_nft_pattern))
+                .filter(assets::Column::Network.eq(&asset.network))
                 .one(db)
                 .await
                 .map_err(DbError::SeaOrmError)?;
@@ -121,7 +124,7 @@ pub async fn save_or_update_asset(
             // Mark parent NFT as reference if this is the first token for it
             if should_mark_nft_as_reference {
                 if let Some(ref nft) = parent_nft {
-                    if let Err(e) = mark_nft_as_reference(db, &nft.app_id).await {
+                    if let Err(e) = mark_nft_as_reference(db, &nft.app_id, &asset.network).await {
                         crate::utils::logging::log_warning(&format!(
                             "Failed to mark NFT as reference: {}",
                             e
@@ -131,10 +134,11 @@ pub async fn save_or_update_asset(
             }
 
             // ALWAYS create/update token asset record (for Tokens tab display)
-            // app_id is unique per token type: {tag}/{identity}/{vk}
-            // Search by exact app_id - all mints of same token share the same app_id
+            // app_id is unique per (token, network): same app_id can exist on
+            // mainnet and testnet4 independently.
             let existing_token = Assets::find()
                 .filter(assets::Column::AppId.eq(&asset.app_id))
+                .filter(assets::Column::Network.eq(&asset.network))
                 .one(db)
                 .await
                 .map_err(DbError::SeaOrmError)?;
@@ -216,6 +220,7 @@ pub async fn save_or_update_asset(
             // Other asset types: use simple accumulation with default decimals
             let existing_asset = Assets::find()
                 .filter(assets::Column::AppId.eq(&asset.app_id))
+                .filter(assets::Column::Network.eq(&asset.network))
                 .one(db)
                 .await
                 .map_err(DbError::SeaOrmError)?;
@@ -294,9 +299,14 @@ pub async fn save_or_update_asset(
 
 /// Mark an NFT as a reference NFT (has associated tokens)
 /// This is called when the first token for this NFT is created
-async fn mark_nft_as_reference(db: &DatabaseConnection, nft_app_id: &str) -> Result<(), DbError> {
+async fn mark_nft_as_reference(
+    db: &DatabaseConnection,
+    nft_app_id: &str,
+    network: &str,
+) -> Result<(), DbError> {
     let nft = Assets::find()
         .filter(assets::Column::AppId.eq(nft_app_id))
+        .filter(assets::Column::Network.eq(network))
         .one(db)
         .await
         .map_err(DbError::SeaOrmError)?;
@@ -419,10 +429,11 @@ pub async fn save_batch(
             Decimal::from(1)
         };
 
-        // Check if token already exists by exact app_id
-        // app_id is unique per token type: {tag}/{identity}/{vk}
+        // Check if token already exists by exact (app_id, network) — same
+        // app_id can exist independently on each network.
         let existing_token = Assets::find()
             .filter(assets::Column::AppId.eq(&app_id))
+            .filter(assets::Column::Network.eq(&network))
             .one(db)
             .await
             .map_err(DbError::SeaOrmError)?;
@@ -460,12 +471,13 @@ pub async fn save_batch(
             let (name, symbol, description, decimals) = if let Ok(Some(parent_nft)) = Assets::find()
                 .filter(assets::Column::AssetType.eq("nft"))
                 .filter(assets::Column::AppId.like(&parent_nft_pattern))
+                .filter(assets::Column::Network.eq(&network))
                 .one(db)
                 .await
             {
                 // Mark parent NFT as reference if not already marked
                 if !parent_nft.is_reference_nft {
-                    if let Err(e) = mark_nft_as_reference(db, &parent_nft.app_id).await {
+                    if let Err(e) = mark_nft_as_reference(db, &parent_nft.app_id, &network).await {
                         crate::utils::logging::log_warning(&format!(
                             "Failed to mark NFT as reference: {}",
                             e
@@ -526,6 +538,7 @@ pub async fn save_batch(
 pub async fn update_nft_metadata(
     db: &DatabaseConnection,
     app_id: &str,
+    network: &str,
     name: Option<&str>,
     image_url: Option<&str>,
 ) -> Result<(), DbError> {
@@ -533,6 +546,7 @@ pub async fn update_nft_metadata(
 
     let existing = Assets::find()
         .filter(assets::Column::AppId.eq(app_id))
+        .filter(assets::Column::Network.eq(network))
         .one(db)
         .await
         .map_err(DbError::SeaOrmError)?;

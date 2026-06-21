@@ -53,6 +53,12 @@ const MIGRATIONS: &[(&str, &str)] = &[
         "m20260615_000001_charms_pk_with_app_id",
         include_str!("../../../database/migrations/m20260615_000001_charms_pk_with_app_id.sql"),
     ),
+    (
+        "m20260622_000001_assets_unique_app_id_network",
+        include_str!(
+            "../../../database/migrations/m20260622_000001_assets_unique_app_id_network.sql"
+        ),
+    ),
 ];
 
 #[tokio::main]
