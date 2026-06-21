@@ -57,6 +57,9 @@ pub async fn get_transaction_by_txid(
         }
     };
 
+    // Capture the network before consuming the model; asset metadata lookups
+    // below need it so cross-network app_ids return the right row.
+    let network = model.network.clone();
     let mut data = TransactionData::from(model);
 
     // Parse spell's app_public_inputs to get ALL involved app_ids (including consumed inputs)
@@ -93,11 +96,11 @@ pub async fn get_transaction_by_txid(
             }
         }
 
-        // Lookup asset metadata for ALL involved app_ids
+        // Lookup asset metadata for ALL involved app_ids (network-scoped)
         let assets_meta = state
             .repositories
             .asset_repository
-            .find_by_app_ids(all_app_ids)
+            .find_by_app_ids(all_app_ids, &network)
             .await
             .unwrap_or_default();
 

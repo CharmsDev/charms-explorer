@@ -500,12 +500,12 @@ pub async fn get_wallet_charm_balances(
         .map(|u| ((u.txid.clone(), u.vout), u.value))
         .collect();
 
-    // 5. Look up symbols from assets table
+    // 5. Look up symbols from assets table (network-scoped)
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
     let assets = state
         .repositories
         .asset_repository
-        .find_by_app_ids(app_ids.clone())
+        .find_by_app_ids(app_ids.clone(), network)
         .await
         .unwrap_or_default();
     let symbol_map: std::collections::HashMap<String, String> = assets
@@ -891,7 +891,7 @@ async fn resolve_charm_balances_for_address(
     let assets = state
         .repositories
         .asset_repository
-        .find_by_app_ids(app_ids)
+        .find_by_app_ids(app_ids, network)
         .await
         .unwrap_or_default();
     let asset_map: std::collections::HashMap<String, crate::entity::assets::Model> = assets
@@ -1037,7 +1037,7 @@ async fn resolve_charm_balances_live(
     let assets = state
         .repositories
         .asset_repository
-        .find_by_app_ids(app_ids)
+        .find_by_app_ids(app_ids, network)
         .await
         .unwrap_or_default();
     let asset_map: std::collections::HashMap<String, crate::entity::assets::Model> = assets
@@ -1318,7 +1318,7 @@ async fn resolve_balance_for_batch(
     let assets = state
         .repositories
         .asset_repository
-        .find_by_app_ids(app_ids)
+        .find_by_app_ids(app_ids, network)
         .await
         .unwrap_or_default();
     let symbol_map: std::collections::HashMap<String, String> = assets
@@ -1569,7 +1569,7 @@ pub async fn get_wallet_transactions_batch(
                 let symbol_map: std::collections::HashMap<String, String> = state
                     .repositories
                     .asset_repository
-                    .find_by_app_ids(all_app_ids)
+                    .find_by_app_ids(all_app_ids, &network)
                     .await
                     .unwrap_or_default()
                     .into_iter()

@@ -75,25 +75,31 @@ impl AssetRepository {
         Ok(asset)
     }
 
-    /// Find asset by app_id
+    /// Find asset by app_id scoped to a network.
+    /// The same app_id can exist on mainnet and testnet4 as independent rows
+    /// (see m20260622_000001 migration); the caller must always pass network.
     pub async fn find_by_app_id(
         &self,
         app_id: &str,
+        network: &str,
     ) -> Result<Option<Model>, Box<dyn std::error::Error + Send + Sync>> {
         let asset = Asset::find()
             .filter(Column::AppId.eq(app_id))
+            .filter(Column::Network.eq(network))
             .one(self.db.as_ref())
             .await?;
         Ok(asset)
     }
 
-    /// Find assets by multiple app_ids
+    /// Find assets by multiple app_ids scoped to a network.
     pub async fn find_by_app_ids(
         &self,
         app_ids: Vec<String>,
+        network: &str,
     ) -> Result<Vec<Model>, Box<dyn std::error::Error + Send + Sync>> {
         let assets = Asset::find()
             .filter(Column::AppId.is_in(app_ids))
+            .filter(Column::Network.eq(network))
             .all(self.db.as_ref())
             .await?;
         Ok(assets)
@@ -156,13 +162,15 @@ impl AssetRepository {
     pub async fn find_reference_nft_by_hash(
         &self,
         hash: &str,
+        network: &str,
     ) -> Result<Option<Model>, Box<dyn std::error::Error + Send + Sync>> {
         let pattern = format!("n/{}/%", hash);
 
-        // Get all NFTs matching the hash pattern
+        // Get all NFTs matching the hash pattern, scoped to the network.
         let assets = Asset::find()
             .filter(Column::AssetType.eq("nft"))
             .filter(Column::AppId.like(&pattern))
+            .filter(Column::Network.eq(network))
             .order_by_asc(Column::BlockHeight)
             .all(self.db.as_ref())
             .await?;
@@ -188,11 +196,13 @@ impl AssetRepository {
     pub async fn get_max_total_supply_by_prefix(
         &self,
         base_app_id: &str,
+        network: &str,
     ) -> Result<Option<rust_decimal::Decimal>, Box<dyn std::error::Error + Send + Sync>> {
         let pattern = format!("{}:%", base_app_id);
 
         let assets = Asset::find()
             .filter(Column::AppId.like(&pattern))
+            .filter(Column::Network.eq(network))
             .all(self.db.as_ref())
             .await?;
 

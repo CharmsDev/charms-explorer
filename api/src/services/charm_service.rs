@@ -121,7 +121,7 @@ pub async fn get_all_charms_paginated_by_network(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
 
     let mut charm_data = Vec::new();
 
@@ -204,7 +204,7 @@ pub async fn get_all_charms_paginated(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids.clone()).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
 
     // [RJJ-PERF] Batch fetch likes data (2 queries instead of 2N)
     let likes_counts = state
@@ -292,7 +292,7 @@ pub async fn get_all_charms(state: &AppState, user_id: i32) -> ExplorerResult<Ch
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
 
     let mut charm_data = Vec::new();
 
@@ -381,7 +381,7 @@ pub async fn get_charms_by_type_paginated(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids.clone()).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
 
     // [RJJ-PERF] Batch fetch likes data (2 queries instead of 2N)
     let likes_counts = state
@@ -478,7 +478,7 @@ pub async fn get_charms_by_type(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
 
     let mut charm_data = Vec::new();
 
@@ -610,8 +610,7 @@ pub async fn get_charm_by_txid(
         .unwrap_or(false);
 
     // Get metadata for this charm
-    let app_ids = vec![charm.app_id.clone()];
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, std::slice::from_ref(&charm)).await;
     let (name, image, ticker, description) = metadata_map
         .get(&charm.app_id)
         .cloned()
@@ -680,7 +679,7 @@ pub async fn get_charm_by_charmid(
 
     // Get metadata for charms (all share same app_id)
     let app_ids = vec![charmid.to_string()];
-    let metadata_map = get_metadata_map(state, app_ids).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
     let (name, image, ticker, description) = metadata_map
         .get(charmid)
         .cloned()
@@ -804,7 +803,7 @@ pub async fn get_charms_by_address(
 
     // [RJJ-METADATA] Enrich charms with metadata from assets table
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
-    let metadata_map = get_metadata_map(state, app_ids.clone()).await;
+    let metadata_map = get_metadata_map(state, &charms).await;
 
     // [RJJ-PERF] Batch fetch likes data (2 queries instead of 2N)
     let likes_counts = state
@@ -870,10 +869,13 @@ fn extract_hash_from_app_id(app_id: &str) -> String {
     }
 }
 
-// Helper to enrich charms with metadata from assets table
+// Helper to enrich charms with metadata from assets table. Network is
+// derived from the charm rows themselves and lookups are grouped per
+// network so the same app_id on mainnet and testnet4 returns the right
+// metadata row.
 async fn get_metadata_map(
     state: &AppState,
-    app_ids: Vec<String>,
+    charms: &[crate::entity::charms::Model],
 ) -> HashMap<
     String,
     (
@@ -883,36 +885,39 @@ async fn get_metadata_map(
         Option<String>,
     ),
 > {
-    let unique_app_ids: Vec<String> = app_ids
-        .iter()
-        .cloned()
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect();
-
-    if unique_app_ids.is_empty() {
+    if charms.is_empty() {
         return HashMap::new();
     }
 
-    let assets = match state
-        .repositories
-        .asset_repository
-        .find_by_app_ids(unique_app_ids)
-        .await
-    {
-        Ok(assets) => assets,
-        Err(err) => {
-            tracing::warn!("Error fetching assets metadata: {:?}", err);
-            vec![]
-        }
-    };
+    let mut per_network: HashMap<String, HashSet<String>> = HashMap::new();
+    for c in charms {
+        per_network
+            .entry(c.network.clone())
+            .or_default()
+            .insert(c.app_id.clone());
+    }
 
     let mut map = HashMap::new();
-    for asset in assets {
-        map.insert(
-            asset.app_id,
-            (asset.name, asset.image_url, asset.symbol, asset.description),
-        );
+    for (network, app_ids_set) in per_network {
+        let app_ids: Vec<String> = app_ids_set.into_iter().collect();
+        let assets = match state
+            .repositories
+            .asset_repository
+            .find_by_app_ids(app_ids, &network)
+            .await
+        {
+            Ok(assets) => assets,
+            Err(err) => {
+                tracing::warn!("Error fetching assets metadata: {:?}", err);
+                continue;
+            }
+        };
+        for asset in assets {
+            map.insert(
+                asset.app_id,
+                (asset.name, asset.image_url, asset.symbol, asset.description),
+            );
+        }
     }
     map
 }

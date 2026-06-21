@@ -78,12 +78,13 @@ impl AssetService {
         self.asset_repository.find_by_id(id).await
     }
 
-    /// Get asset by app_id
+    /// Get asset by app_id, scoped to a network.
     pub async fn get_asset_by_app_id(
         &self,
         app_id: &str,
+        network: &str,
     ) -> Result<Option<Asset>, Box<dyn std::error::Error + Send + Sync>> {
-        self.asset_repository.find_by_app_id(app_id).await
+        self.asset_repository.find_by_app_id(app_id, network).await
     }
 
     /// Get assets by type
@@ -109,8 +110,9 @@ impl AssetService {
     pub async fn get_reference_nft_by_hash(
         &self,
         hash: &str,
+        network: &str,
     ) -> Result<Option<Asset>, Box<dyn std::error::Error + Send + Sync>> {
-        self.asset_repository.find_reference_nft_by_hash(hash).await
+        self.asset_repository.find_reference_nft_by_hash(hash, network).await
     }
 
     /// Get max total_supply from all assets matching a base app_id prefix
@@ -118,9 +120,10 @@ impl AssetService {
     pub async fn get_max_total_supply_by_app_id_prefix(
         &self,
         base_app_id: &str,
+        network: &str,
     ) -> Result<Option<rust_decimal::Decimal>, Box<dyn std::error::Error + Send + Sync>> {
         self.asset_repository
-            .get_max_total_supply_by_prefix(base_app_id)
+            .get_max_total_supply_by_prefix(base_app_id, network)
             .await
     }
 }

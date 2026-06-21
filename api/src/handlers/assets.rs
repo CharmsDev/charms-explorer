@@ -153,9 +153,11 @@ pub async fn get_assets(
     let limit = params.limit.unwrap_or(20);
     let offset = (page - 1) * limit;
 
-    // If app_id is provided, search by app_id directly
+    // If app_id is provided, search by app_id directly. Network scope is
+    // mandatory: the same app_id can exist on mainnet and testnet4.
+    let network = params.network.as_deref().unwrap_or("mainnet");
     let (assets, total) = if let Some(ref app_id) = params.app_id {
-        match asset_service.get_asset_by_app_id(app_id).await {
+        match asset_service.get_asset_by_app_id(app_id, network).await {
             Ok(Some(asset)) => (vec![asset], 1u64),
             Ok(None) => (vec![], 0u64),
             Err(_) => return Err(StatusCode::INTERNAL_SERVER_ERROR),
@@ -299,11 +301,13 @@ pub struct ReferenceNftResponse {
 /// when displaying a token, avoiding storing duplicate images in the database
 pub async fn get_reference_nft_by_hash(
     axum::extract::Path(hash): axum::extract::Path<String>,
+    Query(params): Query<AssetQueryParams>,
     State(state): State<AppState>,
 ) -> Result<Json<ReferenceNftResponse>, StatusCode> {
     let asset_service = AssetService::new(state.repositories.asset_repository.clone());
+    let network = params.network.as_deref().unwrap_or("mainnet");
 
-    match asset_service.get_reference_nft_by_hash(&hash).await {
+    match asset_service.get_reference_nft_by_hash(&hash, network).await {
         Ok(Some(nft)) => {
             let mut image_url = nft.image_url;
 
@@ -338,15 +342,17 @@ pub async fn get_reference_nft_by_hash(
 /// Get a specific asset by ID
 pub async fn get_asset_by_id(
     axum::extract::Path(asset_id): axum::extract::Path<String>,
+    Query(params): Query<AssetQueryParams>,
     State(state): State<AppState>,
 ) -> Result<Json<AssetItem>, StatusCode> {
     let asset_service = AssetService::new(state.repositories.asset_repository.clone());
+    let network = params.network.as_deref().unwrap_or("mainnet");
 
     // Try to parse asset_id as UUID, if it fails try as app_id
     let asset_result = if let Ok(id) = asset_id.parse::<i32>() {
         asset_service.get_asset_by_id(id).await
     } else {
-        asset_service.get_asset_by_app_id(&asset_id).await
+        asset_service.get_asset_by_app_id(&asset_id, network).await
     };
 
     match asset_result {
@@ -360,11 +366,11 @@ pub async fn get_asset_by_id(
             // [RJJ-TOKEN-METADATA] If this is a token, try to inherit metadata from reference NFT
             let total_supply = asset.total_supply;
             if asset.app_id.starts_with("t/") {
-                // Convert t/HASH/... to n/HASH/... to find reference NFT
+                // Convert t/HASH/... to n/HASH/... to find reference NFT (same network)
                 let nft_app_id = asset.app_id.replacen("t/", "n/", 1);
 
                 // Try to find the reference NFT
-                if let Ok(Some(nft_asset)) = asset_service.get_asset_by_app_id(&nft_app_id).await {
+                if let Ok(Some(nft_asset)) = asset_service.get_asset_by_app_id(&nft_app_id, network).await {
                     // Inherit metadata from NFT if token doesn't have it
                     name = name.or(nft_asset.name);
                     symbol = symbol.or(nft_asset.symbol);
