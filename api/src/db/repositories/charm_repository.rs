@@ -43,10 +43,17 @@ impl CharmRepository {
         &self.conn
     }
 
-    /// Retrieves charms by transaction ID (may return multiple due to composite key)
-    pub async fn get_by_txid(&self, txid: &str) -> Result<Option<charms::Model>, DbError> {
+    /// Retrieves a charm by (txid, network). txid is unique per chain
+    /// by SHA256 collision resistance, but scoping by network is the
+    /// invariant the rest of the system follows.
+    pub async fn get_by_txid(
+        &self,
+        txid: &str,
+        network: &str,
+    ) -> Result<Option<charms::Model>, DbError> {
         charms::Entity::find()
             .filter(charms::Column::Txid.eq(txid))
+            .filter(charms::Column::Network.eq(network))
             .one(&self.conn)
             .await
             .map_err(Into::into)
@@ -161,20 +168,29 @@ impl CharmRepository {
         Ok((charms, total))
     }
 
-    /// Finds charms by charm ID (app_id)
-    pub async fn find_by_charmid(&self, charmid: &str) -> Result<Vec<charms::Model>, DbError> {
+    /// Finds charms by charm ID (app_id), scoped to a network.
+    pub async fn find_by_charmid(
+        &self,
+        charmid: &str,
+        network: &str,
+    ) -> Result<Vec<charms::Model>, DbError> {
         charms::Entity::find()
             .filter(charms::Column::AppId.eq(charmid))
+            .filter(charms::Column::Network.eq(network))
             .all(&self.conn)
             .await
             .map_err(Into::into)
     }
 
-    /// [RJJ-ADDRESS-SEARCH] Finds UNSPENT charms by address
-    /// Returns only charms where spent = false
-    pub async fn find_by_address(&self, address: &str) -> Result<Vec<charms::Model>, DbError> {
+    /// [RJJ-ADDRESS-SEARCH] Finds UNSPENT charms by address, network-scoped.
+    pub async fn find_by_address(
+        &self,
+        address: &str,
+        network: &str,
+    ) -> Result<Vec<charms::Model>, DbError> {
         charms::Entity::find()
             .filter(charms::Column::Address.eq(address))
+            .filter(charms::Column::Network.eq(network))
             .filter(charms::Column::Spent.eq(false))
             .order_by_desc(charms::Column::BlockHeight)
             .all(&self.conn)
@@ -210,13 +226,18 @@ impl CharmRepository {
         Ok(count as i64)
     }
 
-    /// Batch fetch charms by multiple txids (avoids N+1 queries)
-    pub async fn get_by_txids(&self, txids: &[String]) -> Result<Vec<charms::Model>, DbError> {
+    /// Batch fetch charms by multiple txids, network-scoped.
+    pub async fn get_by_txids(
+        &self,
+        txids: &[String],
+        network: &str,
+    ) -> Result<Vec<charms::Model>, DbError> {
         if txids.is_empty() {
             return Ok(vec![]);
         }
         charms::Entity::find()
             .filter(charms::Column::Txid.is_in(txids.to_vec()))
+            .filter(charms::Column::Network.eq(network))
             .all(&self.conn)
             .await
             .map_err(Into::into)
@@ -376,11 +397,12 @@ impl CharmRepository {
         Ok(map)
     }
 
-    /// [RJJ-SUPPLY] Calculate circulating supply from unspent charms
-    /// Returns SUM(amount) WHERE app_id LIKE 'prefix%' AND spent = false
+    /// [RJJ-SUPPLY] Calculate circulating supply from unspent charms,
+    /// scoped to a network so mainnet and testnet4 don't mix.
     pub async fn get_circulating_supply_by_app_id_prefix(
         &self,
         app_id_prefix: &str,
+        network: &str,
     ) -> Result<Option<i64>, DbError> {
         use sea_orm::FromQueryResult;
 
@@ -394,6 +416,7 @@ impl CharmRepository {
             .select_only()
             .column_as(Expr::cust("SUM(amount)"), "total")
             .filter(charms::Column::AppId.starts_with(&pattern[..pattern.len() - 1]))
+            .filter(charms::Column::Network.eq(network))
             .filter(charms::Column::Spent.eq(false))
             .into_model::<SupplyResult>()
             .one(&self.conn)

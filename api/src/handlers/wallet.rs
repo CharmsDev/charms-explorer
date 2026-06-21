@@ -1547,7 +1547,7 @@ pub async fn get_wallet_transactions_batch(
                 let charm_rows = state
                     .repositories
                     .charm
-                    .get_by_txids(&txids)
+                    .get_by_txids(&txids, &network)
                     .await
                     .unwrap_or_default();
 

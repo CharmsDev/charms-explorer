@@ -87,7 +87,7 @@ pub async fn get_transaction_by_txid(
         .unwrap_or_default();
 
     // Enrich with asset metadata if this transaction has charms
-    if let Ok(charms) = state.repositories.charm.get_by_txids(&[txid]).await {
+    if let Ok(charms) = state.repositories.charm.get_by_txids(&[txid], &network).await {
         // Collect all app_ids: from charms + from spell app_public_inputs
         let mut all_app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
         for app_id in &spell_app_ids {

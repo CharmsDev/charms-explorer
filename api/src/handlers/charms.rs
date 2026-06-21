@@ -72,9 +72,11 @@ pub async fn get_charms_by_type(
 pub async fn get_charm_by_txid(
     State(state): State<AppState>,
     Path(txid): Path<String>,
+    Query(params): Query<GetCharmsQuery>,
 ) -> Result<(http::HeaderMap, Json<CharmData>), ExplorerError> {
     tracing::warn!("DEPRECATED: GET /charms/{{txid}} — use GET /transactions/{{txid}}");
-    let charm_data = charm_service::get_charm_by_txid(&state, &txid, 1).await?;
+    let network = params.network.as_deref().unwrap_or("mainnet");
+    let charm_data = charm_service::get_charm_by_txid(&state, &txid, network, 1).await?;
     let mut headers = http::HeaderMap::new();
     headers.insert(
         "deprecation",
@@ -93,9 +95,11 @@ pub async fn get_charm_by_txid(
 pub async fn get_charm_by_charmid(
     State(state): State<AppState>,
     Path(charmid): Path<String>,
+    Query(params): Query<GetCharmsQuery>,
 ) -> ExplorerResult<Json<CharmData>> {
     // Use default user_id of 1 as specified in requirements
-    let charm_data = charm_service::get_charm_by_charmid(&state, &charmid, 1).await?;
+    let network = params.network.as_deref().unwrap_or("mainnet");
+    let charm_data = charm_service::get_charm_by_charmid(&state, &charmid, network, 1).await?;
     Ok(Json(charm_data))
 }
 
@@ -124,6 +128,8 @@ pub async fn get_charms_by_address(
     Path(address): Path<String>,
     Query(params): Query<GetCharmsQuery>,
 ) -> ExplorerResult<Json<CharmsResponse>> {
-    let response = charm_service::get_charms_by_address(&state, &address, params.user_id).await?;
+    let network = params.network.as_deref().unwrap_or("mainnet");
+    let response =
+        charm_service::get_charms_by_address(&state, &address, network, params.user_id).await?;
     Ok(Json(response))
 }

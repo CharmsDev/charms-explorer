@@ -553,10 +553,11 @@ fn is_empty_spell_charm(data: &serde_json::Value) -> bool {
 pub async fn get_charm_by_txid(
     state: &AppState,
     txid: &str,
+    network: &str,
     user_id: i32,
 ) -> ExplorerResult<CharmData> {
     // Wrap the database call in a try-catch to provide more detailed error information
-    let charm_result = match state.repositories.charm.get_by_txid(txid).await {
+    let charm_result = match state.repositories.charm.get_by_txid(txid, network).await {
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
@@ -642,10 +643,11 @@ pub async fn get_charm_by_txid(
 pub async fn get_charm_by_charmid(
     state: &AppState,
     charmid: &str,
+    network: &str,
     user_id: i32,
 ) -> ExplorerResult<CharmData> {
     // Wrap the database call in a try-catch to provide more detailed error information
-    let charms = match state.repositories.charm.find_by_charmid(charmid).await {
+    let charms = match state.repositories.charm.find_by_charmid(charmid, network).await {
         Ok(result) => result,
         Err(err) => {
             // Log the error for debugging
@@ -790,10 +792,11 @@ pub async fn remove_like(
 pub async fn get_charms_by_address(
     state: &AppState,
     address: &str,
+    network: &str,
     user_id: i32,
 ) -> ExplorerResult<CharmsResponse> {
-    // Get unspent charms for this address
-    let charms = match state.repositories.charm.find_by_address(address).await {
+    // Get unspent charms for this address (network-scoped)
+    let charms = match state.repositories.charm.find_by_address(address, network).await {
         Ok(result) => result,
         Err(err) => {
             tracing::warn!("Database error in get_charms_by_address: {:?}", err);

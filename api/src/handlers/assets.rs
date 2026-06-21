@@ -184,7 +184,7 @@ pub async fn get_assets(
             let charms = state
                 .repositories
                 .charm
-                .get_by_txids(&txids)
+                .get_by_txids(&txids, network)
                 .await
                 .unwrap_or_default();
 
@@ -313,7 +313,9 @@ pub async fn get_reference_nft_by_hash(
 
             // If no image_url in asset, try to extract from charm data
             if image_url.is_none() {
-                if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&nft.txid).await {
+                if let Ok(Some(charm)) =
+                    state.repositories.charm.get_by_txid(&nft.txid, &nft.network).await
+                {
                     let (_, _, _, charm_image_url) = extract_asset_metadata_from_charm(&charm.data);
                     image_url = charm_image_url;
                 }
@@ -381,7 +383,9 @@ pub async fn get_asset_by_id(
 
             // Try to fetch related charm data for metadata extraction (as fallback)
             if name.is_none() || symbol.is_none() || description.is_none() || image_url.is_none() {
-                if let Ok(Some(charm)) = state.repositories.charm.get_by_txid(&asset.txid).await {
+                if let Ok(Some(charm)) =
+                    state.repositories.charm.get_by_txid(&asset.txid, &asset.network).await
+                {
                     let (charm_name, charm_symbol, charm_description, charm_image_url) =
                         extract_asset_metadata_from_charm(&charm.data);
 
