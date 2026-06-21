@@ -12,6 +12,8 @@ pub struct Model {
     pub app_id: String,
     #[sea_orm(column_type = "Text")]
     pub address: String,
+    #[sea_orm(column_type = "Text")]
+    pub network: String,
     pub total_amount: i64,
     pub charm_count: i32,
     pub first_seen_block: i32,

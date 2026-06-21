@@ -28,33 +28,38 @@ impl StatsHoldersRepository {
             .map_err(Into::into)
     }
 
-    /// Get holder info for a specific (app_id, address) combination
+    /// Get holder info for a specific (app_id, address, network) tuple.
+    /// PK on the table is (app_id, address, network); all three are required
+    /// to identify the row uniquely.
     #[allow(dead_code)] // Used by upsert_holder
     pub async fn get_holder(
         &self,
         app_id: &str,
         address: &str,
+        network: &str,
     ) -> Result<Option<stats_holders::Model>, DbError> {
         stats_holders::Entity::find()
             .filter(stats_holders::Column::AppId.eq(app_id))
             .filter(stats_holders::Column::Address.eq(address))
+            .filter(stats_holders::Column::Network.eq(network))
             .one(&self.conn)
             .await
             .map_err(Into::into)
     }
 
-    /// Upsert holder statistics (insert or update)
+    /// Upsert holder statistics (insert or update), network-scoped.
     #[allow(dead_code)] // Reserved for indexer integration
     pub async fn upsert_holder(
         &self,
         app_id: &str,
         address: &str,
+        network: &str,
         total_amount: i64,
         charm_count: i32,
         block_height: i32,
     ) -> Result<(), DbError> {
         // Try to find existing record
-        let existing = self.get_holder(app_id, address).await?;
+        let existing = self.get_holder(app_id, address, network).await?;
 
         if let Some(holder) = existing {
             // Update existing record
@@ -69,6 +74,7 @@ impl StatsHoldersRepository {
             let new_holder = stats_holders::ActiveModel {
                 app_id: Set(app_id.to_string()),
                 address: Set(address.to_string()),
+                network: Set(network.to_string()),
                 total_amount: Set(total_amount),
                 charm_count: Set(charm_count),
                 first_seen_block: Set(block_height),
@@ -83,22 +89,29 @@ impl StatsHoldersRepository {
         Ok(())
     }
 
-    /// Delete holder record (when total_amount reaches 0)
+    /// Delete holder record (when total_amount reaches 0), network-scoped.
     #[allow(dead_code)] // Reserved for indexer integration
-    pub async fn delete_holder(&self, app_id: &str, address: &str) -> Result<(), DbError> {
+    pub async fn delete_holder(
+        &self,
+        app_id: &str,
+        address: &str,
+        network: &str,
+    ) -> Result<(), DbError> {
         stats_holders::Entity::delete_many()
             .filter(stats_holders::Column::AppId.eq(app_id))
             .filter(stats_holders::Column::Address.eq(address))
+            .filter(stats_holders::Column::Network.eq(network))
             .exec(&self.conn)
             .await?;
         Ok(())
     }
 
-    /// Get total holder count for an app_id
+    /// Get total holder count for an app_id, network-scoped.
     #[allow(dead_code)] // Reserved for future use
-    pub async fn get_holder_count(&self, app_id: &str) -> Result<u64, DbError> {
+    pub async fn get_holder_count(&self, app_id: &str, network: &str) -> Result<u64, DbError> {
         let count = stats_holders::Entity::find()
             .filter(stats_holders::Column::AppId.eq(app_id))
+            .filter(stats_holders::Column::Network.eq(network))
             .count(&self.conn)
             .await?;
         Ok(count)
