@@ -901,12 +901,12 @@ async fn get_metadata_map(
     }
 
     let mut map = HashMap::new();
-    for (network, app_ids_set) in per_network {
-        let app_ids: Vec<String> = app_ids_set.into_iter().collect();
+    for (network, app_ids_set) in &per_network {
+        let app_ids: Vec<String> = app_ids_set.iter().cloned().collect();
         let assets = match state
             .repositories
             .asset_repository
-            .find_by_app_ids(app_ids, &network)
+            .find_by_app_ids(app_ids, network)
             .await
         {
             Ok(assets) => assets,
@@ -920,6 +920,49 @@ async fn get_metadata_map(
                 asset.app_id,
                 (asset.name, asset.image_url, asset.symbol, asset.description),
             );
+        }
+    }
+
+    // Cross-network fallback for tokens whose own-network row is missing or has
+    // no metadata: look up an NFT with the same app_vk (third segment of the
+    // app_id) anywhere — preferring mainnet. Solves the FIRE case where the
+    // token + NFT share the same wasm but use different identity hashes, so
+    // the same-hash heuristic in get_asset_by_id can't link them.
+    let mut vk_cache: HashMap<String, Option<crate::entity::assets::Model>> = HashMap::new();
+    for app_ids in per_network.values() {
+        for app_id in app_ids {
+            if !app_id.starts_with("t/") {
+                continue;
+            }
+            let entry = map.entry(app_id.clone()).or_insert((None, None, None, None));
+            if entry.0.is_some() && entry.1.is_some() && entry.3.is_some() {
+                continue;
+            }
+            let Some(vk) = app_id.rsplit('/').next().and_then(|s| s.split(':').next()) else {
+                continue;
+            };
+            let nft = match vk_cache.get(vk) {
+                Some(cached) => cached.clone(),
+                None => {
+                    let fetched = state
+                        .repositories
+                        .asset_repository
+                        .find_reference_nft_by_vk(vk)
+                        .await
+                        .unwrap_or_else(|err| {
+                            tracing::warn!("vk-fallback lookup failed: {:?}", err);
+                            None
+                        });
+                    vk_cache.insert(vk.to_string(), fetched.clone());
+                    fetched
+                }
+            };
+            if let Some(nft) = nft {
+                if entry.0.is_none() { entry.0 = nft.name; }
+                if entry.1.is_none() { entry.1 = nft.image_url; }
+                if entry.2.is_none() { entry.2 = nft.symbol; }
+                if entry.3.is_none() { entry.3 = nft.description; }
+            }
         }
     }
     map

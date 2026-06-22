@@ -379,6 +379,25 @@ pub async fn get_asset_by_id(
                     description = description.or(nft_asset.description);
                     image_url = image_url.or(nft_asset.image_url);
                 }
+
+                // Cross-network fallback by app_vk (FIRE-style: token + NFT share the
+                // wasm vk but use different identity hashes; the NFT may only exist
+                // on mainnet). Searches any network, preferring mainnet.
+                if name.is_none() || image_url.is_none() || description.is_none() {
+                    if let Some(vk) = asset.app_id.rsplit('/').next().and_then(|s| s.split(':').next()) {
+                        if let Ok(Some(nft)) = state
+                            .repositories
+                            .asset_repository
+                            .find_reference_nft_by_vk(vk)
+                            .await
+                        {
+                            name = name.or(nft.name);
+                            symbol = symbol.or(nft.symbol);
+                            description = description.or(nft.description);
+                            image_url = image_url.or(nft.image_url);
+                        }
+                    }
+                }
             }
 
             // Try to fetch related charm data for metadata extraction (as fallback)

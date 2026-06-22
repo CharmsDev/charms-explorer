@@ -191,6 +191,39 @@ impl AssetRepository {
         Ok(Some(assets.into_iter().next().unwrap()))
     }
 
+    /// Find a reference NFT by its app_vk (the third segment of any app_id).
+    /// Searches across ALL networks and returns the first row with metadata,
+    /// preferring mainnet → testnet → testnet4. Used as a cross-network
+    /// fallback for tokens that share a wasm vk with an NFT but use a
+    /// different identity hash (e.g. FIRE: fixed-string ticker token whose
+    /// NFT anchor lives in mainnet only).
+    pub async fn find_reference_nft_by_vk(
+        &self,
+        vk: &str,
+    ) -> Result<Option<Model>, Box<dyn std::error::Error + Send + Sync>> {
+        let pattern = format!("n/%/{}", vk);
+        let assets = Asset::find()
+            .filter(Column::AssetType.eq("nft"))
+            .filter(Column::AppId.like(&pattern))
+            .all(self.db.as_ref())
+            .await?;
+
+        let net_rank = |n: &str| match n {
+            "mainnet" => 0,
+            "testnet" => 1,
+            "testnet4" => 2,
+            _ => 3,
+        };
+        let mut with_meta: Vec<Model> = assets
+            .into_iter()
+            .filter(|a| {
+                a.name.is_some() || a.image_url.is_some() || a.description.is_some()
+            })
+            .collect();
+        with_meta.sort_by_key(|a| net_rank(&a.network));
+        Ok(with_meta.into_iter().next())
+    }
+
     /// Get max total_supply from all assets matching a base app_id prefix
     /// Used to get the correct total supply for tokens with multiple outputs (:0, :1, etc.)
     pub async fn get_max_total_supply_by_prefix(

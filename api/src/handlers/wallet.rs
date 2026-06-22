@@ -1318,13 +1318,63 @@ async fn resolve_balance_for_batch(
     let assets = state
         .repositories
         .asset_repository
-        .find_by_app_ids(app_ids, network)
+        .find_by_app_ids(app_ids.clone(), network)
         .await
         .unwrap_or_default();
-    let symbol_map: std::collections::HashMap<String, String> = assets
-        .into_iter()
-        .filter_map(|a| a.symbol.map(|s| (a.app_id, s)))
-        .collect();
+
+    // Per-app metadata: (symbol, name, image_url, description). Empty strings
+    // count as missing so the vk-fallback can fill them.
+    let blank_to_none = |s: Option<String>| s.filter(|v| !v.is_empty());
+    let mut meta_map: std::collections::HashMap<String, (Option<String>, Option<String>, Option<String>, Option<String>)> =
+        std::collections::HashMap::new();
+    for a in assets {
+        meta_map.insert(
+            a.app_id,
+            (
+                blank_to_none(a.symbol),
+                blank_to_none(a.name),
+                blank_to_none(a.image_url),
+                blank_to_none(a.description),
+            ),
+        );
+    }
+
+    // Cross-network fallback by app_vk: tokens whose own-network row is missing
+    // metadata inherit it from any NFT sharing the same wasm vk (preferring
+    // mainnet). Solves the FIRE case end-to-end here too.
+    let mut vk_cache: std::collections::HashMap<String, Option<crate::entity::assets::Model>> =
+        std::collections::HashMap::new();
+    for app_id in &app_ids {
+        if !app_id.starts_with("t/") {
+            continue;
+        }
+        let entry = meta_map.entry(app_id.clone()).or_insert((None, None, None, None));
+        if entry.0.is_some() && entry.1.is_some() && entry.2.is_some() && entry.3.is_some() {
+            continue;
+        }
+        let Some(vk) = app_id.rsplit('/').next().and_then(|s| s.split(':').next()) else {
+            continue;
+        };
+        let nft = match vk_cache.get(vk) {
+            Some(c) => c.clone(),
+            None => {
+                let n = state
+                    .repositories
+                    .asset_repository
+                    .find_reference_nft_by_vk(vk)
+                    .await
+                    .unwrap_or(None);
+                vk_cache.insert(vk.to_string(), n.clone());
+                n
+            }
+        };
+        if let Some(n) = nft {
+            if entry.0.is_none() { entry.0 = blank_to_none(n.symbol); }
+            if entry.1.is_none() { entry.1 = blank_to_none(n.name); }
+            if entry.2.is_none() { entry.2 = blank_to_none(n.image_url); }
+            if entry.3.is_none() { entry.3 = blank_to_none(n.description); }
+        }
+    }
 
     let mut charm_balance_map: std::collections::HashMap<
         String,
@@ -1357,11 +1407,14 @@ async fn resolve_balance_for_batch(
     let charm_balances: Vec<serde_json::Value> = charm_balance_map
         .into_iter()
         .map(|(app_id, (asset_type, total, utxos))| {
-            let symbol = symbol_map.get(&app_id).cloned().unwrap_or_default();
+            let m = meta_map.get(&app_id).cloned().unwrap_or((None, None, None, None));
             serde_json::json!({
                 "appId": app_id,
                 "assetType": asset_type,
-                "symbol": symbol,
+                "symbol": m.0.clone().unwrap_or_default(),
+                "name": m.1,
+                "imageUrl": m.2,
+                "description": m.3,
                 "total": total,
                 "utxos": utxos,
             })
