@@ -36,8 +36,13 @@ impl AssetRepository {
             query = query.filter(Column::Network.eq(network));
         }
 
+        // Order by on-chain mint height (newest mints first), with id as a
+        // stable tiebreaker. A full DB reseed (Plan 16) collapses every row
+        // to the same created_at, so sorting by created_at hid newer mints
+        // behind genesis-era ones — block_height is the real timeline.
         let assets = query
-            .order_by_desc(Column::CreatedAt)
+            .order_by_desc(Column::BlockHeight)
+            .order_by_desc(Column::Id)
             .limit(limit)
             .offset(offset)
             .all(self.db.as_ref())
