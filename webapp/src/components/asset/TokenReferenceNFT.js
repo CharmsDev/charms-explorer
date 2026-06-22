@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { resolveImageUrl } from '@/services/transformers';
 
 export default function TokenReferenceNFT({ nftMetadata }) {
     if (!nftMetadata) return null;
@@ -17,7 +18,7 @@ export default function TokenReferenceNFT({ nftMetadata }) {
                     className="flex items-center gap-3 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/50 rounded-lg px-4 py-3 transition-colors"
                 >
                     <div className="w-12 h-12 rounded-lg overflow-hidden bg-dark-700">
-                        <img src={nftMetadata.image_url || '/images/logo.png'} alt="Reference NFT" className="w-full h-full object-cover" />
+                        <img src={resolveImageUrl(nftMetadata.image_url) || '/images/logo.png'} alt="Reference NFT" className="w-full h-full object-cover" />
                     </div>
                     <div>
                         <div className="font-medium text-white">{nftMetadata.name || 'Reference NFT'}</div>

@@ -4,6 +4,19 @@ import { getNestedProperty } from './apiUtils';
 
 // Data transformation functions for API responses
 
+// Rewrites ipfs://CID(/path) to an HTTPS gateway URL so <img> tags can load
+// it. Browsers don't speak ipfs:// natively; spells from alchemy/eBTC pin
+// images on IPFS and serialize them as ipfs:// in the spell metadata.
+export const resolveImageUrl = (url) => {
+    if (!url || typeof url !== 'string') return url;
+    if (url.startsWith('ipfs://')) {
+        const path = url.slice('ipfs://'.length).replace(/^ipfs\//, '');
+        return `https://ipfs.io/ipfs/${path}`;
+    }
+    return url;
+};
+
+
 // Detects the type of a charm based on its data
 export const detectCharmType = (charm) => {
     // First, check if asset_type is directly provided (from API)

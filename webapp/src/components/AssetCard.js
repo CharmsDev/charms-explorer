@@ -6,6 +6,7 @@ import { classifyCharm, getCharmBadgeProps, CHARM_TYPES } from '@/services/charm
 import { getRefNftAppId, getCachedNftReference, fetchNftReferenceMetadata } from '@/services/api/tokenMetadata';
 import { getReferenceNftImage, extractHashFromAppId, fetchReferenceNftByHash } from '@/services/api/referenceNft';
 import { getDisplayMetadata } from '@/services/spellParser';
+import { resolveImageUrl } from '@/services/transformers';
 
 export default function AssetCard({ asset, nftReferenceMap }) {
     const [imageError, setImageError] = useState(false);
@@ -158,12 +159,12 @@ export default function AssetCard({ asset, nftReferenceMap }) {
     const getDisplayImage = () => {
         if (imageError) return placeholderImage;
         // Use spell image fetched from reference NFT (for both tokens and NFTs)
-        if (spellImage) return spellImage;
+        if (spellImage) return resolveImageUrl(spellImage);
         // Check asset's own image fields
-        if (asset.image && asset.image !== '/images/logo.png') return asset.image;
-        if (asset.image_url) return asset.image_url;
+        if (asset.image && asset.image !== '/images/logo.png') return resolveImageUrl(asset.image);
+        if (asset.image_url) return resolveImageUrl(asset.image_url);
         // Try displayMeta (for raw assets)
-        if (displayMeta.image) return displayMeta.image;
+        if (displayMeta.image) return resolveImageUrl(displayMeta.image);
         return placeholderImage;
     };
     

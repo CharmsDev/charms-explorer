@@ -11,6 +11,7 @@ import {
   fetchAssetHolders,
 } from "../../../services/api";
 import { parseSpellMetadata } from "../../../services/spellParser";
+import { resolveImageUrl } from "../../../services/transformers";
 import {
   fetchReferenceNftByHash,
   extractHashFromAppId,
@@ -181,7 +182,7 @@ export default function AssetDetailPage() {
   const getDisplayImage = () => {
     if (imageError) return PLACEHOLDER_IMAGE;
     // Both tokens and NFTs can use spell image from reference NFT
-    return spellImage || asset.image || asset.image_url || PLACEHOLDER_IMAGE;
+    return resolveImageUrl(spellImage || asset.image || asset.image_url) || PLACEHOLDER_IMAGE;
   };
 
   const typeLabels = { nft: "NFTs", token: "Tokens", dapp: "dApps" };
