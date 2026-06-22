@@ -382,27 +382,22 @@ const classificationRules = [
     type: TRANSACTION_TYPES.BRO_MINT,
   },
 
-  // NFT rules
+  // NFT rules — read app_public_inputs from the spell because /v1/transactions
+  // does not expose tx.app_id / tx.asset_type at the top level.
   {
     name: "NFT Mint",
     priority: 30,
-    test: (tx) => {
-      const appId = tx.app_id || tx.charmid || "";
-      return appId.startsWith("n/") && tx.asset_type === "nft";
+    test: (tx, spellData) => {
+      const data = spellData || tx.charm?.native_data || tx.data?.native_data || tx.native_data;
+      const keys = Object.keys(data?.app_public_inputs || {});
+      if (keys.length === 0) return false;
+      // Only n/ apps, no scrolls vault (s/), no contract (c/), no beam-out.
+      const onlyNft = keys.every(k => k.startsWith("n/"));
+      if (!onlyNft) return false;
+      if (data?.tx?.beamed_outs) return false;
+      return true;
     },
     type: TRANSACTION_TYPES.NFT_MINT,
-  },
-  {
-    name: "NFT Transfer",
-    priority: 30,
-    test: (tx, spellData) => {
-      const appId = tx.app_id || tx.charmid || "";
-      if (!appId.startsWith("n/")) return false;
-      // Check if there are multiple inputs (transfer vs mint)
-      const ins = spellData?.tx?.ins || [];
-      return ins.length > 0;
-    },
-    type: TRANSACTION_TYPES.NFT_TRANSFER,
   },
 
   // Beam Out: tokens burned on Bitcoin, sent to Cardano
@@ -438,28 +433,44 @@ const classificationRules = [
     type: TRANSACTION_TYPES.BEAM_IN,
   },
 
-  // Token rules
+  // Token rules — drive off spell app_public_inputs since the tx endpoint
+  // doesn't expose tx.app_id at the top level.
+  // Token Mint covers the Scrolls vault mint pattern (alchemy FIRE / eBTC):
+  // the spell contains an s/ (scroll vault) plus one or more t/ tokens.
   {
     name: "Token Mint",
-    priority: 40,
+    priority: 35,
     test: (tx, spellData) => {
-      const appId = tx.app_id || tx.charmid || "";
-      if (!appId.startsWith("t/")) return false;
-      // Mint typically has no charm inputs
-      const ins = spellData?.tx?.ins || [];
-      return ins.length === 0 || !spellData;
+      const data = spellData || tx.charm?.native_data || tx.data?.native_data || tx.native_data;
+      const keys = Object.keys(data?.app_public_inputs || {});
+      if (keys.length === 0) return false;
+      const hasScroll = keys.some(k => k.startsWith("s/"));
+      const hasToken = keys.some(k => k.startsWith("t/"));
+      const hasContract = keys.some(k => k.startsWith("c/"));
+      if (hasContract) return false; // beam-in wins
+      if (data?.tx?.beamed_outs) return false;
+      return hasScroll && hasToken;
     },
     type: TRANSACTION_TYPES.TOKEN_MINT,
   },
+  // Token Transfer: only t/ apps (optionally with an n/ reference companion),
+  // no scrolls, no contract, no beam-out. Catches the BRO-style change-leg
+  // transfer when the bro-transfer tag is absent.
   {
     name: "Token Transfer",
     priority: 40,
     test: (tx, spellData) => {
-      const appId = tx.app_id || tx.charmid || "";
-      if (!appId.startsWith("t/")) return false;
-      // Transfer has charm inputs
-      const ins = spellData?.tx?.ins || [];
-      return ins.length > 0;
+      const data = spellData || tx.charm?.native_data || tx.data?.native_data || tx.native_data;
+      const keys = Object.keys(data?.app_public_inputs || {});
+      if (keys.length === 0) return false;
+      const hasToken = keys.some(k => k.startsWith("t/"));
+      const hasScroll = keys.some(k => k.startsWith("s/"));
+      const hasContract = keys.some(k => k.startsWith("c/"));
+      const hasDex = keys.some(k => k.startsWith("b/"));
+      if (!hasToken) return false;
+      if (hasScroll || hasContract || hasDex) return false;
+      if (data?.tx?.beamed_outs) return false;
+      return true;
     },
     type: TRANSACTION_TYPES.TOKEN_TRANSFER,
   },
