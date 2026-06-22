@@ -6,27 +6,29 @@ const NetworkContext = createContext();
 
 const STORAGE_KEY = 'charms-explorer-networks';
 
-// Default network state
+// Default network state — single-select: only one Bitcoin network active at a time
 const DEFAULT_NETWORKS = {
     bitcoinMainnet: true,
-    bitcoinTestnet4: true,
+    bitcoinTestnet4: false,
     cardanoMainnet: false,
     cardanoPreprod: false
 };
 
+// Normalize ensures exactly one Bitcoin network is active (fixes old multi-select localStorage)
+const normalizeNetworks = (networks) => {
+    if (networks.bitcoinMainnet && networks.bitcoinTestnet4) {
+        return { ...networks, bitcoinTestnet4: false };
+    }
+    if (!networks.bitcoinMainnet && !networks.bitcoinTestnet4) {
+        return { ...networks, bitcoinMainnet: true };
+    }
+    return networks;
+};
+
 // Helper to compute network param from state
 const computeNetworkParam = (networks) => {
-    const bitcoinMainnetActive = networks.bitcoinMainnet;
-    const bitcoinTestnet4Active = networks.bitcoinTestnet4;
-    
-    if (bitcoinMainnetActive && bitcoinTestnet4Active) {
-        return 'all';
-    } else if (bitcoinMainnetActive) {
-        return 'mainnet';
-    } else if (bitcoinTestnet4Active) {
-        return 'testnet4';
-    }
-    return 'all';
+    if (networks.bitcoinTestnet4) return 'testnet4';
+    return 'mainnet';
 };
 
 // Load from localStorage (client-side only)
@@ -36,8 +38,7 @@ const loadFromStorage = () => {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (stored) {
             const parsed = JSON.parse(stored);
-            // Merge with defaults to handle new keys
-            return { ...DEFAULT_NETWORKS, ...parsed };
+            return normalizeNetworks({ ...DEFAULT_NETWORKS, ...parsed });
         }
     } catch (e) {
         console.warn('Failed to load network settings from localStorage:', e);
@@ -57,14 +58,13 @@ const saveToStorage = (networks) => {
 
 // Convert a URL network param to network state
 const networkParamToState = (param) => {
-    switch (param) {
-        case 'mainnet':
-            return { ...DEFAULT_NETWORKS, bitcoinMainnet: true, bitcoinTestnet4: false };
-        case 'testnet4':
-            return { ...DEFAULT_NETWORKS, bitcoinMainnet: false, bitcoinTestnet4: true };
-        default:
-            return null; // 'all' or invalid — use stored/default
+    if (param === 'testnet4') {
+        return { ...DEFAULT_NETWORKS, bitcoinMainnet: false, bitcoinTestnet4: true };
     }
+    if (param === 'mainnet') {
+        return { ...DEFAULT_NETWORKS, bitcoinMainnet: true, bitcoinTestnet4: false };
+    }
+    return null; // invalid/missing — use stored/default
 };
 
 export function NetworkProvider({ children, onNetworkChange }) {
@@ -92,23 +92,24 @@ export function NetworkProvider({ children, onNetworkChange }) {
     }, [onNetworkChange]);
 
     const toggleNetwork = useCallback((network) => {
-        // Ignore Cardano toggles (disabled)
-        if (network === 'cardanoMainnet' || network === 'cardanoPreprod') {
-            return;
-        }
+        if (network === 'cardanoMainnet' || network === 'cardanoPreprod') return;
 
         setSelectedNetworks(prev => {
+            // Already selected — no-op (radio: can't deselect current)
+            if (prev[network]) return prev;
+
+            // Select this network, deselect all others in the Bitcoin group
             const newNetworks = {
                 ...prev,
-                [network]: !prev[network]
+                bitcoinMainnet: false,
+                bitcoinTestnet4: false,
+                [network]: true,
             };
 
             saveToStorage(newNetworks);
 
-            // Notify callback if Bitcoin networks changed
-            if ((network === 'bitcoinMainnet' || network === 'bitcoinTestnet4') && onNetworkChangeRef.current) {
-                const networkParam = computeNetworkParam(newNetworks);
-                onNetworkChangeRef.current(networkParam);
+            if (onNetworkChangeRef.current) {
+                onNetworkChangeRef.current(computeNetworkParam(newNetworks));
             }
 
             return newNetworks;
