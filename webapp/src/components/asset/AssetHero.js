@@ -3,11 +3,14 @@
 import Link from 'next/link';
 import { classifyCharm, CHARM_TYPES } from '../../services/charmClassifier';
 
-const formatSupply = (value) => {
+const formatSupply = (value, decimals = 8) => {
+    if (value === 0) return '0';
     if (value >= 1e9) return (value / 1e9).toFixed(2) + 'B';
     if (value >= 1e6) return (value / 1e6).toFixed(2) + 'M';
     if (value >= 1e3) return (value / 1e3).toFixed(2) + 'K';
-    return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    if (value >= 1) return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    // Sub-1 supplies (e.g. FIRE: 9400 raw / 1e8 = 0.000094) need full precision
+    return value.toLocaleString(undefined, { maximumFractionDigits: decimals });
 };
 
 export default function AssetHero({ 
@@ -70,7 +73,7 @@ export default function AssetHero({
                         <div className="grid grid-cols-2 gap-4 mt-4">
                             <div className="bg-dark-700/50 rounded-lg p-4">
                                 <div className="text-sm text-dark-400">Total Supply</div>
-                                <div className="text-2xl font-bold text-primary-400">{formatSupply(totalSupply)}</div>
+                                <div className="text-2xl font-bold text-primary-400">{formatSupply(totalSupply, decimals)}</div>
                             </div>
                             <div className="bg-dark-700/50 rounded-lg p-4">
                                 <div className="text-sm text-dark-400">Decimals</div>

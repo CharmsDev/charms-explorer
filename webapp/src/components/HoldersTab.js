@@ -36,12 +36,18 @@ export default function HoldersTab({ appId, decimals = 8 }) {
         loadHolders();
     }, [appId]);
 
-    // Format supply with proper decimals
+    // Format supply with proper decimals. For amounts < 1, keep enough
+    // precision to show meaningful digits (FIRE for example has totals
+    // like 4700 / 1e8 = 0.0000470 — rounding to 2 decimals would hide it).
     const formatAmount = (amount) => {
         const value = amount / Math.pow(10, decimals);
+        if (value === 0) return '0';
         if (value >= 1000000) return (value / 1000000).toFixed(2) + 'M';
         if (value >= 1000) return (value / 1000).toFixed(2) + 'K';
-        return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (value >= 1) {
+            return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: decimals });
     };
 
     if (loading) {
