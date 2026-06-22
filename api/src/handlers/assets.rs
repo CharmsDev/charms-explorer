@@ -192,12 +192,17 @@ pub async fn get_assets(
             let charm_map: HashMap<String, _> =
                 charms.into_iter().map(|c| (c.txid.clone(), c)).collect();
 
+            let blank_to_none =
+                |s: Option<String>| s.filter(|v: &String| !v.is_empty());
+            let mut vk_cache: HashMap<String, Option<crate::entity::assets::Model>> =
+                HashMap::new();
+
             let mut asset_items = Vec::new();
             for asset in assets {
-                let mut name = asset.name.clone();
-                let mut symbol = asset.symbol.clone();
-                let mut description = asset.description.clone();
-                let mut image_url = asset.image_url.clone();
+                let mut name = blank_to_none(asset.name.clone());
+                let mut symbol = blank_to_none(asset.symbol.clone());
+                let mut description = blank_to_none(asset.description.clone());
+                let mut image_url = blank_to_none(asset.image_url.clone());
 
                 // Use pre-fetched charm data for metadata extraction
                 if let Some(charm) = charm_map.get(&asset.txid) {
@@ -209,6 +214,48 @@ pub async fn get_assets(
                     symbol = symbol.or(charm_symbol);
                     description = description.or(charm_description);
                     image_url = image_url.or(charm_image_url);
+                }
+
+                // Cross-network fallback by app_vk for tokens whose own NFT
+                // anchor lives in another network (FIRE-style fixed-string
+                // tickers).
+                if asset.app_id.starts_with("t/")
+                    && (name.is_none() || image_url.is_none() || description.is_none())
+                {
+                    if let Some(vk) = asset
+                        .app_id
+                        .rsplit('/')
+                        .next()
+                        .and_then(|s| s.split(':').next())
+                    {
+                        let nft = match vk_cache.get(vk) {
+                            Some(c) => c.clone(),
+                            None => {
+                                let n = state
+                                    .repositories
+                                    .asset_repository
+                                    .find_reference_nft_by_vk(vk)
+                                    .await
+                                    .unwrap_or(None);
+                                vk_cache.insert(vk.to_string(), n.clone());
+                                n
+                            }
+                        };
+                        if let Some(n) = nft {
+                            if name.is_none() {
+                                name = blank_to_none(n.name);
+                            }
+                            if symbol.is_none() {
+                                symbol = blank_to_none(n.symbol);
+                            }
+                            if image_url.is_none() {
+                                image_url = blank_to_none(n.image_url);
+                            }
+                            if description.is_none() {
+                                description = blank_to_none(n.description);
+                            }
+                        }
+                    }
                 }
 
                 asset_items.push(AssetItem {
