@@ -9,13 +9,28 @@
 //!   4. transactions — delete transaction entry (block_height IS NULL)
 //!   5. mempool_spends — delete spend records by spending_txid
 //!   6. address_utxos  — delete unconfirmed UTXOs (block_height = 0)
+//!
+//! Transient-blip protection: Bitcoin Core keeps mempool entries for ~14 days
+//! by default and `getrawmempool` can briefly return a partial view (P2P
+//! propagation lag, supplement gateway timeout, RPC hiccup). A single missed
+//! snapshot is therefore not sufficient evidence to evict — we require N
+//! consecutive missing cycles before reverting. This kills the "tx
+//! disappears for a second then reappears" UX bug.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use tokio::sync::Mutex;
 
 use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
 use crate::utils::logging;
+
+/// Reconcile cycles a tx must be missing from `getrawmempool` before we evict
+/// it. At one reconcile every 30 cycles (~30 s), 8 misses ≈ 4 minutes — far
+/// longer than any realistic transient blip, far shorter than Bitcoin Core's
+/// 14-day default mempool retention so genuine RBF/eviction still gets caught.
+const REVERT_MISS_THRESHOLD: u32 = 8;
 
 /// Reconcile DB state with the live mempool.
 ///
@@ -29,6 +44,7 @@ pub async fn reconcile_dropped_txs(
     live_mempool: &HashSet<String>,
     db: &DatabaseConnection,
     mempool_spends_repository: &MempoolSpendsRepository,
+    miss_counts: &Arc<Mutex<HashMap<String, u32>>>,
 ) -> usize {
     // 1. Get all pending txids from transactions table
     let pending_txids = match get_pending_txids(network, db).await {
@@ -43,18 +59,43 @@ pub async fn reconcile_dropped_txs(
     };
 
     if pending_txids.is_empty() {
+        // No pending work — drop stale miss-count entries to bound memory.
+        miss_counts.lock().await.clear();
         return 0;
     }
 
-    // 2. Find txids that are NOT in the live mempool (dropped/evicted/replaced)
-    let dropped: Vec<&String> = pending_txids
-        .iter()
-        .filter(|txid| !live_mempool.contains(txid.as_str()))
-        .collect();
+    // 2. Update miss counters: reset for txs still in mempool, increment for
+    //    those missing this snapshot. Only txs that have been missing for
+    //    REVERT_MISS_THRESHOLD consecutive reconcile cycles get evicted; a
+    //    single missed snapshot is treated as a transient blip.
+    let mut to_evict: Vec<String> = Vec::new();
+    {
+        let mut counts = miss_counts.lock().await;
+        // Forget any tx that is no longer pending (already confirmed elsewhere).
+        let pending_set: HashSet<&str> = pending_txids.iter().map(String::as_str).collect();
+        counts.retain(|txid, _| pending_set.contains(txid.as_str()));
 
-    if dropped.is_empty() {
+        for txid in &pending_txids {
+            if live_mempool.contains(txid) {
+                counts.remove(txid);
+                continue;
+            }
+            let n = counts.entry(txid.clone()).or_insert(0);
+            *n += 1;
+            if *n >= REVERT_MISS_THRESHOLD {
+                to_evict.push(txid.clone());
+            } else {
+                logging::log_debug(&format!(
+                    "[{}] Reconcile: tx {} missing {}/{} cycles",
+                    network, txid, *n, REVERT_MISS_THRESHOLD
+                ));
+            }
+        }
+    }
+
+    if to_evict.is_empty() {
         logging::log_debug(&format!(
-            "[{}] Reconcile: all {} pending txs still in mempool",
+            "[{}] Reconcile: {} pending tx(s), none past miss threshold",
             network,
             pending_txids.len()
         ));
@@ -62,17 +103,20 @@ pub async fn reconcile_dropped_txs(
     }
 
     logging::log_info(&format!(
-        "[{}] 🔄 Reconcile: {} of {} pending txs dropped from mempool — reverting",
+        "[{}] 🔄 Reconcile: {} of {} pending txs dropped for >= {} cycles — reverting",
         network,
-        dropped.len(),
-        pending_txids.len()
+        to_evict.len(),
+        pending_txids.len(),
+        REVERT_MISS_THRESHOLD
     ));
 
     let mut reverted = 0usize;
-
-    for txid in &dropped {
+    for txid in &to_evict {
         match revert_mempool_tx(txid, network, db, mempool_spends_repository).await {
-            Ok(()) => reverted += 1,
+            Ok(()) => {
+                reverted += 1;
+                miss_counts.lock().await.remove(txid);
+            }
             Err(e) => {
                 logging::log_warning(&format!(
                     "[{}] ⚠️ Reconcile: failed to revert tx {}: {}",

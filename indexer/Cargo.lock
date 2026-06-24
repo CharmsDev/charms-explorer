@@ -954,7 +954,7 @@ dependencies = [
 
 [[package]]
 name = "charms-indexer"
-version = "0.2.4"
+version = "0.2.6"
 dependencies = [
  "anyhow",
  "async-trait",

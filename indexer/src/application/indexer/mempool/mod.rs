@@ -48,6 +48,10 @@ pub struct MempoolProcessor {
     network_id: NetworkId,
     seen_txids: std::sync::Arc<Mutex<HashSet<String>>>,
     monitored_set: std::sync::Arc<Mutex<HashSet<String>>>,
+    /// Consecutive reconcile misses per pending txid. A tx is only evicted
+    /// after disappearing from `getrawmempool` for several reconcile cycles
+    /// in a row, so transient snapshot blips don't flicker the explorer UI.
+    reconcile_miss_counts: std::sync::Arc<Mutex<std::collections::HashMap<String, u32>>>,
 }
 
 impl MempoolProcessor {
@@ -68,6 +72,9 @@ impl MempoolProcessor {
             network_id,
             seen_txids: std::sync::Arc::new(Mutex::new(HashSet::new())),
             monitored_set: std::sync::Arc::new(Mutex::new(HashSet::new())),
+            reconcile_miss_counts: std::sync::Arc::new(Mutex::new(
+                std::collections::HashMap::new(),
+            )),
         }
     }
 
@@ -270,6 +277,7 @@ impl MempoolProcessor {
             &live_set,
             &self.db,
             &self.mempool_spends_repository,
+            &self.reconcile_miss_counts,
         )
         .await;
 

@@ -2,13 +2,42 @@ use bitcoincore_rpc::bitcoin::Block;
 use bitcoincore_rpc::bitcoin::BlockHash;
 use bitcoincore_rpc::bitcoin::Txid;
 use bitcoincore_rpc::{Auth, Client, RpcApi};
+use std::env;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use crate::config::{BitcoinConfig, NetworkId, NetworkType};
 use crate::infrastructure::bitcoin::SimpleBitcoinClient;
 use crate::infrastructure::bitcoin::error::BitcoinClientError;
 use crate::utils::logging;
+
+/// Public Esplora gateway used to fill mempool propagation gaps for networks
+/// where our local Bitcoin Core node trails the public P2P view (mainly
+/// testnet4, where propagation is patchy). Disabled for mainnet by default.
+fn supplement_mempool_url(network: &str) -> Option<String> {
+    let env_key = format!("BITCOIN_{}_MEMPOOL_SUPPLEMENT_URL", network.to_uppercase());
+    if let Ok(url) = env::var(&env_key) {
+        return if url.trim().is_empty() { None } else { Some(url) };
+    }
+    match network {
+        "testnet4" => Some("https://mempool.space/testnet4/api".to_string()),
+        _ => None,
+    }
+}
+
+async fn fetch_esplora_mempool(base_url: &str) -> Result<Vec<String>, String> {
+    let url = format!("{}/mempool/txids", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    res.json::<Vec<String>>().await.map_err(|e| e.to_string())
+}
 
 /// Provides access to Bitcoin Core RPC API
 #[derive(Debug, Clone)]
@@ -144,26 +173,48 @@ impl BitcoinClient {
         }
     }
 
-    /// Fetch all txids currently in the mempool via getrawmempool RPC.
-    /// Returns an empty vec if the client doesn't support it (e.g. external providers).
+    /// Fetch all txids currently in the mempool. Starts from the local
+    /// Bitcoin Core RPC (`getrawmempool`) and, for networks where the local
+    /// node has incomplete P2P coverage (mainly testnet4), unions in the
+    /// public Esplora gateway listing so propagation gaps don't hide
+    /// pending spells from the explorer.
     pub async fn get_raw_mempool(&self) -> Result<Vec<String>, BitcoinClientError> {
-        if let Some(client) = &self.client {
+        let mut txids: Vec<String> = if let Some(client) = &self.client {
             let client = client.clone();
             tokio::task::spawn_blocking(move || {
                 use bitcoincore_rpc::RpcApi;
                 client
                     .get_raw_mempool()
-                    .map(|txids| txids.iter().map(|t| t.to_string()).collect::<Vec<_>>())
+                    .map(|t| t.iter().map(|x| x.to_string()).collect::<Vec<_>>())
                     .map_err(BitcoinClientError::RpcError)
             })
             .await
-            .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))?
+            .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))??
         } else {
-            // SimpleBitcoinClient (external provider) — mempool polling not supported
-            Err(BitcoinClientError::Other(
-                "getrawmempool not available for external providers".to_string(),
-            ))
+            // External provider clients are block-only; the supplement below
+            // is the only mempool source we'd have.
+            Vec::new()
+        };
+
+        if let Some(url) = supplement_mempool_url(&self.network_id.name) {
+            match fetch_esplora_mempool(&url).await {
+                Ok(extra) => {
+                    let existing: std::collections::HashSet<String> =
+                        txids.iter().cloned().collect();
+                    for t in extra {
+                        if !existing.contains(&t) {
+                            txids.push(t);
+                        }
+                    }
+                }
+                Err(e) => logging::log_debug(&format!(
+                    "[{}] mempool supplement {} failed: {}",
+                    self.network_id.name, url, e
+                )),
+            }
         }
+
+        Ok(txids)
     }
 
     /// Returns raw transaction hex, using block_hash for nodes without txindex
@@ -190,11 +241,20 @@ impl BitcoinClient {
         } else if let Some(client) = &self.client {
             match client.get_raw_transaction(&txid_parsed, block_hash) {
                 Ok(tx) => {
-                    // Convert the transaction to hex
                     let tx_bytes = bitcoincore_rpc::bitcoin::consensus::serialize(&tx);
                     Ok(hex::encode(tx_bytes))
                 }
-                Err(e) => Err(BitcoinClientError::RpcError(e)),
+                Err(e) => {
+                    // Local node may not have the tx in its mempool when we
+                    // discovered it via the Esplora supplement. Try the
+                    // supplement gateway before giving up.
+                    if let Some(url) = supplement_mempool_url(&self.network_id.name) {
+                        if let Ok(hex) = fetch_esplora_tx_hex(&url, txid).await {
+                            return Ok(hex);
+                        }
+                    }
+                    Err(BitcoinClientError::RpcError(e))
+                }
             }
         } else {
             Err(BitcoinClientError::ConnectionError(
@@ -202,4 +262,17 @@ impl BitcoinClient {
             ))
         }
     }
+}
+
+async fn fetch_esplora_tx_hex(base_url: &str, txid: &str) -> Result<String, String> {
+    let url = format!("{}/tx/{}/hex", base_url.trim_end_matches('/'), txid);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(8))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    res.text().await.map(|t| t.trim().to_string()).map_err(|e| e.to_string())
 }
