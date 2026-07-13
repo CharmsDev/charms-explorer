@@ -129,7 +129,6 @@ impl AddressTransactionsRepository {
                     block_height: Set(t.block_height),
                     block_time: Set(t.block_time),
                     confirmations: Set(t.confirmations),
-                    created_at: Set(chrono::Utc::now().into()),
                 })
                 .collect();
 

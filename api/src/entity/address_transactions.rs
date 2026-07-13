@@ -17,7 +17,6 @@ pub struct Model {
     pub block_height: Option<i32>,
     pub block_time: Option<i64>,
     pub confirmations: i32,
-    pub created_at: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
