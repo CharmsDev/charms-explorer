@@ -16,6 +16,7 @@ export const TRANSACTION_TYPES = {
   TOKEN_MINT: "token_mint",
   TOKEN_TRANSFER: "token_transfer",
   TOKEN_BURN: "token_burn",
+  ALCHEMY_REDEEM: "alchemy_redeem",
 
   // NFT transactions
   NFT_MINT: "nft_mint",
@@ -83,6 +84,15 @@ export const TRANSACTION_METADATA = {
     textClass: "text-red-400",
     borderClass: "border-red-500/30",
     description: "Tokens permanently destroyed",
+  },
+  [TRANSACTION_TYPES.ALCHEMY_REDEEM]: {
+    label: "Alchemy Redeem",
+    icon: "🔥",
+    color: "red",
+    bgClass: "bg-red-500/20",
+    textClass: "text-red-400",
+    borderClass: "border-red-500/30",
+    description: "Tokens burned to unlock BTC from the Scrolls vault",
   },
   [TRANSACTION_TYPES.NFT_MINT]: {
     label: "NFT Mint",
@@ -433,10 +443,35 @@ const classificationRules = [
     type: TRANSACTION_TYPES.BEAM_IN,
   },
 
+  // Alchemy Redeem — Scrolls vault burn: s/+t/ apps, outs empty, scrolls absent
+  // Mint has scrolls: [<idx>] locking BTC in the vault; redeem has null/no scrolls
+  // and returns BTC via coins, consuming charm inputs.
+  {
+    name: "Alchemy Redeem",
+    priority: 33,
+    test: (tx, spellData) => {
+      const data = spellData || tx.charm?.native_data || tx.data?.native_data || tx.native_data;
+      const keys = Object.keys(data?.app_public_inputs || {});
+      if (keys.length === 0) return false;
+      const hasScroll = keys.some(k => k.startsWith("s/"));
+      const hasToken = keys.some(k => k.startsWith("t/"));
+      const hasContract = keys.some(k => k.startsWith("c/"));
+      if (hasContract) return false;
+      if (data?.tx?.beamed_outs) return false;
+      if (!(hasScroll && hasToken)) return false;
+      const scrolls = data?.tx?.scrolls;
+      const hasScrollsEntry = Array.isArray(scrolls) ? scrolls.length > 0
+        : (scrolls && typeof scrolls === "object" ? Object.keys(scrolls).length > 0 : false);
+      return !hasScrollsEntry;
+    },
+    type: TRANSACTION_TYPES.ALCHEMY_REDEEM,
+  },
+
   // Token rules — drive off spell app_public_inputs since the tx endpoint
   // doesn't expose tx.app_id at the top level.
   // Token Mint covers the Scrolls vault mint pattern (alchemy FIRE / eBTC):
-  // the spell contains an s/ (scroll vault) plus one or more t/ tokens.
+  // the spell contains an s/ (scroll vault) plus one or more t/ tokens AND
+  // a scrolls entry locking BTC — without scrolls it is a redeem, see rule above.
   {
     name: "Token Mint",
     priority: 35,
@@ -449,7 +484,11 @@ const classificationRules = [
       const hasContract = keys.some(k => k.startsWith("c/"));
       if (hasContract) return false; // beam-in wins
       if (data?.tx?.beamed_outs) return false;
-      return hasScroll && hasToken;
+      if (!(hasScroll && hasToken)) return false;
+      const scrolls = data?.tx?.scrolls;
+      const hasScrollsEntry = Array.isArray(scrolls) ? scrolls.length > 0
+        : (scrolls && typeof scrolls === "object" ? Object.keys(scrolls).length > 0 : false);
+      return hasScrollsEntry;
     },
     type: TRANSACTION_TYPES.TOKEN_MINT,
   },
@@ -624,6 +663,7 @@ export function isTokenTransaction(type) {
     TRANSACTION_TYPES.TOKEN_MINT,
     TRANSACTION_TYPES.TOKEN_TRANSFER,
     TRANSACTION_TYPES.TOKEN_BURN,
+    TRANSACTION_TYPES.ALCHEMY_REDEEM,
     TRANSACTION_TYPES.BRO_MINING,
     TRANSACTION_TYPES.BRO_MINT,
   ].includes(type);

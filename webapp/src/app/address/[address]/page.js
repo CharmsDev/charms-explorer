@@ -8,18 +8,64 @@ import Link from 'next/link';
 import { fetchCharmsByAddress } from '../../../services/apiServices';
 import { fetchReferenceNftByHash, extractHashFromAppId } from '../../../services/api/referenceNft';
 import { fetchAssetByAppId } from '../../../services/api/assets';
+import { useNetwork } from '../../../context/NetworkContext';
+import { API_BASE_URL, ENDPOINTS } from '../../../services/apiConfig';
+import { resolveImageUrl } from '../../../services/transformers';
+import { classifyTransaction, getTransactionMetadata } from '../../../services/transactions/transactionClassifier';
+
+const formatSats = (sats = 0) => {
+    const n = Number(sats) || 0;
+    if (!n) return '0';
+    return n.toLocaleString();
+};
+const formatBtc = (sats = 0) => (Number(sats) / 1e8).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 8 });
 
 export default function AddressPage() {
     const params = useParams();
     const address = params.address;
+    const { getNetworkParam, isHydrated } = useNetwork();
     const [charms, setCharms] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [groupedAssets, setGroupedAssets] = useState({});
     const [nftImages, setNftImages] = useState({});
     const [assetMetadata, setAssetMetadata] = useState({});
+    const [btcBalance, setBtcBalance] = useState(null);
+    const [enrichedCharms, setEnrichedCharms] = useState([]);
+    const [txHistory, setTxHistory] = useState([]);
+    const [txHistoryError, setTxHistoryError] = useState(null);
 
     useEffect(() => {
+        if (!isHydrated) return;
+        const network = getNetworkParam() || 'mainnet';
+
+        // Balance + tx history run independently of the charms/UTXO fetch below.
+        (async () => {
+            try {
+                const url = `${ENDPOINTS.WALLET_BALANCE(address)}?network=${encodeURIComponent(network)}`;
+                const res = await fetch(url);
+                if (res.ok) {
+                    const json = await res.json();
+                    setBtcBalance(json.btc || null);
+                    setEnrichedCharms(json.charms?.balances || []);
+                }
+            } catch (_) { /* balance is best-effort */ }
+        })();
+
+        (async () => {
+            try {
+                setTxHistoryError(null);
+                const url = `${API_BASE_URL}/wallet/transactions/${address}?network=${encodeURIComponent(network)}&page=1&page_size=50`;
+                const res = await fetch(url);
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                setTxHistory(Array.isArray(json.transactions) ? json.transactions : []);
+            } catch (e) {
+                setTxHistoryError(e.message || 'failed to load transactions');
+                setTxHistory([]);
+            }
+        })();
+
         const loadCharms = async () => {
             try {
                 setIsLoading(true);
@@ -100,7 +146,7 @@ export default function AddressPage() {
         if (address) {
             loadCharms();
         }
-    }, [address]);
+    }, [address, isHydrated, getNetworkParam]);
 
     // Format amount with decimals
     const formatAmount = (amount, decimals = 8) => {
@@ -178,10 +224,128 @@ export default function AddressPage() {
 
             {!error && !isLoading && (
                 <div className="container mx-auto px-4 py-6">
+                    {/* BTC balance card — visible even when the address holds no charms */}
+                    {btcBalance && (
+                        <div className="mb-8 grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="bg-dark-800/50 rounded-lg p-4 border border-orange-500/30">
+                                <div className="text-dark-400 text-sm">BTC Total</div>
+                                <div className="text-orange-300 font-bold text-lg">{formatBtc(btcBalance.total)}</div>
+                                <div className="text-dark-500 text-xs">{formatSats(btcBalance.total)} sats</div>
+                            </div>
+                            <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+                                <div className="text-dark-400 text-sm">Confirmed</div>
+                                <div className="text-white font-semibold">{formatBtc(btcBalance.confirmed)}</div>
+                                <div className="text-dark-500 text-xs">{formatSats(btcBalance.confirmed)} sats</div>
+                            </div>
+                            <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+                                <div className="text-dark-400 text-sm">Available</div>
+                                <div className="text-green-400 font-semibold">{formatBtc(btcBalance.available)}</div>
+                                <div className="text-dark-500 text-xs">{formatSats(btcBalance.available)} sats</div>
+                            </div>
+                            <div className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+                                <div className="text-dark-400 text-sm">Mempool</div>
+                                <div className="text-yellow-400 font-semibold">{formatBtc(btcBalance.unconfirmed)}</div>
+                                <div className="text-dark-500 text-xs">{formatSats(btcBalance.unconfirmed)} sats</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Charm balances from the balance endpoint — includes name + imageUrl already resolved */}
+                    {enrichedCharms.length > 0 && (
+                        <div className="mb-8">
+                            <h2 className="text-xl font-bold text-white mb-4">
+                                Charm Balances ({enrichedCharms.length})
+                            </h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {enrichedCharms.map(c => (
+                                    <div key={c.appId} className="bg-dark-800/50 rounded-lg p-4 border border-dark-700">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            {c.imageUrl ? (
+                                                <img src={resolveImageUrl(c.imageUrl)} alt="" className="w-12 h-12 rounded-lg object-cover" />
+                                            ) : (
+                                                <div className="w-12 h-12 rounded-lg bg-dark-700" />
+                                            )}
+                                            <div className="min-w-0">
+                                                <Link href={`/asset/${encodeURIComponent(c.appId)}`} className="text-white font-medium hover:text-primary-400 block truncate">
+                                                    {c.name || c.symbol || (c.appId?.substring(0, 12) + '...')}
+                                                </Link>
+                                                <div className="text-xs text-dark-400">{c.assetType || ''}</div>
+                                            </div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2 text-sm">
+                                            <div>
+                                                <div className="text-dark-400">Total</div>
+                                                <div className="text-white font-semibold">{formatSats(c.total)}</div>
+                                            </div>
+                                            <div>
+                                                <div className="text-dark-400">UTXOs</div>
+                                                <div className="text-primary-400 font-semibold">{c.utxos?.length ?? 0}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Transaction history from the address_transactions table */}
+                    <div className="mb-8">
+                        <h2 className="text-xl font-bold text-white mb-4">
+                            Recent Transactions {txHistory.length > 0 ? `(${txHistory.length})` : ''}
+                        </h2>
+                        {txHistoryError && (
+                            <div className="bg-yellow-900/20 border border-yellow-500/30 rounded-lg p-3 text-yellow-300 text-sm">
+                                Transactions temporarily unavailable: {txHistoryError}
+                            </div>
+                        )}
+                        {!txHistoryError && txHistory.length === 0 && (
+                            <div className="text-dark-400 text-sm">No indexed transactions for this address yet.</div>
+                        )}
+                        {txHistory.length > 0 && (
+                            <div className="bg-dark-800/50 rounded-lg overflow-x-auto">
+                                <table className="w-full min-w-[720px]">
+                                    <thead>
+                                        <tr className="border-b border-dark-700">
+                                            <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">Direction</th>
+                                            <th className="text-left px-4 py-3 text-dark-400 text-sm font-medium">TXID</th>
+                                            <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium">Amount (sats)</th>
+                                            <th className="text-right px-4 py-3 text-dark-400 text-sm font-medium">Fee</th>
+                                            <th className="text-center px-4 py-3 text-dark-400 text-sm font-medium">Block</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {txHistory.map(t => {
+                                            const arrow = t.direction === 'in' ? '↓' : (t.direction === 'out' ? '↑' : '↔');
+                                            const arrowColor = t.direction === 'in' ? 'text-green-400' : (t.direction === 'out' ? 'text-red-400' : 'text-dark-300');
+                                            return (
+                                                <tr key={`${t.txid}-${t.direction}`} className="border-b border-dark-700/50 hover:bg-dark-700/30">
+                                                    <td className="px-4 py-3">
+                                                        <span className={`font-bold text-lg ${arrowColor}`}>{arrow}</span>
+                                                        <span className="ml-2 text-dark-300 text-sm capitalize">{t.direction}</span>
+                                                    </td>
+                                                    <td className="px-4 py-3">
+                                                        <Link href={`/tx?txid=${t.txid}`} className="text-primary-400 hover:text-primary-300 font-mono text-sm">
+                                                            {t.txid?.substring(0, 12)}...
+                                                        </Link>
+                                                    </td>
+                                                    <td className="px-4 py-3 text-right text-white font-mono text-sm">{formatSats(t.amount)}</td>
+                                                    <td className="px-4 py-3 text-right text-dark-300 font-mono text-sm">{formatSats(t.fee)}</td>
+                                                    <td className="px-4 py-3 text-center text-dark-300 text-sm">
+                                                        {t.block_height ? `#${t.block_height.toLocaleString()}` : <span className="text-yellow-400">mempool</span>}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
+                    </div>
+
                     {charms.length === 0 ? (
-                        <div className="py-16 text-center">
+                        <div className="py-8 text-center">
                             <h3 className="text-xl font-medium text-gray-300 mb-2">No unspent charms found</h3>
-                            <p className="text-gray-400">This address has no unspent charm UTXOs</p>
+                            <p className="text-gray-400">This address has no unspent charm UTXOs on the selected network.</p>
                         </div>
                     ) : (
                         <>
