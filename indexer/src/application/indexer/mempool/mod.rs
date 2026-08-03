@@ -276,7 +276,6 @@ impl MempoolProcessor {
             &self.network_id.name,
             &live_set,
             &self.db,
-            &self.mempool_spends_repository,
             &self.reconcile_miss_counts,
         )
         .await;

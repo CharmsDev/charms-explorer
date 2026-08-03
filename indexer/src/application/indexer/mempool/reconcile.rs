@@ -20,10 +20,11 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, DbBackend, Statement, TransactionTrait, Value,
+};
 use tokio::sync::Mutex;
 
-use crate::infrastructure::persistence::repositories::MempoolSpendsRepository;
 use crate::utils::logging;
 
 /// Reconcile cycles a tx must be missing from `getrawmempool` before we evict
@@ -43,7 +44,6 @@ pub async fn reconcile_dropped_txs(
     network: &str,
     live_mempool: &HashSet<String>,
     db: &DatabaseConnection,
-    mempool_spends_repository: &MempoolSpendsRepository,
     miss_counts: &Arc<Mutex<HashMap<String, u32>>>,
 ) -> usize {
     // 1. Get all pending txids from transactions table
@@ -112,7 +112,7 @@ pub async fn reconcile_dropped_txs(
 
     let mut reverted = 0usize;
     for txid in &to_evict {
-        match revert_mempool_tx(txid, network, db, mempool_spends_repository).await {
+        match revert_mempool_tx(txid, network, db).await {
             Ok(()) => {
                 reverted += 1;
                 miss_counts.lock().await.remove(txid);
@@ -141,13 +141,12 @@ async fn get_pending_txids(
     network: &str,
     db: &DatabaseConnection,
 ) -> Result<Vec<String>, String> {
-    let sql = format!(
-        "SELECT txid FROM transactions WHERE block_height IS NULL AND network = '{}'",
-        network.replace('\'', "''")
-    );
-
     let rows = db
-        .query_all(Statement::from_string(DbBackend::Postgres, sql))
+        .query_all(Statement::from_sql_and_values(
+            DbBackend::Postgres,
+            "SELECT txid FROM transactions WHERE block_height IS NULL AND network = $1",
+            [network.into()],
+        ))
         .await
         .map_err(|e| e.to_string())?;
 
@@ -161,96 +160,101 @@ async fn get_pending_txids(
 
 /// Revert ALL side effects of a single mempool transaction that has been dropped.
 ///
-/// Order matters: parent order status must be restored before deleting the
-/// activity row, and mempool_spends must be cleaned before address_utxos
-/// so that wallet balance queries never see an inconsistent state.
+/// Runs inside a single DB transaction. The six statements below are one
+/// logical unit: a partial revert leaves the explorer in a state no query can
+/// make sense of (e.g. a pending `transactions` row whose `charms` are already
+/// gone renders as a charmless spell). Committing all-or-nothing means a
+/// failure mid-way rolls back and the next reconcile cycle retries cleanly.
+///
+/// Order matters within the transaction: parent order status must be restored
+/// before deleting the activity row that points at it.
 async fn revert_mempool_tx(
     txid: &str,
     network: &str,
     db: &DatabaseConnection,
-    mempool_spends_repository: &MempoolSpendsRepository,
 ) -> Result<(), String> {
-    let escaped_txid = txid.replace('\'', "''");
-    let escaped_network = network.replace('\'', "''");
-
-    // 1. Revert parent order status for FULFILL/CANCEL operations.
-    //    Activity rows have parent_order_id set — derive the parent's correct
-    //    status from its `filled_amount` rather than hard-coding "open", so
-    //    we do not clobber a real on-chain partial fill that happened while
-    //    the mempool tx was queued (audit N8).
-    let revert_parent_sql = format!(
-        "UPDATE dex_orders SET \
-             status = CASE \
-                 WHEN filled_amount >= amount THEN 'filled' \
-                 WHEN filled_amount > 0 THEN 'partial' \
-                 ELSE 'open' \
-             END, \
-             updated_at = NOW() \
-         WHERE order_id IN (\
-             SELECT parent_order_id FROM dex_orders \
-             WHERE txid = '{}' AND network = '{}' AND parent_order_id IS NOT NULL\
-         )",
-        escaped_txid, escaped_network
-    );
-    db.execute(Statement::from_string(
-        DbBackend::Postgres,
-        revert_parent_sql,
-    ))
-    .await
-    .map_err(|e| format!("revert parent order: {}", e))?;
-
-    // 2. Delete dex_orders rows for this txid (CREATE orders + activity rows)
-    let del_orders_sql = format!(
-        "DELETE FROM dex_orders WHERE txid = '{}' AND network = '{}' AND block_height IS NULL",
-        escaped_txid, escaped_network
-    );
-    db.execute(Statement::from_string(
-        DbBackend::Postgres,
-        del_orders_sql,
-    ))
-    .await
-    .map_err(|e| format!("delete dex_orders: {}", e))?;
-
-    // 3. Delete charms entries
-    // stats_holders is not affected — mempool charms never update stats_holders.
-    // stats_holders only tracks confirmed balances (updated by block processor).
-    let del_charms_sql = format!(
-        "DELETE FROM charms WHERE txid = '{}' AND network = '{}' AND block_height IS NULL",
-        escaped_txid, escaped_network
-    );
-    db.execute(Statement::from_string(
-        DbBackend::Postgres,
-        del_charms_sql,
-    ))
-    .await
-    .map_err(|e| format!("delete charms: {}", e))?;
-
-    // 4. Delete transactions entry
-    let del_tx_sql = format!(
-        "DELETE FROM transactions WHERE txid = '{}' AND network = '{}' AND block_height IS NULL",
-        escaped_txid, escaped_network
-    );
-    db.execute(Statement::from_string(DbBackend::Postgres, del_tx_sql))
+    let tx = db
+        .begin()
         .await
-        .map_err(|e| format!("delete transactions: {}", e))?;
+        .map_err(|e| format!("begin revert transaction: {}", e))?;
 
-    // 5. Delete mempool_spends (all inputs this tx was consuming)
-    mempool_spends_repository
-        .remove_by_spending_txid(txid, network)
+    // Every statement is bound, not interpolated. txids arrive from RPC and
+    // from the public Esplora gateway, so they are untrusted input by the time
+    // they reach here (matches the parameterised pattern in cleanup.rs).
+    let steps: [(&str, &str, Vec<Value>); 6] = [
+        // 1. Revert parent order status for FULFILL/CANCEL operations.
+        //    Activity rows have parent_order_id set — derive the parent's correct
+        //    status from its `filled_amount` rather than hard-coding "open", so
+        //    we do not clobber a real on-chain partial fill that happened while
+        //    the mempool tx was queued (audit N8).
+        (
+            "revert parent order",
+            "UPDATE dex_orders SET \
+                 status = CASE \
+                     WHEN filled_amount >= amount THEN 'filled' \
+                     WHEN filled_amount > 0 THEN 'partial' \
+                     ELSE 'open' \
+                 END, \
+                 updated_at = NOW() \
+             WHERE order_id IN (\
+                 SELECT parent_order_id FROM dex_orders \
+                 WHERE txid = $1 AND network = $2 AND parent_order_id IS NOT NULL\
+             )",
+            vec![txid.into(), network.into()],
+        ),
+        // 2. Delete dex_orders rows for this txid (CREATE orders + activity rows)
+        (
+            "delete dex_orders",
+            "DELETE FROM dex_orders WHERE txid = $1 AND network = $2 AND block_height IS NULL",
+            vec![txid.into(), network.into()],
+        ),
+        // 3. Delete charms entries.
+        // stats_holders is not affected — mempool charms never update stats_holders.
+        // stats_holders only tracks confirmed balances (updated by block processor).
+        (
+            "delete charms",
+            "DELETE FROM charms WHERE txid = $1 AND network = $2 AND block_height IS NULL",
+            vec![txid.into(), network.into()],
+        ),
+        // 4. Delete transactions entry
+        (
+            "delete transactions",
+            "DELETE FROM transactions WHERE txid = $1 AND network = $2 AND block_height IS NULL",
+            vec![txid.into(), network.into()],
+        ),
+        // 5. Delete mempool_spends (all inputs this tx was consuming).
+        // Inlined rather than calling MempoolSpendsRepository so the delete
+        // joins this transaction instead of running on its own connection.
+        (
+            "delete mempool_spends",
+            "DELETE FROM mempool_spends WHERE spending_txid = $1 AND network = $2",
+            vec![txid.into(), network.into()],
+        ),
+        // 6. Delete unconfirmed address_utxos created by this tx (block_height = 0)
+        (
+            "delete address_utxos",
+            "DELETE FROM address_utxos WHERE txid = $1 AND network = $2 AND block_height = 0",
+            vec![txid.into(), network.into()],
+        ),
+    ];
+
+    for (label, sql, params) in steps {
+        if let Err(e) = tx
+            .execute(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                sql,
+                params,
+            ))
+            .await
+        {
+            let _ = tx.rollback().await;
+            return Err(format!("{}: {}", label, e));
+        }
+    }
+
+    tx.commit()
         .await
-        .map_err(|e| format!("delete mempool_spends: {}", e))?;
-
-    // 6. Delete unconfirmed address_utxos created by this tx (block_height = 0)
-    let del_utxos_sql = format!(
-        "DELETE FROM address_utxos WHERE txid = '{}' AND network = '{}' AND block_height = 0",
-        escaped_txid, escaped_network
-    );
-    db.execute(Statement::from_string(
-        DbBackend::Postgres,
-        del_utxos_sql,
-    ))
-    .await
-    .map_err(|e| format!("delete address_utxos: {}", e))?;
+        .map_err(|e| format!("commit revert transaction: {}", e))?;
 
     logging::log_info(&format!(
         "[{}] 🗑️ Reverted dropped mempool tx {}",
