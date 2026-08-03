@@ -18,7 +18,10 @@ pub async fn purge_stale(
     seen_txids: &std::sync::Arc<Mutex<HashSet<String>>>,
 ) {
     // 1. Purge stale mempool_spends
-    match mempool_spends_repository.purge_stale(STALE_HOURS).await {
+    match mempool_spends_repository
+        .purge_stale(network, STALE_HOURS)
+        .await
+    {
         Ok(n) if n > 0 => {
             logging::log_info(&format!(
                 "[{}] 🧹 Purged {} stale mempool_spends entries",

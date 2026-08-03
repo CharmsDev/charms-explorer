@@ -5,7 +5,7 @@ mod common;
 
 use charms_indexer::infrastructure::persistence::repositories::MempoolSpendsRepository;
 use common::TestDb;
-use sea_orm::{DbBackend, FromQueryResult, Statement};
+use sea_orm::{ConnectionTrait, DbBackend, FromQueryResult, Statement};
 
 #[derive(FromQueryResult, Debug, PartialEq, Eq)]
 struct SpendRow {
@@ -85,6 +85,61 @@ async fn cross_network_does_not_collide() {
     let test = fetch_spend(&db.conn, "utxo_u", 0, "testnet4").await.unwrap();
     assert_eq!(main.spending_txid, "tx_main");
     assert_eq!(test.spending_txid, "tx_test");
+}
+
+/// `purge_stale` must only touch the network it was called for. One
+/// MempoolProcessor runs per network and each calls cleanup on its own cycle,
+/// so an unscoped DELETE let the mainnet processor wipe testnet4's rows.
+#[tokio::test]
+async fn purge_stale_is_scoped_to_one_network() {
+    let db = TestDb::new().await;
+    let repo = MempoolSpendsRepository::new(db.conn.clone());
+
+    for (spender, network) in [("tx_main", "mainnet"), ("tx_test", "testnet4")] {
+        repo.record_spends_batch(
+            &[(spender.to_string(), "utxo_u".to_string(), 0)],
+            network,
+        )
+        .await
+        .unwrap();
+    }
+
+    // Backdate both rows well past the staleness window.
+    db.conn
+        .execute(Statement::from_string(
+            DbBackend::Postgres,
+            "UPDATE mempool_spends SET detected_at = NOW() - INTERVAL '48 hours'".to_string(),
+        ))
+        .await
+        .unwrap();
+
+    let purged = repo.purge_stale("mainnet", 24).await.unwrap();
+
+    assert_eq!(purged, 1, "only the mainnet row is in scope");
+    assert!(
+        fetch_spend(&db.conn, "utxo_u", 0, "mainnet").await.is_none(),
+        "mainnet stale row should be gone"
+    );
+    assert!(
+        fetch_spend(&db.conn, "utxo_u", 0, "testnet4")
+            .await
+            .is_some(),
+        "testnet4 row must survive a mainnet purge"
+    );
+}
+
+/// Fresh rows must never be collected by the staleness sweep.
+#[tokio::test]
+async fn purge_stale_keeps_recent_rows() {
+    let db = TestDb::new().await;
+    let repo = MempoolSpendsRepository::new(db.conn.clone());
+
+    repo.record_spends_batch(&[("tx_a".to_string(), "utxo_u".to_string(), 0)], "mainnet")
+        .await
+        .unwrap();
+
+    assert_eq!(repo.purge_stale("mainnet", 24).await.unwrap(), 0);
+    assert!(fetch_spend(&db.conn, "utxo_u", 0, "mainnet").await.is_some());
 }
 
 #[tokio::test]
