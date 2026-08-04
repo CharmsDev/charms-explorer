@@ -26,13 +26,28 @@ fn supplement_mempool_url(network: &str) -> Option<String> {
     }
 }
 
+/// Shared HTTP client for the supplement gateway. Built once so the connection
+/// pool, TLS session cache and resolver cache survive across calls — the
+/// previous per-request `Client::builder()` reopened a TCP+TLS handshake for
+/// every txid we backfilled.
+fn supplement_http() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(Duration::from_secs(8))
+            .pool_idle_timeout(Duration::from_secs(60))
+            .build()
+            .unwrap_or_default()
+    })
+}
+
 async fn fetch_esplora_mempool(base_url: &str) -> Result<Vec<String>, String> {
     let url = format!("{}/mempool/txids", base_url.trim_end_matches('/'));
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
+    let res = supplement_http()
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| e.to_string())?;
-    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !res.status().is_success() {
         return Err(format!("HTTP {}", res.status()));
     }
@@ -199,10 +214,13 @@ impl BitcoinClient {
         if let Some(url) = supplement_mempool_url(&self.network_id.name) {
             match fetch_esplora_mempool(&url).await {
                 Ok(extra) => {
-                    let existing: std::collections::HashSet<String> =
+                    // Track seen txids as we push so duplicates *within* the
+                    // gateway response are also collapsed — the previous
+                    // snapshot-before-loop set only deduped against the RPC view.
+                    let mut seen: std::collections::HashSet<String> =
                         txids.iter().cloned().collect();
                     for t in extra {
-                        if !existing.contains(&t) {
+                        if seen.insert(t.clone()) {
                             txids.push(t);
                         }
                     }
@@ -239,11 +257,21 @@ impl BitcoinClient {
                 .get_raw_transaction_hex(txid, block_hash)
                 .await
         } else if let Some(client) = &self.client {
-            match client.get_raw_transaction(&txid_parsed, block_hash) {
-                Ok(tx) => {
-                    let tx_bytes = bitcoincore_rpc::bitcoin::consensus::serialize(&tx);
-                    Ok(hex::encode(tx_bytes))
-                }
+            // bitcoincore_rpc is a blocking client — calling it directly here
+            // stalled a tokio worker thread for the whole RPC roundtrip, once
+            // per mempool txid. Offload it like get_raw_mempool already does.
+            let client = client.clone();
+            let block_hash = block_hash.copied();
+            let rpc_result = tokio::task::spawn_blocking(move || {
+                client
+                    .get_raw_transaction(&txid_parsed, block_hash.as_ref())
+                    .map(|tx| hex::encode(bitcoincore_rpc::bitcoin::consensus::serialize(&tx)))
+            })
+            .await
+            .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))?;
+
+            match rpc_result {
+                Ok(hex) => Ok(hex),
                 Err(e) => {
                     // Local node may not have the tx in its mempool when we
                     // discovered it via the Esplora supplement. Try the
@@ -266,13 +294,16 @@ impl BitcoinClient {
 
 async fn fetch_esplora_tx_hex(base_url: &str, txid: &str) -> Result<String, String> {
     let url = format!("{}/tx/{}/hex", base_url.trim_end_matches('/'), txid);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(8))
-        .build()
+    let res = supplement_http()
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| e.to_string())?;
-    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !res.status().is_success() {
         return Err(format!("HTTP {}", res.status()));
     }
-    res.text().await.map(|t| t.trim().to_string()).map_err(|e| e.to_string())
+    res.text()
+        .await
+        .map(|t| t.trim().to_string())
+        .map_err(|e| e.to_string())
 }
