@@ -207,26 +207,36 @@ impl MempoolProcessor {
                 }
             };
 
+            // Deserialize once per tx and share it with every consumer below.
+            // Previously the UTXO tracker, the vout-address extraction and the
+            // spend extraction each re-parsed the same hex.
+            let decoded = processor::decode_tx(&raw_hex);
+
             // Track UTXO changes for monitored addresses
+            let mut spends_recorded = false;
             if !monitored_snapshot.is_empty() {
-                utxo_tracker::track_mempool_utxos(
-                    txid,
-                    &raw_hex,
-                    &self.network_id.name,
-                    &monitored_snapshot,
-                    &self.utxo_repository,
-                    &self.mempool_spends_repository,
-                )
-                .await;
+                if let Some(ref tx) = decoded {
+                    spends_recorded = utxo_tracker::track_mempool_utxos(
+                        txid,
+                        tx,
+                        &self.network_id.name,
+                        &monitored_snapshot,
+                        &self.utxo_repository,
+                        &self.mempool_spends_repository,
+                    )
+                    .await;
+                }
             }
 
-            // Detect charms (pass raw_hex to avoid re-fetching)
+            // Detect charms (pass raw_hex + decoded tx to avoid re-fetching/re-parsing)
             match processor::process_tx_with_hex(
                 txid,
                 &raw_hex,
+                decoded.as_ref(),
                 &self.network_id,
                 &self.db,
                 &self.mempool_spends_repository,
+                spends_recorded,
             )
             .await
             {

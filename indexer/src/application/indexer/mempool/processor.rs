@@ -6,10 +6,12 @@
 use chrono::{DateTime, FixedOffset, Utc};
 use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 
+use bitcoincore_rpc::bitcoin;
+
 use super::dex_persistence::{
     correct_fulfill_classification, save_dex_order, update_consumed_order_status,
 };
-use super::spend_extraction::extract_spends;
+use super::spend_extraction::extract_spends_from_tx;
 use crate::config::NetworkId;
 use crate::domain::services::tx_analyzer;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
@@ -38,17 +40,44 @@ pub async fn process_tx(
         .await
         .map_err(|e| format!("get_raw_transaction_hex failed: {}", e))?;
 
-    process_tx_with_hex(txid, &raw_hex, network_id, db, mempool_spends_repository).await
+    let decoded = decode_tx(&raw_hex);
+    process_tx_with_hex(
+        txid,
+        &raw_hex,
+        decoded.as_ref(),
+        network_id,
+        db,
+        mempool_spends_repository,
+        false,
+    )
+    .await
+}
+
+/// Decode raw tx hex into a `Transaction`, or None if the hex is unusable.
+/// Callers decode once and share the result across every consumer in the cycle.
+pub fn decode_tx(raw_hex: &str) -> Option<bitcoin::Transaction> {
+    use bitcoincore_rpc::bitcoin::consensus::deserialize;
+    hex::decode(raw_hex)
+        .ok()
+        .and_then(|bytes| deserialize::<bitcoin::Transaction>(&bytes).ok())
 }
 
 /// Process a single mempool transaction with pre-fetched raw hex.
+///
+/// `decoded` is the shared deserialization of `raw_hex` (see [`decode_tx`]).
+/// `spends_already_recorded` is set when the UTXO tracker already wrote this
+/// tx's `mempool_spends` rows this cycle — they would be byte-identical, so
+/// re-running the batch upsert is pure duplicate work.
+///
 /// Returns Some(result) if it's a charm tx, None if not.
 pub async fn process_tx_with_hex(
     txid: &str,
     raw_hex: &str,
+    decoded: Option<&bitcoin::Transaction>,
     network_id: &NetworkId,
     db: &DatabaseConnection,
     mempool_spends_repository: &MempoolSpendsRepository,
+    spends_already_recorded: bool,
 ) -> Result<Option<MempoolDetectionResult>, String> {
     // Analyze tx using shared TxAnalyzer (CPU-intensive, run in blocking task)
     let txid_owned = txid.to_string();
@@ -93,16 +122,14 @@ pub async fn process_tx_with_hex(
 
     // Extract per-vout addresses (preserving index alignment, OP_RETURN outputs map to None)
     let vout_addresses: Vec<Option<String>> = {
-        use bitcoincore_rpc::bitcoin::{consensus::deserialize, Address, Network, Transaction};
+        use bitcoincore_rpc::bitcoin::{Address, Network};
         let btc_network = match network.as_str() {
             "mainnet" => Network::Bitcoin,
             "testnet4" | "testnet" => Network::Testnet,
             "regtest" => Network::Regtest,
             _ => Network::Testnet,
         };
-        hex::decode(raw_hex)
-            .ok()
-            .and_then(|bytes| deserialize::<Transaction>(&bytes).ok())
+        decoded
             .map(|tx| {
                 tx.output
                     .iter()
@@ -190,19 +217,24 @@ pub async fn process_tx_with_hex(
     // and insert an activity row for the fulfill/cancel transaction
     update_consumed_order_status(txid, raw_hex, &analyzed, &blockchain, &network, db).await;
 
-    // Record mempool spends (inputs being consumed by this tx)
+    // Record mempool spends (inputs being consumed by this tx), unless the UTXO
+    // tracker already wrote the identical rows for this tx earlier in the cycle.
     // stats_holders is NOT updated here — spent tracking only happens at block confirmation
     // via spent_tracker::mark_spent_charms to avoid double-subtraction.
-    let spends = extract_spends(raw_hex, txid);
-    if !spends.is_empty() {
-        if let Err(e) = mempool_spends_repository
-            .record_spends_batch(&spends, &network)
-            .await
-        {
-            logging::log_warning(&format!(
-                "[{}] ⚠️ Failed to record mempool spends for {}: {}",
-                network, txid, e
-            ));
+    if !spends_already_recorded {
+        let spends = decoded
+            .map(|tx| extract_spends_from_tx(tx, txid))
+            .unwrap_or_default();
+        if !spends.is_empty() {
+            if let Err(e) = mempool_spends_repository
+                .record_spends_batch(&spends, &network)
+                .await
+            {
+                logging::log_warning(&format!(
+                    "[{}] ⚠️ Failed to record mempool spends for {}: {}",
+                    network, txid, e
+                ));
+            }
         }
     }
 

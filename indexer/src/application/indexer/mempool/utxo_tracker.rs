@@ -5,38 +5,35 @@
 
 use std::collections::HashSet;
 
-use bitcoincore_rpc::bitcoin::{self, consensus::deserialize};
+use bitcoincore_rpc::bitcoin;
 
+use super::spend_extraction::extract_spends_from_tx;
 use crate::infrastructure::persistence::repositories::utxo_repository::UtxoInsert;
 use crate::infrastructure::persistence::repositories::{
     MempoolSpendsRepository, MonitoredAddressesRepository, UtxoRepository,
 };
 use crate::utils::logging;
 
-/// Track UTXO changes from a raw mempool transaction for monitored addresses.
-/// - Inputs spending monitored UTXOs → record in mempool_spends
+/// Track UTXO changes from a decoded mempool transaction for monitored addresses.
+/// - Inputs spent by this tx → record in mempool_spends
 /// - Outputs to monitored addresses → insert in address_utxos with block_height=0 (unconfirmed)
+///
+/// Takes the already-decoded tx: the poll loop deserializes each mempool tx
+/// once and shares it, instead of every consumer re-parsing the same hex.
+///
+/// Returns true when spends were written, so the charm processor can skip
+/// re-inserting the identical rows for this same tx.
 pub async fn track_mempool_utxos(
     txid: &str,
-    raw_hex: &str,
+    tx: &bitcoin::Transaction,
     network: &str,
     monitored_set: &HashSet<String>,
     utxo_repository: &UtxoRepository,
     mempool_spends_repository: &MempoolSpendsRepository,
-) {
+) -> bool {
     if monitored_set.is_empty() {
-        return;
+        return false;
     }
-
-    let tx_bytes = match hex::decode(raw_hex) {
-        Ok(b) => b,
-        Err(_) => return,
-    };
-
-    let tx: bitcoin::Transaction = match deserialize(&tx_bytes) {
-        Ok(t) => t,
-        Err(_) => return,
-    };
 
     let btc_network = match network {
         "mainnet" => bitcoin::Network::Bitcoin,
@@ -44,30 +41,20 @@ pub async fn track_mempool_utxos(
         _ => bitcoin::Network::Testnet,
     };
 
-    // 1. Record mempool spends for inputs that consume monitored UTXOs
-    let spends: Vec<(String, String, i32)> = tx
-        .input
-        .iter()
-        .filter_map(|inp| {
-            let prev_txid = inp.previous_output.txid.to_string();
-            let prev_vout = inp.previous_output.vout as i32;
-            if prev_txid == "0000000000000000000000000000000000000000000000000000000000000000" {
-                None
-            } else {
-                Some((txid.to_string(), prev_txid, prev_vout))
-            }
-        })
-        .collect();
+    // 1. Record the UTXOs this tx consumes
+    let spends = extract_spends_from_tx(tx, txid);
+    let mut spends_recorded = false;
 
     if !spends.is_empty() {
-        if let Err(e) = mempool_spends_repository
+        match mempool_spends_repository
             .record_spends_batch(&spends, network)
             .await
         {
-            logging::log_debug(&format!(
+            Ok(()) => spends_recorded = true,
+            Err(e) => logging::log_debug(&format!(
                 "[{}] Mempool UTXO tracker: failed to record spends for {}: {}",
                 network, txid, e
-            ));
+            )),
         }
     }
 
@@ -109,6 +96,8 @@ pub async fn track_mempool_utxos(
             ));
         }
     }
+
+    spends_recorded
 }
 
 /// Load the monitored address set (call periodically, not per-tx)
