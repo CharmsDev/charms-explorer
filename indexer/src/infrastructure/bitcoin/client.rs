@@ -193,10 +193,18 @@ impl BitcoinClient {
     /// node has incomplete P2P coverage (mainly testnet4), unions in the
     /// public Esplora gateway listing so propagation gaps don't hide
     /// pending spells from the explorer.
+    ///
+    /// The supplement also acts as a **fallback**, not just an augmentation: a
+    /// local node that is down or refusing connections used to abort the whole
+    /// call, which defeated the point of having a second source on exactly the
+    /// network that needs it. Only an unusable local node *and* an unusable
+    /// gateway is an error now.
     pub async fn get_raw_mempool(&self) -> Result<Vec<String>, BitcoinClientError> {
-        let mut txids: Vec<String> = if let Some(client) = &self.client {
+        let supplement = supplement_mempool_url(&self.network_id.name);
+
+        let (mut txids, rpc_error) = if let Some(client) = &self.client {
             let client = client.clone();
-            tokio::task::spawn_blocking(move || {
+            let rpc = tokio::task::spawn_blocking(move || {
                 use bitcoincore_rpc::RpcApi;
                 client
                     .get_raw_mempool()
@@ -204,16 +212,33 @@ impl BitcoinClient {
                     .map_err(BitcoinClientError::RpcError)
             })
             .await
-            .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))??
+            .map_err(|e| BitcoinClientError::Other(format!("spawn_blocking join error: {}", e)))?;
+
+            match rpc {
+                Ok(txids) => (txids, None),
+                // Hold the error: if a supplement is configured it may still
+                // give us a usable view, so don't bail out before trying it.
+                Err(e) if supplement.is_some() => (Vec::new(), Some(e)),
+                Err(e) => return Err(e),
+            }
         } else {
             // External provider clients are block-only; the supplement below
             // is the only mempool source we'd have.
-            Vec::new()
+            (Vec::new(), None)
         };
 
-        if let Some(url) = supplement_mempool_url(&self.network_id.name) {
+        if let Some(url) = supplement {
             match fetch_esplora_mempool(&url).await {
                 Ok(extra) => {
+                    if let Some(e) = &rpc_error {
+                        logging::log_warning(&format!(
+                            "[{}] getrawmempool failed ({}), serving {} txids from supplement {}",
+                            self.network_id.name,
+                            e,
+                            extra.len(),
+                            url
+                        ));
+                    }
                     // Track seen txids as we push so duplicates *within* the
                     // gateway response are also collapsed — the previous
                     // snapshot-before-loop set only deduped against the RPC view.
@@ -225,10 +250,17 @@ impl BitcoinClient {
                         }
                     }
                 }
-                Err(e) => logging::log_debug(&format!(
-                    "[{}] mempool supplement {} failed: {}",
-                    self.network_id.name, url, e
-                )),
+                Err(e) => {
+                    // Both sources unusable — surface the RPC error, which is
+                    // the more actionable of the two.
+                    if let Some(rpc_e) = rpc_error {
+                        return Err(rpc_e);
+                    }
+                    logging::log_debug(&format!(
+                        "[{}] mempool supplement {} failed: {}",
+                        self.network_id.name, url, e
+                    ));
+                }
             }
         }
 
