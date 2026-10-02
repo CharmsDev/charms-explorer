@@ -40,7 +40,7 @@ src/
 │   ├── models/                pure data
 │   └── services/              tx_analyzer, native_charm_parser, dex/, address_extractor
 ├── infrastructure/
-│   ├── bitcoin/               RPC client + provider abstraction
+│   ├── bitcoin/               mempool.space REST client + websocket mempool feed
 │   ├── cardano/metadata.rs    CIP-68 metadata fetch (Koios)
 │   └── persistence/           entities + repositories + DbPool
 └── utils/
@@ -152,14 +152,13 @@ up where it left off.
    cancellation token. The mempool processor finishes its current cycle
    and exits; block processors are aborted (`stop_all` timeout: 30s).
 
-### 6. Local development against a real node
+### 6. Local development
+
+No node needed: chain data comes from the public mempool.space API.
 
 ```bash
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/charms
-export BITCOIN_MAINNET_RPC_HOST=...
-export BITCOIN_MAINNET_RPC_USERNAME=...
-export BITCOIN_MAINNET_RPC_PASSWORD=...
-export BITCOIN_MAINNET_RPC_PORT=8332
+export BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT=895000
 export ENABLE_BITCOIN_MAINNET=true
 export RUST_LOG=info,sqlx=warn
 make dev
@@ -177,8 +176,9 @@ Read from environment variables on startup. The full surface lives in
 | Variable | Purpose | Default |
 |---|---|---|
 | `DATABASE_URL` | Postgres connection string | — (required) |
-| `BITCOIN_MAINNET_RPC_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` | mainnet RPC | — |
-| `BITCOIN_TESTNET4_RPC_HOST` / `_PORT` / `_USERNAME` / `_PASSWORD` | testnet4 RPC | — |
+| `BITCOIN_<NET>_GENESIS_BLOCK_HEIGHT` | first block to index | — (required) |
+| `BITCOIN_<NET>_ESPLORA_URL` | Esplora REST base | `https://mempool.space[/testnet4]/api` |
+| `BITCOIN_<NET>_MEMPOOL_WS_URL` | mempool websocket | `wss://mempool.space[/testnet4]/api/v1/ws` |
 | `ENABLE_BITCOIN_MAINNET` | start the mainnet processor | `false` |
 | `ENABLE_BITCOIN_TESTNET4` | start the testnet4 processor | `false` |
 | `RUST_LOG` | log filter (env_logger / tracing-subscriber syntax) | `info,sqlx=warn` |
@@ -209,7 +209,8 @@ Tracked in the `_rjj/issues/` notes (gitignored, internal). Highlights:
 - **N6 cross-check Cardano**: the ADA→BTC claim heuristic flags any spend
   of a known beam-out tx as a beam-in. Refining requires cross-referencing
   Cardano transactions, which the indexer cannot do today.
-- **Mempool propagation**: large-OP_RETURN txs (charm spells) do not
-  propagate through standard Bitcoin Core peers. The wallet's broadcast
-  path goes through Maestro + mempool.space; the indexer-side concern is
-  only to keep the ghost mempool entries from confusing the API.
+- **Mempool feed**: pending txs come from the mempool.space websocket
+  (`track-mempool`). Txs that entered the mempool while the indexer was
+  down or disconnected are not back-filled; they show up when mined.
+- **Public gateway**: mempool.space is free with fair-use limits and no
+  SLA. Requests are throttled and retried on 429.
