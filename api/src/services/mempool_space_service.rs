@@ -25,11 +25,12 @@ pub const DEFAULT_TESTNET4_URL: &str = "https://mempool.space/testnet4/api";
 const TESTNET3_URL: &str = "https://mempool.space/testnet/api";
 
 /// Max concurrent in-flight requests to the Esplora host.
-const MAX_IN_FLIGHT: usize = 32;
+/// Kept low so batch endpoints queue instead of bursting into a 429.
+const MAX_IN_FLIGHT: usize = 8;
 /// Retries after an HTTP 429 (so up to MAX_429_RETRIES + 1 attempts).
-const MAX_429_RETRIES: u32 = 2;
+const MAX_429_RETRIES: u32 = 4;
 /// Upper bound for a server-provided Retry-After we are willing to honour.
-const MAX_RETRY_AFTER: Duration = Duration::from_secs(2);
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(3);
 /// Page cap for address history when seeding (25 txs per page).
 const MAX_HISTORY_PAGES: usize = 10;
 
@@ -114,10 +115,16 @@ impl EsploraClient {
             let r = req
                 .try_clone()
                 .ok_or_else(|| EsploraError::Transport("request not cloneable".into()))?;
-            let resp = r
-                .send()
-                .await
-                .map_err(|e| EsploraError::Transport(e.to_string()))?;
+            let resp = match r.send().await {
+                Ok(resp) => resp,
+                // One retry on a transport error (dropped connection, reset).
+                Err(_) if attempt == 0 => {
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    continue;
+                }
+                Err(e) => return Err(EsploraError::Transport(e.to_string())),
+            };
 
             if resp.status().as_u16() != 429 || attempt >= MAX_429_RETRIES {
                 return Ok(resp);
