@@ -1,6 +1,6 @@
 [package]
 name = "charms-explorer-api"
-version = "0.1.11"
+version = "0.1.12"
 edition = "2021"
 
 [dependencies]
@@ -26,9 +26,7 @@ thiserror = "2.0.11"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Bitcoin
-bitcoincore-rpc = "0.18.0"
 uuid = { version = "1.18.1", features = ["v4", "serde"] }
 
-# HTTP client (for QuickNode API)
+# HTTP client (Esplora / mempool.space)
 reqwest = { version = "0.12", features = ["json"] }
