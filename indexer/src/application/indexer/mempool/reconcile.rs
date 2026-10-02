@@ -1,5 +1,5 @@
 //! Mempool reconciliation: detects transactions that have disappeared from the
-//! Bitcoin Core mempool (dropped, RBF-replaced, or evicted) and reverts all
+//! mempool (dropped, RBF-replaced, or evicted) and reverts all
 //! side effects that were recorded when they were first detected.
 //!
 //! Side effects reverted per dropped tx (in order):
@@ -137,7 +137,7 @@ pub async fn reconcile_dropped_txs(
 }
 
 /// Get all txids with block_height IS NULL (mempool/pending) from the transactions table.
-async fn get_pending_txids(
+pub(super) async fn get_pending_txids(
     network: &str,
     db: &DatabaseConnection,
 ) -> Result<Vec<String>, String> {

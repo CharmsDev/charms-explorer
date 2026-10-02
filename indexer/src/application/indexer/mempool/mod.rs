@@ -1,4 +1,5 @@
-//! Mempool processing module — polls Bitcoin Core's mempool for charm transactions.
+//! Mempool processing module — consumes the mempool.space websocket feed
+//! and detects charm transactions in it.
 //!
 //! Sub-modules:
 //! - `processor`: core detection + persistence for individual mempool txs
@@ -19,6 +20,7 @@ use tokio::sync::Mutex;
 
 use crate::config::NetworkId;
 use crate::infrastructure::bitcoin::client::BitcoinClient;
+use crate::infrastructure::bitcoin::MempoolStream;
 use crate::infrastructure::persistence::repositories::{
     MempoolSpendsRepository, MonitoredAddressesRepository, UtxoRepository,
 };
@@ -27,8 +29,13 @@ use crate::utils::logging;
 /// How often to poll the mempool (seconds)
 const POLL_INTERVAL_SECS: u64 = 1;
 
-/// Maximum number of mempool txids to process per poll cycle
-const MAX_TXS_PER_CYCLE: usize = 100;
+/// Maximum number of streamed txs to process per poll cycle. Txs arrive
+/// with their raw bytes, so this is CPU/DB-bound, not request-bound.
+const MAX_TXS_PER_CYCLE: usize = 5_000;
+
+/// Dedup cache cap: the feed doesn't replay, so this only guards against
+/// overlap across reconnects; clear it once it gets large.
+const MAX_SEEN_TXIDS: usize = 200_000;
 
 /// How often to reload the monitored address set (every N cycles)
 const MONITORED_SET_RELOAD_INTERVAL: u64 = 60;
@@ -38,9 +45,13 @@ const MONITORED_SET_RELOAD_INTERVAL: u64 = 60;
 /// minutes left a window where RBF-evicted txs stayed visible (audit N11).
 const RECONCILE_INTERVAL_CYCLES: u64 = 30;
 
+/// Cap on per-tx status lookups in one reconcile pass.
+const MAX_RECONCILE_LOOKUPS: usize = 200;
+
 /// Mempool processor — runs as a background task alongside the block processor
 pub struct MempoolProcessor {
     bitcoin_client: BitcoinClient,
+    stream: std::sync::Arc<MempoolStream>,
     db: DatabaseConnection,
     mempool_spends_repository: MempoolSpendsRepository,
     utxo_repository: UtxoRepository,
@@ -49,7 +60,7 @@ pub struct MempoolProcessor {
     seen_txids: std::sync::Arc<Mutex<HashSet<String>>>,
     monitored_set: std::sync::Arc<Mutex<HashSet<String>>>,
     /// Consecutive reconcile misses per pending txid. A tx is only evicted
-    /// after disappearing from `getrawmempool` for several reconcile cycles
+    /// after the gateway stops knowing it for several reconcile cycles
     /// in a row, so transient snapshot blips don't flicker the explorer UI.
     reconcile_miss_counts: std::sync::Arc<Mutex<std::collections::HashMap<String, u32>>>,
 }
@@ -57,6 +68,7 @@ pub struct MempoolProcessor {
 impl MempoolProcessor {
     pub fn new(
         bitcoin_client: BitcoinClient,
+        stream: std::sync::Arc<MempoolStream>,
         db: DatabaseConnection,
         mempool_spends_repository: MempoolSpendsRepository,
         utxo_repository: UtxoRepository,
@@ -65,6 +77,7 @@ impl MempoolProcessor {
     ) -> Self {
         Self {
             bitcoin_client,
+            stream,
             db,
             mempool_spends_repository,
             utxo_repository,
@@ -137,50 +150,38 @@ impl MempoolProcessor {
         ));
     }
 
-    /// Single poll cycle: fetch mempool, detect new charm txs, save them
+    /// Single poll cycle: drain the websocket feed, detect charm txs, save them
     async fn poll_once(&self, cycle: u64) -> Result<(), String> {
-        let mempool_txids = self
-            .bitcoin_client
-            .get_raw_mempool()
-            .await
-            .map_err(|e| format!("getrawmempool failed: {}", e))?;
-
-        crate::utils::metrics::mempool_size(&self.network_id.name, mempool_txids.len());
-
-        if mempool_txids.is_empty() {
-            return Ok(());
-        }
-
-        // Build a set of current mempool txids for O(1) lookup
-        let mempool_set: HashSet<&str> = mempool_txids.iter().map(String::as_str).collect();
-
-        // Diff against seen set.
-        // IMPORTANT: retain() removes txids that left the mempool (confirmed or dropped).
-        // This keeps seen_txids naturally bounded to mempool size and ensures truly new
-        // txids are always detected on their first poll cycle — no bulk re-scanning.
-        let new_txids: Vec<String> = {
-            let mut seen = self.seen_txids.lock().await;
-            seen.retain(|txid| mempool_set.contains(txid.as_str()));
-            let new: Vec<String> = mempool_txids
-                .into_iter()
-                .filter(|txid| !seen.contains(txid))
-                .take(MAX_TXS_PER_CYCLE)
-                .collect();
-            for txid in &new {
-                seen.insert(txid.clone());
+        let streamed = self.stream.drain(MAX_TXS_PER_CYCLE).await;
+        if streamed.is_empty() {
+            if !self.stream.is_connected() && cycle.is_multiple_of(60) {
+                return Err("mempool feed disconnected".to_string());
             }
-            new
-        };
-
-        if new_txids.is_empty() {
             return Ok(());
         }
 
-        logging::log_info(&format!(
-            "[{}] 🔍 Mempool cycle {}: {} new txids to check",
+        let new_txs: Vec<(String, Option<String>)> = {
+            let mut seen = self.seen_txids.lock().await;
+            if seen.len() > MAX_SEEN_TXIDS {
+                seen.clear();
+            }
+            streamed
+                .into_iter()
+                .filter(|t| seen.insert(t.txid.clone()))
+                .map(|t| (t.txid, t.hex))
+                .collect()
+        };
+        crate::utils::metrics::mempool_size(&self.network_id.name, new_txs.len());
+
+        if new_txs.is_empty() {
+            return Ok(());
+        }
+
+        logging::log_debug(&format!(
+            "[{}] 🔍 Mempool cycle {}: {} new txs to check",
             self.network_id.name,
             cycle,
-            new_txids.len()
+            new_txs.len()
         ));
 
         let mut charm_count = 0usize;
@@ -189,14 +190,14 @@ impl MempoolProcessor {
         // Get a snapshot of the monitored set for this cycle
         let monitored_snapshot = self.monitored_set.lock().await.clone();
 
-        for txid in &new_txids {
-            // Track UTXOs for monitored addresses (ALL txs, not just charm txs)
-            // We need the raw hex for both charm detection and UTXO tracking
-            let raw_hex = match self
-                .bitcoin_client
-                .get_raw_transaction_hex(txid, None)
-                .await
-            {
+        for (txid, hex) in &new_txs {
+            // Track UTXOs for monitored addresses (ALL txs, not just charm txs).
+            // The feed normally carries the raw tx; fetch only if it didn't.
+            let fetched = match hex {
+                Some(h) => Ok(h.clone()),
+                None => self.bitcoin_client.get_raw_transaction_hex(txid).await,
+            };
+            let raw_hex = match fetched {
                 Ok(hex) => hex,
                 Err(e) => {
                     logging::log_debug(&format!(
@@ -266,36 +267,40 @@ impl MempoolProcessor {
         Ok(())
     }
 
-    /// Reconcile DB with live mempool: revert all side effects for dropped txs.
+    /// Reconcile DB with the gateway: revert all side effects for pending txs
+    /// it no longer knows (dropped / RBF-replaced). Looks up each pending tx
+    /// instead of pulling the full mempool listing (~5 MB on mainnet).
     async fn reconcile_with_mempool(&self) {
-        let mempool_txids = match self.bitcoin_client.get_raw_mempool().await {
-            Ok(txids) => txids,
+        let pending = match reconcile::get_pending_txids(&self.network_id.name, &self.db).await {
+            Ok(p) => p,
             Err(e) => {
                 logging::log_warning(&format!(
-                    "[{}] ⚠️ Reconcile: getrawmempool failed: {}",
+                    "[{}] ⚠️ Reconcile: failed to fetch pending txids: {}",
                     self.network_id.name, e
                 ));
                 return;
             }
         };
 
-        let live_set: std::collections::HashSet<String> =
-            mempool_txids.into_iter().collect();
+        // A tx counts as live unless the gateway answers a definite 404;
+        // lookup errors and txs past the lookup cap are given the benefit
+        // of the doubt.
+        let mut live_set: HashSet<String> = HashSet::new();
+        for (i, txid) in pending.iter().enumerate() {
+            let live = i >= MAX_RECONCILE_LOOKUPS
+                || self.bitcoin_client.esplora().tx_exists(txid).await.unwrap_or(true);
+            if live {
+                live_set.insert(txid.clone());
+            }
+        }
 
-        let reverted = reconcile::reconcile_dropped_txs(
+        reconcile::reconcile_dropped_txs(
             &self.network_id.name,
             &live_set,
             &self.db,
             &self.reconcile_miss_counts,
         )
         .await;
-
-        if reverted > 0 {
-            // Also remove reverted txids from seen_txids so they don't block re-detection
-            // if the same tx re-enters the mempool later
-            let mut seen = self.seen_txids.lock().await;
-            seen.retain(|txid| live_set.contains(txid));
-        }
     }
 
     /// Reload the monitored address set from DB

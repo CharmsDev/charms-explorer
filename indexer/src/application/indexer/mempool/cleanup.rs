@@ -91,8 +91,7 @@ pub async fn purge_stale(
     )
     .await;
 
-    // seen_txids is kept in sync with the live mempool via retain() in poll_once —
-    // no explicit clearing needed here.
+    // seen_txids is bounded in poll_once — no explicit clearing needed here.
     let _ = seen_txids; // suppress unused warning
 }
 

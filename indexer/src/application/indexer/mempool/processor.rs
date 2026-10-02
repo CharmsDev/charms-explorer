@@ -36,7 +36,7 @@ pub async fn process_tx(
     mempool_spends_repository: &MempoolSpendsRepository,
 ) -> Result<Option<MempoolDetectionResult>, String> {
     let raw_hex = bitcoin_client
-        .get_raw_transaction_hex(txid, None)
+        .get_raw_transaction_hex(txid)
         .await
         .map_err(|e| format!("get_raw_transaction_hex failed: {}", e))?;
 
