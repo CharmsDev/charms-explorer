@@ -259,17 +259,17 @@ impl AppConfig {
                 .parse::<bool>()
                 .unwrap_or(true),
             btc_auto_seeder_batch_size: env::var("BTC_AUTO_SEEDER_BATCH_SIZE")
-                .unwrap_or_else(|_| "10".to_string())
+                .unwrap_or_else(|_| "5".to_string())
                 .parse::<u64>()
-                .unwrap_or(10),
+                .unwrap_or(5),
             btc_auto_seeder_concurrency: env::var("BTC_AUTO_SEEDER_CONCURRENCY")
-                .unwrap_or_else(|_| "2".to_string())
+                .unwrap_or_else(|_| "1".to_string())
                 .parse::<usize>()
-                .unwrap_or(2),
+                .unwrap_or(1),
             btc_auto_seeder_batch_interval_ms: env::var("BTC_AUTO_SEEDER_BATCH_INTERVAL_MS")
-                .unwrap_or_else(|_| "5000".to_string())
+                .unwrap_or_else(|_| "15000".to_string())
                 .parse::<u64>()
-                .unwrap_or(5000),
+                .unwrap_or(15000),
             btc_auto_seeder_idle_interval_ms: env::var("BTC_AUTO_SEEDER_IDLE_INTERVAL_MS")
                 .unwrap_or_else(|_| "30000".to_string())
                 .parse::<u64>()
