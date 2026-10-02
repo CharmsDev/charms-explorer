@@ -163,7 +163,7 @@ const SECTIONS = [
   ],
   "count": 1
 }`,
-        note: 'Values in satoshis. Source: Maestro (primary) → QuickNode (fallback) → RPC (fallback).',
+        note: 'Values in satoshis. Source: mempool.space public API.',
       },
       {
         method: 'POST',
@@ -194,7 +194,7 @@ const SECTIONS = [
       // ─── Unified Balance Endpoint ──────────────────────────────────
       // On-demand address monitoring:
       // The first time a new address is queried, the system seeds its
-      // BTC UTXOs from an external API (Maestro / QuickNode) and
+      // BTC UTXOs from the mempool.space public API and
       // registers it in the monitored_addresses table. From that point
       // on, the Explorer Indexer keeps its UTXO set up-to-date in
       // real time as new blocks arrive.
@@ -264,7 +264,7 @@ const SECTIONS = [
     ]
   }
 }`,
-        note: 'All BTC values in satoshis. "available" = BTC in UTXOs without charms (spendable). "locked" = BTC in UTXOs that carry charms (not freely spendable). "unconfirmed" = BTC in mempool UTXOs (not yet confirmed). "monitored" = whether the address was already tracked; false on first request (seeded on the fly from Maestro/QuickNode). Charm amounts are in token units. mempoolSpent: amount of tokens in UTXOs currently being spent by unconfirmed mempool TXs.',
+        note: 'All BTC values in satoshis. "available" = BTC in UTXOs without charms (spendable). "locked" = BTC in UTXOs that carry charms (not freely spendable). "unconfirmed" = BTC in mempool UTXOs (not yet confirmed). "monitored" = whether the address was already tracked; false on first request (seeded on the fly from mempool.space). Charm amounts are in token units. mempoolSpent: amount of tokens in UTXOs currently being spent by unconfirmed mempool TXs.',
       },
       {
         method: 'GET',
@@ -358,7 +358,7 @@ const SECTIONS = [
       // ─── Transaction History ──────────────────────────────────
       // Returns paginated transaction history for a monitored address.
       // If the address is not yet monitored, it is lazily seeded from
-      // Maestro / QuickNode on the first request, then kept
+      // mempool.space on the first request, then kept
       // up-to-date by the Indexer in real time.
       {
         method: 'GET',
@@ -397,7 +397,7 @@ const SECTIONS = [
   "total": 127,
   "total_pages": 3
 }`,
-        note: 'Amounts in satoshis. "direction": "in" = received, "out" = sent. block_height/block_time may be null for unconfirmed mempool transactions. Seeded lazily from Maestro/QuickNode on first request; Indexer keeps it current afterward.',
+        note: 'Amounts in satoshis. "direction": "in" = received, "out" = sent. block_height/block_time may be null for unconfirmed mempool transactions. Seeded lazily from mempool.space on first request; Indexer keeps it current afterward.',
       },
       {
         method: 'GET',
@@ -407,7 +407,7 @@ const SECTIONS = [
   "txid": "abc123...",
   "hex": "020000000001..."
 }`,
-        note: 'Returns the raw serialized transaction. Source: Maestro (primary). Used by DEX order builders for prev_txs.',
+        note: 'Returns the raw serialized transaction. Source: mempool.space public API. Used by DEX order builders for prev_txs.',
       },
       {
         method: 'POST',
@@ -422,7 +422,7 @@ const SECTIONS = [
     "def456...": "020000000001..."
   }
 }`,
-        note: 'Max 10 txids per request. All fetched concurrently via Maestro. Used by DEX to build prev_txs array for Scrolls spell signing. Replaces direct QuickNode/mempool.space calls from the frontend.',
+        note: 'Max 10 txids per request. All fetched concurrently via mempool.space. Used by DEX to build prev_txs array for Scrolls spell signing. Replaces direct mempool.space calls from the frontend.',
       },
     ],
   },
