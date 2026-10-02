@@ -21,27 +21,9 @@ pub struct ApiConfig {
     #[allow(dead_code)] // Reserved for network switching
     pub enable_cardano: bool,
 
-    // Bitcoin Testnet4 RPC configuration
-    pub bitcoin_testnet4_rpc_host: String,
-    pub bitcoin_testnet4_rpc_port: String,
-    pub bitcoin_testnet4_rpc_username: String,
-    pub bitcoin_testnet4_rpc_password: String,
-
-    // Bitcoin Mainnet RPC configuration
-    #[allow(dead_code)] // Reserved for mainnet integration
-    pub bitcoin_mainnet_rpc_host: String,
-    #[allow(dead_code)] // Reserved for mainnet integration
-    pub bitcoin_mainnet_rpc_port: String,
-    #[allow(dead_code)] // Reserved for mainnet integration
-    pub bitcoin_mainnet_rpc_username: String,
-    #[allow(dead_code)] // Reserved for mainnet integration
-    pub bitcoin_mainnet_rpc_password: String,
-
-    // QuickNode (mainnet UTXOs/balance — secondary/fallback)
-    pub bitcoin_mainnet_quicknode_endpoint: String,
-
-    // Maestro (mainnet — primary provider)
-    pub maestro_api_key: String,
+    // Esplora REST base URLs (mempool.space by default — free, no key)
+    pub bitcoin_mainnet_esplora_url: String,
+    pub bitcoin_testnet4_esplora_url: String,
 }
 
 impl ApiConfig {
@@ -73,31 +55,15 @@ impl ApiConfig {
             .parse::<bool>()
             .unwrap_or(false);
 
-        // Bitcoin Testnet4 RPC configuration
-        let bitcoin_testnet4_rpc_host =
-            env::var("BITCOIN_TESTNET4_RPC_HOST").unwrap_or_else(|_| "localhost".to_string());
-        let bitcoin_testnet4_rpc_port =
-            env::var("BITCOIN_TESTNET4_RPC_PORT").unwrap_or_else(|_| "48332".to_string());
-        let bitcoin_testnet4_rpc_username =
-            env::var("BITCOIN_TESTNET4_RPC_USERNAME").unwrap_or_else(|_| "hello".to_string());
-        let bitcoin_testnet4_rpc_password =
-            env::var("BITCOIN_TESTNET4_RPC_PASSWORD").unwrap_or_else(|_| "world".to_string());
-
-        // Bitcoin Mainnet RPC configuration
-        let bitcoin_mainnet_rpc_host =
-            env::var("BITCOIN_MAINNET_RPC_HOST").unwrap_or_else(|_| "localhost".to_string());
-        let bitcoin_mainnet_rpc_port =
-            env::var("BITCOIN_MAINNET_RPC_PORT").unwrap_or_else(|_| "8332".to_string());
-        let bitcoin_mainnet_rpc_username =
-            env::var("BITCOIN_MAINNET_RPC_USERNAME").unwrap_or_else(|_| "bitcoinrpc".to_string());
-        let bitcoin_mainnet_rpc_password =
-            env::var("BITCOIN_MAINNET_RPC_PASSWORD").unwrap_or_else(|_| "password".to_string());
-
-        let bitcoin_mainnet_quicknode_endpoint =
-            env::var("BITCOIN_MAINNET_QUICKNODE_ENDPOINT").unwrap_or_else(|_| String::new());
-
-        let maestro_api_key =
-            env::var("MAESTRO_API_KEY").unwrap_or_else(|_| String::new());
+        // Esplora (mempool.space) base URLs, overridable per network
+        let bitcoin_mainnet_esplora_url = env::var("BITCOIN_MAINNET_ESPLORA_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| crate::services::mempool_space_service::DEFAULT_MAINNET_URL.to_string());
+        let bitcoin_testnet4_esplora_url = env::var("BITCOIN_TESTNET4_ESPLORA_URL")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| crate::services::mempool_space_service::DEFAULT_TESTNET4_URL.to_string());
 
         Self {
             host,
@@ -106,16 +72,8 @@ impl ApiConfig {
             enable_bitcoin_testnet4,
             enable_bitcoin_mainnet,
             enable_cardano,
-            bitcoin_testnet4_rpc_host,
-            bitcoin_testnet4_rpc_port,
-            bitcoin_testnet4_rpc_username,
-            bitcoin_testnet4_rpc_password,
-            bitcoin_mainnet_rpc_host,
-            bitcoin_mainnet_rpc_port,
-            bitcoin_mainnet_rpc_username,
-            bitcoin_mainnet_rpc_password,
-            bitcoin_mainnet_quicknode_endpoint,
-            maestro_api_key,
+            bitcoin_mainnet_esplora_url,
+            bitcoin_testnet4_esplora_url,
         }
     }
 

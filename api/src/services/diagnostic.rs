@@ -1,24 +1,23 @@
 // Database diagnostic service implementation
 
-use bitcoincore_rpc::{Auth, Client, RpcApi};
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
-use crate::config::ApiConfig;
+use crate::services::mempool_space_service::EsploraClient;
 
 /// Service for database diagnostics
 pub struct DiagnosticService {
     conn: DatabaseConnection,
-    config: ApiConfig,
+    esplora: EsploraClient,
 }
 
 impl DiagnosticService {
     /// Creates a new diagnostic service with database connection and configuration
-    pub fn new(conn: &DatabaseConnection, config: &ApiConfig) -> Self {
+    pub fn new(conn: &DatabaseConnection, esplora: &EsploraClient) -> Self {
         Self {
             conn: conn.clone(),
-            config: config.clone(),
+            esplora: esplora.clone(),
         }
     }
 
@@ -38,8 +37,8 @@ impl DiagnosticService {
         let summary_content = self.get_summary_table_content().await;
         result.insert("summary_table", summary_content);
 
-        // Test Bitcoin RPC connection
-        let bitcoin_rpc_test = self.test_bitcoin_rpc_connection().await;
+        // Test the Esplora (mempool.space) connection
+        let bitcoin_rpc_test = self.test_esplora_connection().await;
         result.insert("bitcoin_rpc", bitcoin_rpc_test);
 
         json!(result)
@@ -336,65 +335,33 @@ impl DiagnosticService {
         }
     }
 
-    /// Tests the Bitcoin RPC connection
-    async fn test_bitcoin_rpc_connection(&self) -> Value {
-        // Use Bitcoin Testnet4 RPC connection details from configuration
-        let host = &self.config.bitcoin_testnet4_rpc_host;
-        let port = &self.config.bitcoin_testnet4_rpc_port;
-        let username = &self.config.bitcoin_testnet4_rpc_username;
-        let password = &self.config.bitcoin_testnet4_rpc_password;
-
-        let rpc_url = format!("http://{}:{}", host, port);
-        let auth = Auth::UserPass(username.clone(), password.clone());
-
-        // Try to connect to the Bitcoin RPC server
-        match Client::new(&rpc_url, auth) {
-            Ok(client) => {
-                // Try to get the block count with a timeout to prevent hanging
-                let block_count_result =
-                    tokio::time::timeout(std::time::Duration::from_secs(5), async {
-                        client.get_block_count()
-                    })
-                    .await;
-
-                match block_count_result {
-                    Ok(Ok(block_count)) => {
-                        // If block count succeeded, try to get the best block hash
-                        let best_block_hash = match client.get_best_block_hash() {
-                            Ok(hash) => hash.to_string(),
-                            Err(_) => "Unknown".to_string(),
-                        };
-
-                        // Try to get network info to determine if mainnet or testnet
-                        let network = "testnet"; // Default to testnet for now
-
-                        json!({
-                            "status": "connected",
-                            "block_count": block_count,
-                            "best_block_hash": best_block_hash,
-                            "network": network,
-                        })
-                    }
-                    Ok(Err(e)) => {
-                        json!({
-                            "status": "error",
-                            "error": format!("Failed to get block count: {}", e)
-                        })
-                    }
-                    Err(_) => {
-                        json!({
-                            "status": "timeout",
-                            "error": "Bitcoin RPC request timed out after 5 seconds"
-                        })
-                    }
-                }
-            }
-            Err(e) => {
-                json!({
-                    "status": "error",
-                    "error": format!("Failed to connect to Bitcoin RPC: {}", e)
-                })
-            }
+    /// Tests the Esplora (mempool.space) connection. Reported under the
+    /// legacy `bitcoin_rpc` key with the same fields as before.
+    async fn test_esplora_connection(&self) -> Value {
+        let network = "mainnet";
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            self.esplora.get_chain_tip(network, false),
+        )
+        .await
+        {
+            Ok(Ok(tip)) => json!({
+                "status": "connected",
+                "block_count": tip.height,
+                "best_block_hash": tip.hash,
+                "network": network,
+                "provider": self.esplora.base_url(network),
+            }),
+            Ok(Err(e)) => json!({
+                "status": "error",
+                "error": format!("Failed to get chain tip: {}", e),
+                "provider": self.esplora.base_url(network),
+            }),
+            Err(_) => json!({
+                "status": "timeout",
+                "error": "Esplora request timed out after 5 seconds",
+                "provider": self.esplora.base_url(network),
+            }),
         }
     }
 }

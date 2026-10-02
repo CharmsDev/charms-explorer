@@ -12,7 +12,7 @@ pub async fn diagnose_database(State(app_state): State<AppState>) -> impl IntoRe
     // Create diagnostic service with a reference to the database connection and config
     let diagnostic_service = DiagnosticService::new(
         app_state.repositories.charm.get_connection(),
-        &app_state.config,
+        &app_state.esplora,
     );
 
     // Run diagnostic checks
@@ -24,7 +24,7 @@ pub async fn diagnose_database(State(app_state): State<AppState>) -> impl IntoRe
     // Add version number to identify the diagnostic format
     response.insert("version", json!("1.2.0"));
 
-    // Add Bitcoin RPC test information
+    // Add chain backend (Esplora) test information
     if let Some(bitcoin_rpc) = diagnostic_result.get("bitcoin_rpc") {
         response.insert("bitcoin_rpc_test", bitcoin_rpc.clone());
     }

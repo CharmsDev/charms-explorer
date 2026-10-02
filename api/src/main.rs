@@ -21,8 +21,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use config::ApiConfig;
 use db::DbPool;
+use services::mempool_space_service::EsploraClient;
 use handlers::{
-    AppState, MaestroCircuitBreaker,
+    AppState,
     broadcast_wallet_transaction, diagnose_database, diagnostics_address,
     get_asset_by_id, get_asset_counts,
     get_asset_holders, get_assets, get_charm_by_charmid, get_charm_by_txid, get_charm_numbers,
@@ -64,60 +65,33 @@ async fn main() {
         .expect("Failed to connect to database");
     tracing::info!("Connected to database");
 
-    // Initialize shared Bitcoin RPC clients (one per network, reused across all requests)
-    let rpc_mainnet = {
-        let url = format!(
-            "http://{}:{}",
-            config.bitcoin_mainnet_rpc_host, config.bitcoin_mainnet_rpc_port
-        );
-        let auth = bitcoincore_rpc::Auth::UserPass(
-            config.bitcoin_mainnet_rpc_username.clone(),
-            config.bitcoin_mainnet_rpc_password.clone(),
-        );
-        Arc::new(
-            bitcoincore_rpc::Client::new(&url, auth).expect("Failed to create mainnet RPC client"),
-        )
-    };
-    let rpc_testnet4 = {
-        let url = format!(
-            "http://{}:{}",
-            config.bitcoin_testnet4_rpc_host, config.bitcoin_testnet4_rpc_port
-        );
-        let auth = bitcoincore_rpc::Auth::UserPass(
-            config.bitcoin_testnet4_rpc_username.clone(),
-            config.bitcoin_testnet4_rpc_password.clone(),
-        );
-        Arc::new(
-            bitcoincore_rpc::Client::new(&url, auth).expect("Failed to create testnet4 RPC client"),
-        )
-    };
-    tracing::info!("Bitcoin RPC clients initialized (mainnet + testnet4)");
-
     // Initialize application state with repositories and config
     let repositories = db_pool.repositories();
-    // HTTP client tuned for high-volume outbound calls (Maestro, QuickNode)
-    // Designed for 1000+ req/min throughput:
-    //   - 200 idle connections per host (Maestro + QuickNode)
+    // Shared HTTP client for the Esplora (mempool.space) API:
+    //   - pooled keep-alive connections to the single Esplora host
     //   - 10s connect timeout, 15s request timeout
-    //   - TCP keepalive avoids connection churn under load
     let http_client = reqwest::Client::builder()
-        .pool_max_idle_per_host(200)
+        .pool_max_idle_per_host(64)
         .pool_idle_timeout(Duration::from_secs(60))
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .tcp_keepalive(Duration::from_secs(60))
+        .user_agent(concat!("charms-explorer-api/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("Failed to build HTTP client");
+    tracing::info!(
+        "Esplora: mainnet={} testnet4={}",
+        config.bitcoin_mainnet_esplora_url,
+        config.bitcoin_testnet4_esplora_url
+    );
 
     let app_state = AppState {
         repositories: Arc::new(repositories),
-        config: config.clone(),
-        scan_semaphore: Arc::new(tokio::sync::Semaphore::new(1)),
-        quicknode_semaphore: Arc::new(tokio::sync::Semaphore::new(64)),
-        http_client,
-        rpc_mainnet,
-        rpc_testnet4,
-        maestro_cb: Arc::new(MaestroCircuitBreaker::new()),
+        esplora: EsploraClient::new(
+            http_client,
+            &config.bitcoin_mainnet_esplora_url,
+            &config.bitcoin_testnet4_esplora_url,
+        ),
     };
 
     // Configure CORS policy
