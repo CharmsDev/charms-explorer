@@ -76,6 +76,8 @@ async fn main() {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .tcp_keepalive(Duration::from_secs(60))
+        // IPv6 from Fly to mempool.space hangs until the connect timeout.
+        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
         .user_agent(concat!("charms-explorer-api/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("Failed to build HTTP client");
