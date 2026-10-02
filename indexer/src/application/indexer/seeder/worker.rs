@@ -112,25 +112,52 @@ impl AddressSeeder {
                 handles.push(tokio::spawn(async move {
                     let _permit = permit;
                     let result = seed_one(&client, &repos, &address, &network).await;
-                    if let Err(e) = result {
-                        logging::log_warning(&format!(
-                            "[{}] AddressSeeder failed for {}: {}",
-                            network, address, e
-                        ));
+                    match result {
+                        Err(SeedError::Source(e)) => {
+                            logging::log_warning(&format!(
+                                "[{}] AddressSeeder failed for {}: {}",
+                                network, address, e
+                            ));
+                            true
+                        }
+                        Err(e) => {
+                            logging::log_warning(&format!(
+                                "[{}] AddressSeeder failed for {}: {}",
+                                network, address, e
+                            ));
+                            false
+                        }
+                        Ok(_) => false,
                     }
                 }));
             }
+            let mut gateway_failed = false;
             for h in handles {
-                let _ = h.await;
+                gateway_failed |= h.await.unwrap_or(false);
             }
 
-            sleep_cancellable(&cancel, self.cfg.batch_interval).await;
+            // The seeder shares the public gateway's rate limit with block
+            // indexing; on any gateway error back off hard so blocks win.
+            let pause = if gateway_failed {
+                logging::log_info(&format!(
+                    "[{}] 🌱 AddressSeeder pausing {}s after gateway errors",
+                    self.network,
+                    GATEWAY_BACKOFF.as_secs()
+                ));
+                GATEWAY_BACKOFF
+            } else {
+                self.cfg.batch_interval
+            };
+            sleep_cancellable(&cancel, pause).await;
         }
     }
 }
 
 /// Outcome of seeding a single address, used both by the worker loop and
 /// the standalone `seed_holders` binary.
+/// Pause after the gateway rejects or fails a seed request.
+const GATEWAY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(600);
+
 #[derive(Debug)]
 pub enum SeedError {
     LockBusy,
