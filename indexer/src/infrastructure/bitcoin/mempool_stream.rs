@@ -78,9 +78,13 @@ impl MempoolStream {
     }
 
     async fn session(&self, network: &str, ws_url: &str) -> Result<(), String> {
-        let (ws, _) = tokio_tungstenite::connect_async(ws_url)
-            .await
-            .map_err(|e| e.to_string())?;
+        let (ws, _) = tokio::time::timeout(
+            Duration::from_secs(20),
+            tokio_tungstenite::connect_async(ws_url),
+        )
+        .await
+        .map_err(|_| "connect timeout".to_string())?
+        .map_err(|e| e.to_string())?;
         let (mut tx, mut rx) = ws.split();
         tx.send(Message::Text(r#"{"track-mempool":true}"#.into()))
             .await
