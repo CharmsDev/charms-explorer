@@ -46,6 +46,8 @@ impl EsploraClient {
             .timeout(Duration::from_secs(30))
             .pool_idle_timeout(Duration::from_secs(60))
             .user_agent("charms-explorer-indexer")
+            // IPv6 from Fly to mempool.space hangs; stick to IPv4.
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
             .build()
             .unwrap_or_default();
         Self {

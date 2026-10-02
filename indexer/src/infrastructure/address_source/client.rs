@@ -60,6 +60,8 @@ impl AddressClient {
     pub fn new(base_url: &str) -> Self {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
+            // IPv6 from Fly to mempool.space hangs; stick to IPv4.
+            .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
             .build()
             .expect("reqwest client build");
         Self {

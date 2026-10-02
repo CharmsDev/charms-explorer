@@ -78,13 +78,9 @@ impl MempoolStream {
     }
 
     async fn session(&self, network: &str, ws_url: &str) -> Result<(), String> {
-        let (ws, _) = tokio::time::timeout(
-            Duration::from_secs(20),
-            tokio_tungstenite::connect_async(ws_url),
-        )
-        .await
-        .map_err(|_| "connect timeout".to_string())?
-        .map_err(|e| e.to_string())?;
+        let (ws, _) = tokio::time::timeout(Duration::from_secs(20), connect_v4(ws_url))
+            .await
+            .map_err(|_| "connect timeout".to_string())??;
         let (mut tx, mut rx) = ws.split();
         tx.send(Message::Text(r#"{"track-mempool":true}"#.into()))
             .await
@@ -139,6 +135,34 @@ impl MempoolStream {
             }
         }
     }
+}
+
+/// Connect over IPv4 only: IPv6 from Fly to mempool.space hangs.
+async fn connect_v4(
+    ws_url: &str,
+) -> Result<
+    (
+        tokio_tungstenite::WebSocketStream<
+            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+        >,
+        tokio_tungstenite::tungstenite::handshake::client::Response,
+    ),
+    String,
+> {
+    let url = url::Url::parse(ws_url).map_err(|e| e.to_string())?;
+    let host = url.host_str().ok_or("ws url without host")?;
+    let port = url.port_or_known_default().unwrap_or(443);
+    let addr = tokio::net::lookup_host((host, port))
+        .await
+        .map_err(|e| e.to_string())?
+        .find(|a| a.is_ipv4())
+        .ok_or("no IPv4 address")?;
+    let tcp = tokio::net::TcpStream::connect(addr)
+        .await
+        .map_err(|e| e.to_string())?;
+    tokio_tungstenite::client_async_tls(ws_url, tcp)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 fn streamed_tx(v: &Value) -> Option<StreamedTx> {
