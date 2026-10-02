@@ -29,6 +29,9 @@ const TESTNET3_URL: &str = "https://mempool.space/testnet/api";
 const MAX_IN_FLIGHT: usize = 8;
 /// Retries after an HTTP 429 (so up to MAX_429_RETRIES + 1 attempts).
 const MAX_429_RETRIES: u32 = 4;
+/// Minimum spacing between request starts (~8 req/s per machine), so a
+/// batch endpoint drips requests instead of bursting into a 429.
+const MIN_REQUEST_GAP: Duration = Duration::from_millis(125);
 /// Upper bound for a server-provided Retry-After we are willing to honour.
 const MAX_RETRY_AFTER: Duration = Duration::from_secs(3);
 /// Page cap for address history when seeding (25 txs per page).
@@ -79,6 +82,7 @@ pub struct EsploraClient {
     mainnet_url: String,
     testnet4_url: String,
     limiter: Arc<Semaphore>,
+    next_slot: Arc<tokio::sync::Mutex<tokio::time::Instant>>,
 }
 
 impl EsploraClient {
@@ -88,6 +92,7 @@ impl EsploraClient {
             mainnet_url: mainnet_url.trim_end_matches('/').to_string(),
             testnet4_url: testnet4_url.trim_end_matches('/').to_string(),
             limiter: Arc::new(Semaphore::new(MAX_IN_FLIGHT)),
+            next_slot: Arc::new(tokio::sync::Mutex::new(tokio::time::Instant::now())),
         }
     }
 
@@ -102,6 +107,16 @@ impl EsploraClient {
 
     // ---------------------------------------------------------------- transport
 
+    /// Wait for the next request slot (global per process).
+    async fn pace(&self) {
+        let mut next = self.next_slot.lock().await;
+        let now = tokio::time::Instant::now();
+        if *next > now {
+            tokio::time::sleep_until(*next).await;
+        }
+        *next = tokio::time::Instant::now() + MIN_REQUEST_GAP;
+    }
+
     /// Send a request, retrying on 429 with a short backoff.
     async fn send(&self, req: reqwest::RequestBuilder) -> EResult<reqwest::Response> {
         let _permit = self
@@ -112,15 +127,17 @@ impl EsploraClient {
 
         let mut attempt = 0u32;
         loop {
+            self.pace().await;
             let r = req
                 .try_clone()
                 .ok_or_else(|| EsploraError::Transport("request not cloneable".into()))?;
             let resp = match r.send().await {
                 Ok(resp) => resp,
-                // One retry on a transport error (dropped connection, reset).
-                Err(_) if attempt == 0 => {
+                // The gateway often drops the connection right after a 429;
+                // treat transport errors like a 429 and back off.
+                Err(_) if attempt < MAX_429_RETRIES => {
+                    tokio::time::sleep(backoff(attempt)).await;
                     attempt += 1;
-                    tokio::time::sleep(Duration::from_millis(300)).await;
                     continue;
                 }
                 Err(e) => return Err(EsploraError::Transport(e.to_string())),
@@ -136,7 +153,7 @@ impl EsploraClient {
                 .and_then(|v| v.to_str().ok())
                 .and_then(|s| s.trim().parse::<u64>().ok())
                 .map(Duration::from_secs)
-                .unwrap_or_else(|| Duration::from_millis(300 * 3u64.pow(attempt)))
+                .unwrap_or_else(|| backoff(attempt))
                 .min(MAX_RETRY_AFTER);
             tracing::warn!(
                 "Esplora 429 from {} — retrying in {}ms (attempt {}/{})",
@@ -325,6 +342,11 @@ impl EsploraClient {
         };
         Ok(parse_transaction(&tx, hex, tip_height))
     }
+}
+
+/// 0.5s, 1s, 2s, 3s ...
+fn backoff(attempt: u32) -> Duration {
+    Duration::from_millis(500 * 2u64.pow(attempt)).min(MAX_RETRY_AFTER)
 }
 
 // -------------------------------------------------------------------- parsing
