@@ -157,21 +157,19 @@ pub async fn seed_one(
     address: &str,
     network: &str,
 ) -> Result<SeedOutcome, SeedError> {
-    let locked = repos
+    let Some(lock) = repos
         .monitored_addresses
         .try_advisory_lock(address, network)
         .await
-        .map_err(|e| SeedError::Db(e.to_string()))?;
-    if !locked {
+        .map_err(|e| SeedError::Db(e.to_string()))?
+    else {
         return Err(SeedError::LockBusy);
-    }
+    };
 
     let result = seed_one_locked(client, repos, address, network).await;
 
-    let _ = repos
-        .monitored_addresses
-        .release_advisory_lock(address, network)
-        .await;
+    // Ending the lock transaction releases the advisory lock.
+    let _ = lock.commit().await;
 
     result
 }

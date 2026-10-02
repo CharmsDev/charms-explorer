@@ -1,7 +1,10 @@
 use std::collections::HashSet;
 use std::fmt;
 
-use sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use sea_orm::{
+    ConnectionTrait, DatabaseConnection, DatabaseTransaction, DbBackend, Statement,
+    TransactionTrait,
+};
 
 use crate::infrastructure::persistence::error::DbError;
 
@@ -142,39 +145,32 @@ impl MonitoredAddressesRepository {
             .map_err(|e| DbError::QueryError(e.to_string()))
     }
 
-    /// Try-acquire a PG advisory lock keyed by (address, network). Returns
-    /// true if acquired (the seeder owns the address for this run), false
-    /// if another worker (API on-demand seeder, this worker on another node,
-    /// or a previous run that died without releasing) already holds it.
+    /// Try-acquire a PG advisory lock keyed by (address, network), scoped
+    /// to the returned transaction: it is released when the transaction ends,
+    /// on the same connection that took it. `None` if another worker (API
+    /// on-demand seeder, another node) holds it.
+    ///
+    /// A session-level lock on a pooled connection used to be unlocked from a
+    /// different connection, leaking the lock and wedging the address.
     pub async fn try_advisory_lock(
         &self,
         address: &str,
         network: &str,
-    ) -> Result<bool, DbError> {
+    ) -> Result<Option<DatabaseTransaction>, DbError> {
         let key = Self::advisory_lock_key(address, network);
-        let sql = format!("SELECT pg_try_advisory_lock({}) AS got", key);
-        let row = self
+        let txn = self
             .conn
-            .query_one(Statement::from_string(DbBackend::Postgres, sql))
+            .begin()
             .await
             .map_err(|e| DbError::QueryError(e.to_string()))?;
-        Ok(row
-            .and_then(|r| r.try_get::<bool>("", "got").ok())
-            .unwrap_or(false))
-    }
-
-    pub async fn release_advisory_lock(
-        &self,
-        address: &str,
-        network: &str,
-    ) -> Result<(), DbError> {
-        let key = Self::advisory_lock_key(address, network);
-        let sql = format!("SELECT pg_advisory_unlock({})", key);
-        self.conn
-            .execute(Statement::from_string(DbBackend::Postgres, sql))
+        let sql = format!("SELECT pg_try_advisory_xact_lock({}) AS got", key);
+        let got = txn
+            .query_one(Statement::from_string(DbBackend::Postgres, sql))
             .await
-            .map(|_| ())
-            .map_err(|e| DbError::QueryError(e.to_string()))
+            .map_err(|e| DbError::QueryError(e.to_string()))?
+            .and_then(|r| r.try_get::<bool>("", "got").ok())
+            .unwrap_or(false);
+        Ok(got.then_some(txn))
     }
 
     /// Deterministic 64-bit lock key. Must match the API's derivation
