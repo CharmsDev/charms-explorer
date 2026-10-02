@@ -146,38 +146,6 @@ impl BitcoinProcessor {
                     ));
                     self.current_height = h + 1;
                 }
-                Err(BlockProcessorError::BitcoinClientError(ref e)) => {
-                    let error_msg = e.to_string().to_lowercase();
-                    if error_msg.contains("pruned")
-                        || error_msg.contains("block not available")
-                        || error_msg.contains("block height out of range")
-                        || error_msg.contains("block not found")
-                    {
-                        logging::log_info(&format!(
-                            "[{}] Block {} pruned/missing, skipping",
-                            self.network_id().name,
-                            self.current_height
-                        ));
-
-                        let _ = self
-                            .repos.block_status
-                            .mark_downloaded(
-                                self.current_height as i32,
-                                None,
-                                None,
-                                0,
-                                self.network_id(),
-                            )
-                            .await;
-                        let _ = self
-                            .repos.block_status
-                            .mark_processed(self.current_height as i32, 0, self.network_id())
-                            .await;
-                        self.current_height += 1;
-                    } else {
-                        return Err(BlockProcessorError::BitcoinClientError(e.clone()));
-                    }
-                }
                 Err(e) => {
                     logging::log_error(&format!(
                         "[{}] ❌ Error at block {}: {}",
