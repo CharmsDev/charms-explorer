@@ -7,8 +7,8 @@ use tokio::sync::Semaphore;
 use tokio::time;
 use tokio_util::sync::CancellationToken;
 
-use crate::infrastructure::maestro::{
-    MaestroAddressTx, MaestroChainTip, MaestroClient, MaestroError, MaestroUtxo,
+use crate::infrastructure::address_source::{
+    AddressTx, ChainTip, AddressClient, AddressClientError, AddressUtxo,
 };
 use crate::infrastructure::persistence::repositories::address_transactions_repository::AddressTxInsert;
 use crate::infrastructure::persistence::repositories::utxo_repository::UtxoInsert;
@@ -19,11 +19,11 @@ use crate::utils::logging;
 pub struct SeederConfig {
     /// How many unseeded addresses to pull per loop iteration.
     pub batch_size: u64,
-    /// Maximum concurrent Maestro requests in-flight.
+    /// Maximum concurrent gateway requests in-flight.
     pub max_concurrent: usize,
     /// Sleep when the queue is empty (no unseeded addresses).
     pub idle_interval: Duration,
-    /// Sleep between batches when there IS work — protects Maestro quota.
+    /// Sleep between batches when there IS work — protects the public gateway.
     pub batch_interval: Duration,
 }
 
@@ -41,7 +41,7 @@ impl Default for SeederConfig {
 pub struct AddressSeeder {
     network: String,
     repos: Repositories,
-    maestro: MaestroClient,
+    client: AddressClient,
     cfg: SeederConfig,
 }
 
@@ -49,13 +49,13 @@ impl AddressSeeder {
     pub fn new(
         network: String,
         repos: Repositories,
-        maestro: MaestroClient,
+        client: AddressClient,
         cfg: SeederConfig,
     ) -> Self {
         Self {
             network,
             repos,
-            maestro,
+            client,
             cfg,
         }
     }
@@ -108,10 +108,10 @@ impl AddressSeeder {
                 };
                 let network = self.network.clone();
                 let repos = self.repos.clone();
-                let maestro = self.maestro.clone();
+                let client = self.client.clone();
                 handles.push(tokio::spawn(async move {
                     let _permit = permit;
-                    let result = seed_one(&maestro, &repos, &address, &network).await;
+                    let result = seed_one(&client, &repos, &address, &network).await;
                     if let Err(e) = result {
                         logging::log_warning(&format!(
                             "[{}] AddressSeeder failed for {}: {}",
@@ -134,7 +134,7 @@ impl AddressSeeder {
 #[derive(Debug)]
 pub enum SeedError {
     LockBusy,
-    Maestro(MaestroError),
+    Source(AddressClientError),
     Db(String),
 }
 
@@ -142,17 +142,17 @@ impl std::fmt::Display for SeedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SeedError::LockBusy => write!(f, "advisory lock held by another worker"),
-            SeedError::Maestro(e) => write!(f, "maestro: {}", e),
+            SeedError::Source(e) => write!(f, "esplora: {}", e),
             SeedError::Db(e) => write!(f, "db: {}", e),
         }
     }
 }
 
-/// Seed one address end-to-end: lock → fetch from Maestro → persist → mark.
+/// Seed one address end-to-end: lock → fetch from mempool.space → persist → mark.
 /// Exposed (not just an internal closure) so the backfill binary can reuse
 /// the exact same path the worker uses.
 pub async fn seed_one(
-    maestro: &MaestroClient,
+    client: &AddressClient,
     repos: &Repositories,
     address: &str,
     network: &str,
@@ -166,7 +166,7 @@ pub async fn seed_one(
         return Err(SeedError::LockBusy);
     }
 
-    let result = seed_one_locked(maestro, repos, address, network).await;
+    let result = seed_one_locked(client, repos, address, network).await;
 
     let _ = repos
         .monitored_addresses
@@ -185,20 +185,20 @@ pub struct SeedOutcome {
 }
 
 async fn seed_one_locked(
-    maestro: &MaestroClient,
+    client: &AddressClient,
     repos: &Repositories,
     address: &str,
     network: &str,
 ) -> Result<SeedOutcome, SeedError> {
-    let utxos: Vec<MaestroUtxo> = maestro
+    let utxos: Vec<AddressUtxo> = client
         .get_utxos(address)
         .await
-        .map_err(SeedError::Maestro)?;
-    let txs: Vec<MaestroAddressTx> = maestro
+        .map_err(SeedError::Source)?;
+    let txs: Vec<AddressTx> = client
         .get_address_txs(address)
         .await
-        .map_err(SeedError::Maestro)?;
-    let tip: MaestroChainTip = maestro.get_chain_tip().await.map_err(SeedError::Maestro)?;
+        .map_err(SeedError::Source)?;
+    let tip: ChainTip = client.get_chain_tip().await.map_err(SeedError::Source)?;
 
     let utxo_inserts: Vec<UtxoInsert> = utxos
         .iter()
@@ -211,7 +211,7 @@ async fn seed_one_locked(
             // 0 = mempool marker for unconfirmed; concrete height for confirmed.
             block_height: u.block_height.unwrap_or(0),
             network: network.to_string(),
-            source: "maestro".to_string(),
+            source: "backfill".to_string(),
         })
         .collect();
     let utxo_count = utxo_inserts.len();

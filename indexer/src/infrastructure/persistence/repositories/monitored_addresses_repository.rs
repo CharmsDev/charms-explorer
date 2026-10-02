@@ -90,7 +90,7 @@ impl MonitoredAddressesRepository {
         Ok(total)
     }
 
-    /// Fetch a batch of addresses pending a Maestro seed (seeded_at IS NULL).
+    /// Fetch a batch of addresses pending a seed (seeded_at IS NULL).
     /// Used by the BTC auto-seeder worker. Oldest registrations first so
     /// addresses don't starve when the queue is permanently busy.
     pub async fn fetch_unseeded(
@@ -116,7 +116,7 @@ impl MonitoredAddressesRepository {
             .collect())
     }
 
-    /// Mark an address as seeded by persisting the Maestro tip cursor.
+    /// Mark an address as seeded by persisting the gateway tip cursor.
     /// The block_hash + height pair is what `api::is_seeded` later validates
     /// against `block_status` to detect reorgs between seed and handoff.
     pub async fn mark_seeded(

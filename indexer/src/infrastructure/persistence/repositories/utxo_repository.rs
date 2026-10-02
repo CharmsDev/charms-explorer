@@ -18,7 +18,7 @@ impl fmt::Debug for UtxoRepository {
 
 /// A single UTXO to be inserted.
 /// `source` is the provenance label persisted in `address_utxos.source`
-/// (one of `node`, `maestro`, `backfill`). The indexer always writes
+/// (one of `node`, `maestro`, `backfill`). The indexer writes
 /// `node` and overrides snapshots from external providers.
 #[derive(Debug, Clone)]
 pub struct UtxoInsert {

@@ -1,6 +1,6 @@
 //! BTC auto-seeder: proactively populates `address_utxos` and
 //! `address_transactions` for every monitored address (typically a
-//! charm-holder auto-registered by the block processor) by calling Maestro
+//! charm-holder auto-registered by the block processor) by calling the mempool.space Esplora API
 //! once per address.
 //!
 //! Why this exists:
@@ -12,19 +12,19 @@
 //!   pre-genesis (block < 895,206) and isn't replayed by the indexer.
 //! - Before this worker, that historical BTC was only fetched when an
 //!   end user hit the API and `AddressMonitorService::ensure_monitored`
-//!   triggered an on-demand Maestro seed. Charm holders who never got
+//!   triggered an on-demand seed. Charm holders who never got
 //!   queried had a `seeded_at = NULL` row and no historical UTXOs.
 //! - This worker closes that gap proactively: it picks up unseeded
-//!   monitored addresses in the background and seeds them via Maestro,
+//!   monitored addresses in the background and seeds them via mempool.space,
 //!   so wallets see correct BTC balance the moment they first ask.
 //!
 //! Design constraints:
 //! - Inocuous to indexing — runs as an independent supervised task, never
-//!   blocks the block processor. Maestro outages just stall the queue.
+//!   blocks the block processor. Gateway outages just stall the queue.
 //! - Idempotent — uses the same per-address advisory lock as the API
 //!   on-demand seeder, so the two paths can't race on the same address.
 //! - Rate limited — bounded concurrent in-flight requests; respects
-//!   Maestro's quota.
+//!   the public gateway's rate limits.
 //! - Cancellation aware — honours the shared `CancellationToken` for
 //!   graceful shutdown.
 

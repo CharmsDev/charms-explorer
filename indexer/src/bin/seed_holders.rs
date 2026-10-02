@@ -1,5 +1,5 @@
 //! One-shot backfill: seed every monitored address whose `seeded_at IS NULL`
-//! via Maestro. Uses the same `seed_one` path as the live worker.
+//! via mempool.space. Uses the same `seed_one` path as the live worker.
 //!
 //! Usage:
 //!     cargo run --release --bin seed_holders -- [--network <name>] [--limit N] [--rps R] [--dry-run]
@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use charms_indexer::application::indexer::seeder::worker::{seed_one, SeedError};
 use charms_indexer::config::AppConfig;
-use charms_indexer::infrastructure::maestro::MaestroClient;
+use charms_indexer::infrastructure::address_source::AddressClient;
 use charms_indexer::infrastructure::persistence::{DbPool, Repositories};
 use charms_indexer::utils::logging;
 
@@ -67,16 +67,16 @@ async fn main() {
     let args = parse_args();
     let config = AppConfig::from_env();
 
-    if config.indexer.private_maestro_api_key.is_empty() {
-        eprintln!("PRIVATE_MAESTRO_API_KEY is not set; aborting.");
+    let Some(btc) = config.get_bitcoin_config(&args.network) else {
+        eprintln!("network {} is not enabled; aborting.", args.network);
         std::process::exit(1);
-    }
+    };
 
     let pool = DbPool::new(&config)
         .await
         .expect("connect to database");
     let repos = Repositories::from_pool(&pool);
-    let maestro = MaestroClient::new(config.indexer.private_maestro_api_key.clone());
+    let client = AddressClient::new(&btc.esplora_url);
 
     let targets: Vec<String> = repos
         .monitored_addresses
@@ -107,7 +107,7 @@ async fn main() {
             println!("[dry-run] would seed: {}", address);
             ok += 1;
         } else {
-            match seed_one(&maestro, &repos, address, &args.network).await {
+            match seed_one(&client, &repos, address, &args.network).await {
                 Ok(out) => {
                     ok += 1;
                     if (idx + 1) % 25 == 0 {

@@ -1,14 +1,13 @@
-//! Maestro client — minimal surface for the BTC auto-seeder.
+//! Esplora address client (mempool.space) for the BTC auto-seeder.
 
 use serde_json::Value;
 use std::time::Duration;
 
-const DEFAULT_BASE_URL: &str = "https://xbt-mainnet.gomaestro-api.org/v0";
 const TXS_PAGE_SIZE_HINT: usize = 25; // esplora returns up to 25 per page
 const MAX_TXS_PAGES: usize = 10;
 
 #[derive(Debug, Clone)]
-pub struct MaestroUtxo {
+pub struct AddressUtxo {
     pub txid: String,
     pub vout: u32,
     pub value: u64,
@@ -16,7 +15,7 @@ pub struct MaestroUtxo {
 }
 
 #[derive(Debug, Clone)]
-pub struct MaestroAddressTx {
+pub struct AddressTx {
     pub txid: String,
     pub direction: String, // "in" or "out" from this address's perspective
     pub amount: i64,
@@ -27,47 +26,45 @@ pub struct MaestroAddressTx {
 }
 
 #[derive(Debug, Clone)]
-pub struct MaestroChainTip {
+pub struct ChainTip {
     pub height: u64,
     pub hash: String,
 }
 
 #[derive(Debug)]
-pub enum MaestroError {
+pub enum AddressClientError {
     Http(String),
     Parse(String),
     Api { status: u16, body: String },
 }
 
-impl std::fmt::Display for MaestroError {
+impl std::fmt::Display for AddressClientError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MaestroError::Http(e) => write!(f, "http error: {}", e),
-            MaestroError::Parse(e) => write!(f, "parse error: {}", e),
-            MaestroError::Api { status, body } => write!(f, "api error {}: {}", status, body),
+            AddressClientError::Http(e) => write!(f, "http error: {}", e),
+            AddressClientError::Parse(e) => write!(f, "parse error: {}", e),
+            AddressClientError::Api { status, body } => write!(f, "api error {}: {}", status, body),
         }
     }
 }
 
-impl std::error::Error for MaestroError {}
+impl std::error::Error for AddressClientError {}
 
 #[derive(Clone)]
-pub struct MaestroClient {
+pub struct AddressClient {
     http: reqwest::Client,
-    api_key: String,
     base_url: String,
 }
 
-impl MaestroClient {
-    pub fn new(api_key: String) -> Self {
+impl AddressClient {
+    pub fn new(base_url: &str) -> Self {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(30))
             .build()
             .expect("reqwest client build");
         Self {
             http,
-            api_key,
-            base_url: DEFAULT_BASE_URL.to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
         }
     }
 
@@ -81,19 +78,18 @@ impl MaestroClient {
         format!("{}{}", self.base_url, path)
     }
 
-    pub async fn get_utxos(&self, address: &str) -> Result<Vec<MaestroUtxo>, MaestroError> {
+    pub async fn get_utxos(&self, address: &str) -> Result<Vec<AddressUtxo>, AddressClientError> {
         let resp = self
             .http
-            .get(self.url(&format!("/esplora/address/{}/utxo", address)))
-            .header("api-key", &self.api_key)
+            .get(self.url(&format!("/address/{}/utxo", address)))
             .send()
             .await
-            .map_err(|e| MaestroError::Http(e.to_string()))?;
+            .map_err(|e| AddressClientError::Http(e.to_string()))?;
 
         let status = resp.status();
         if !status.is_success() {
             let body = resp.text().await.unwrap_or_default();
-            return Err(MaestroError::Api {
+            return Err(AddressClientError::Api {
                 status: status.as_u16(),
                 body,
             });
@@ -102,7 +98,7 @@ impl MaestroClient {
         let raw: Vec<Value> = resp
             .json()
             .await
-            .map_err(|e| MaestroError::Parse(e.to_string()))?;
+            .map_err(|e| AddressClientError::Parse(e.to_string()))?;
 
         Ok(raw
             .iter()
@@ -113,7 +109,7 @@ impl MaestroClient {
                 } else {
                     None
                 };
-                Some(MaestroUtxo {
+                Some(AddressUtxo {
                     txid: u["txid"].as_str()?.to_string(),
                     vout: u["vout"].as_u64()? as u32,
                     value: u["value"].as_u64()?,
@@ -129,27 +125,26 @@ impl MaestroClient {
     pub async fn get_address_txs(
         &self,
         address: &str,
-    ) -> Result<Vec<MaestroAddressTx>, MaestroError> {
-        let mut all: Vec<MaestroAddressTx> = Vec::new();
+    ) -> Result<Vec<AddressTx>, AddressClientError> {
+        let mut all: Vec<AddressTx> = Vec::new();
         let mut after_txid: Option<String> = None;
 
         for _ in 0..MAX_TXS_PAGES {
             let path = match &after_txid {
-                Some(txid) => format!("/esplora/address/{}/txs/chain/{}", address, txid),
-                None => format!("/esplora/address/{}/txs", address),
+                Some(txid) => format!("/address/{}/txs/chain/{}", address, txid),
+                None => format!("/address/{}/txs", address),
             };
             let resp = self
                 .http
                 .get(self.url(&path))
-                .header("api-key", &self.api_key)
-                .send()
+                    .send()
                 .await
-                .map_err(|e| MaestroError::Http(e.to_string()))?;
+                .map_err(|e| AddressClientError::Http(e.to_string()))?;
 
             let status = resp.status();
             if !status.is_success() {
                 let body = resp.text().await.unwrap_or_default();
-                return Err(MaestroError::Api {
+                return Err(AddressClientError::Api {
                     status: status.as_u16(),
                     body,
                 });
@@ -158,7 +153,7 @@ impl MaestroClient {
             let txs: Vec<Value> = resp
                 .json()
                 .await
-                .map_err(|e| MaestroError::Parse(e.to_string()))?;
+                .map_err(|e| AddressClientError::Parse(e.to_string()))?;
 
             if txs.is_empty() {
                 break;
@@ -181,41 +176,39 @@ impl MaestroClient {
         Ok(all)
     }
 
-    pub async fn get_chain_tip(&self) -> Result<MaestroChainTip, MaestroError> {
+    pub async fn get_chain_tip(&self) -> Result<ChainTip, AddressClientError> {
         let resp = self
             .http
-            .get(self.url("/esplora/blocks/tip/height"))
-            .header("api-key", &self.api_key)
+            .get(self.url("/blocks/tip/height"))
             .send()
             .await
-            .map_err(|e| MaestroError::Http(e.to_string()))?;
+            .map_err(|e| AddressClientError::Http(e.to_string()))?;
         let height: u64 = resp
             .text()
             .await
-            .map_err(|e| MaestroError::Parse(e.to_string()))?
+            .map_err(|e| AddressClientError::Parse(e.to_string()))?
             .trim()
             .parse()
-            .map_err(|e: std::num::ParseIntError| MaestroError::Parse(e.to_string()))?;
+            .map_err(|e: std::num::ParseIntError| AddressClientError::Parse(e.to_string()))?;
 
         let resp = self
             .http
-            .get(self.url("/esplora/blocks/tip/hash"))
-            .header("api-key", &self.api_key)
+            .get(self.url("/blocks/tip/hash"))
             .send()
             .await
-            .map_err(|e| MaestroError::Http(e.to_string()))?;
+            .map_err(|e| AddressClientError::Http(e.to_string()))?;
         let hash = resp
             .text()
             .await
-            .map_err(|e| MaestroError::Parse(e.to_string()))?
+            .map_err(|e| AddressClientError::Parse(e.to_string()))?
             .trim()
             .to_string();
 
-        Ok(MaestroChainTip { height, hash })
+        Ok(ChainTip { height, hash })
     }
 }
 
-fn parse_address_tx(tx: &Value, address: &str) -> Option<MaestroAddressTx> {
+fn parse_address_tx(tx: &Value, address: &str) -> Option<AddressTx> {
     let txid = tx["txid"].as_str()?.to_string();
     let status = &tx["status"];
     let block_height = status["block_height"].as_i64().map(|h| h as i32);
@@ -247,7 +240,7 @@ fn parse_address_tx(tx: &Value, address: &str) -> Option<MaestroAddressTx> {
         ("out".to_string(), value_in - value_out)
     };
 
-    Some(MaestroAddressTx {
+    Some(AddressTx {
         txid,
         direction,
         amount,

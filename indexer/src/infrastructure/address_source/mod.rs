@@ -1,4 +1,4 @@
-//! Minimal Maestro HTTP client used by the BTC auto-seeder.
+//! Minimal Esplora (mempool.space) address client used by the BTC auto-seeder.
 //!
 //! Scope: just what the seeder needs — esplora `/address/{a}/utxo`,
 //! paginated `/address/{a}/txs`, and `/blocks/tip/{height,hash}`. We
@@ -10,5 +10,5 @@
 pub mod client;
 
 pub use client::{
-    MaestroClient, MaestroAddressTx, MaestroChainTip, MaestroError, MaestroUtxo,
+    AddressClient, AddressTx, ChainTip, AddressClientError, AddressUtxo,
 };
