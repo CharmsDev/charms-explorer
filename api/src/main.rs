@@ -76,8 +76,8 @@ async fn main() {
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
         .tcp_keepalive(Duration::from_secs(60))
-        // IPv6 from Fly to mempool.space hangs until the connect timeout.
-        .local_address(std::net::IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
+        // IPv6 from Fly to mempool.space hangs; resolve to IPv4 only.
+        .dns_resolver(std::sync::Arc::new(Ipv4Resolver))
         .user_agent(concat!("charms-explorer-api/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("Failed to build HTTP client");
@@ -202,4 +202,22 @@ async fn main() {
     axum::serve(listener, app)
         .await
         .expect("Failed to start server");
+}
+
+/// DNS resolver that only returns IPv4 addresses.
+struct Ipv4Resolver;
+
+impl reqwest::dns::Resolve for Ipv4Resolver {
+    fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+        Box::pin(async move {
+            let addrs: Vec<std::net::SocketAddr> = tokio::net::lookup_host((name.as_str(), 0))
+                .await?
+                .filter(|a| a.is_ipv4())
+                .collect();
+            if addrs.is_empty() {
+                return Err(format!("no IPv4 address for {}", name.as_str()).into());
+            }
+            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+        })
+    }
 }
