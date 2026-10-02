@@ -10,8 +10,7 @@ use crate::entity::address_utxos;
 
 /// A single UTXO to be inserted (used by on-demand seeding).
 /// `source` is the provenance label written to `address_utxos.source`.
-/// API seeding always writes `maestro` (regardless of which external
-/// provider supplied the data); the indexer writes `node` and takes
+/// API seeding writes `backfill`; the indexer writes `node` and takes
 /// precedence on conflict.
 pub struct UtxoInsert {
     pub txid: String,
@@ -50,7 +49,7 @@ impl UtxoRepository {
             .map_err(|e| format!("DB query failed: {}", e))
     }
 
-    /// Insert/refresh a batch of UTXOs (on-demand seeding from Esplora/QuickNode).
+    /// Insert/refresh a batch of UTXOs (on-demand seeding from Esplora).
     /// On conflict the API path UPDATES block_height + value, mirroring the
     /// snapshot from the provider. Rows owned by the indexer (`source='node'`)
     /// are NOT overwritten — they are authoritative for confirmed state.

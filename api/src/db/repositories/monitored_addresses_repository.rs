@@ -88,7 +88,7 @@ impl MonitoredAddressesRepository {
     ///   seed and the first indexed block invalidated the snapshot.
     ///
     /// Returning false in the mismatch case forces the caller to re-seed,
-    /// closing the Maestro↔node handoff gap.
+    /// closing the seed↔indexer handoff gap.
     /// Seconds elapsed since the last seed, if `seeded_at` is set.
     /// Returns `Ok(None)` when the row is missing or the seed timestamp is null.
     pub async fn seed_age_seconds(

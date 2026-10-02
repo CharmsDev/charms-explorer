@@ -1,90 +1,17 @@
 // Wallet API endpoint handlers
-// Strategy: Maestro (primary) → QuickNode (fallback) → RPC node (last resort)
-// Circuit breaker: 2 consecutive Maestro failures → bypass for 2 minutes
+// Live chain data comes from the public Esplora API (mempool.space) via
+// `state.esplora`; balances/history are served from our DB after seeding.
 
 use axum::{
     Json,
     extract::{Path, Query, State},
 };
 use serde::Deserialize;
-use std::time::Duration;
-use tokio::time::timeout;
-
-use bitcoincore_rpc::Client;
-use std::sync::Arc;
 
 use crate::error::{ExplorerError, ExplorerResult};
 use http::{HeaderMap, HeaderValue};
 use crate::handlers::AppState;
 use crate::services::address_monitor_service::AddressMonitorService;
-use crate::services::maestro_service;
-use crate::services::mempool_space_service;
-use crate::services::wallet_service::WalletService;
-
-const RPC_TIMEOUT: Duration = Duration::from_secs(3);
-
-/// Select the shared RPC client for the given network
-fn rpc_client(state: &AppState, network: &str) -> Arc<Client> {
-    match network {
-        "testnet4" => state.rpc_testnet4.clone(),
-        _ => state.rpc_mainnet.clone(),
-    }
-}
-
-/// QuickNode endpoint (empty string = not configured)
-fn quicknode_url(state: &AppState) -> &str {
-    &state.config.bitcoin_mainnet_quicknode_endpoint
-}
-
-/// Maestro API key (empty string = not configured)
-fn maestro_key(state: &AppState) -> &str {
-    &state.config.maestro_api_key
-}
-
-/// Returns true if Maestro is available (configured + circuit breaker closed)
-fn maestro_available(state: &AppState) -> bool {
-    !state.config.maestro_api_key.is_empty() && !state.maestro_cb.is_open()
-}
-
-/// Try an RPC future with timeout; on failure, try QuickNode fallback
-async fn rpc_with_fallback<T, RpcFut, QnFut>(
-    rpc_future: RpcFut,
-    qn_future: QnFut,
-    qn_url: &str,
-    label: &str,
-) -> Result<T, String>
-where
-    RpcFut: std::future::Future<Output = Result<T, String>>,
-    QnFut: std::future::Future<Output = Result<T, String>>,
-{
-    match timeout(RPC_TIMEOUT, rpc_future).await {
-        Ok(Ok(val)) => Ok(val),
-        Ok(Err(e)) => {
-            if !qn_url.is_empty() {
-                tracing::warn!("{}: RPC failed, falling back to QuickNode: {}", label, e);
-                qn_future.await
-            } else {
-                Err(e)
-            }
-        }
-        Err(_) => {
-            if !qn_url.is_empty() {
-                tracing::warn!(
-                    "{}: RPC timed out ({}s), falling back to QuickNode",
-                    label,
-                    RPC_TIMEOUT.as_secs()
-                );
-                qn_future.await
-            } else {
-                Err(format!(
-                    "{}: RPC timed out after {}s",
-                    label,
-                    RPC_TIMEOUT.as_secs()
-                ))
-            }
-        }
-    }
-}
 
 #[derive(Debug, Deserialize)]
 pub struct NetworkQuery {
@@ -109,41 +36,32 @@ fn default_network() -> String {
     "mainnet".to_string()
 }
 
+/// Seed/refresh an address from Esplora if needed. Returns `monitored`.
+async fn ensure_monitored(state: &AppState, address: &str, network: &str) -> bool {
+    AddressMonitorService::ensure_monitored(
+        &state.repositories.monitored_addresses,
+        &state.repositories.utxo,
+        &state.repositories.address_transactions,
+        &state.esplora,
+        address,
+        network,
+    )
+    .await
+    .unwrap_or(false)
+}
+
 /// GET /wallet/utxos/{address}
-/// Maestro (primary, circuit-breakered) → QuickNode fallback → RPC fallback
+/// Live, mempool-aware UTXOs from Esplora (mempool.space).
 pub async fn get_wallet_utxos(
     State(state): State<AppState>,
     Path(address): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let qn = quicknode_url(&state).to_string();
-    let network = params.network.clone();
-
-    let min_value = params.min_value;
-
-    // Try Maestro (if available and circuit breaker closed)
-    // Note: Maestro internally handles >1000 UTXO addresses via indexed fallback,
-    // so a success here may come from either esplora or indexed endpoint.
-    let result = if maestro_available(&state) {
-        let mk = maestro_key(&state).to_string();
-        match maestro_service::get_utxos(&state.http_client, &mk, &network, &address, min_value, Some(&qn)).await {
-            Ok(utxos) => {
-                state.maestro_cb.record_success();
-                Ok(utxos)
-            }
-            Err(e) => {
-                if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
-                    state.maestro_cb.record_failure();
-                }
-                tracing::warn!("UTXOs: Maestro failed for {}: {}", address, e);
-                fallback_utxos(&state, &qn, &address, &params.network).await
-            }
-        }
-    } else {
-        fallback_utxos(&state, &qn, &address, &params.network).await
-    };
-
-    match result {
+    match state
+        .esplora
+        .get_utxos(&params.network, &address, params.min_value)
+        .await
+    {
         Ok(utxos) => Ok(Json(serde_json::json!({
             "address": address,
             "utxos": utxos,
@@ -151,28 +69,8 @@ pub async fn get_wallet_utxos(
         }))),
         Err(e) => {
             tracing::error!("Wallet: failed to get UTXOs for {}: {}", address, e);
-            Err(ExplorerError::InternalError(e))
+            Err(ExplorerError::InternalError(e.to_string()))
         }
-    }
-}
-
-/// QuickNode → RPC fallback for UTXOs (only when Maestro fails completely)
-async fn fallback_utxos(
-    state: &AppState,
-    qn: &str,
-    address: &str,
-    network: &str,
-) -> Result<Vec<crate::services::wallet_service::Utxo>, String> {
-    if !qn.is_empty() {
-        match WalletService::get_utxos_quicknode(&state.http_client, qn, address).await {
-            Ok(utxos) => Ok(utxos),
-            Err(e) => {
-                tracing::warn!("UTXOs: QuickNode failed, falling back to RPC: {}", e);
-                WalletService::get_utxos(rpc_client(state, network), address).await
-            }
-        }
-    } else {
-        WalletService::get_utxos(rpc_client(state, network), address).await
     }
 }
 
@@ -191,8 +89,8 @@ async fn fallback_utxos(
 ///
 /// 2. **First balance request (this endpoint)** — When a user queries an
 ///    address that is NOT yet in the system (e.g. an address that has never
-///    held a charm), the API seeds its current UTXO set from an external
-///    source (QuickNode / Mempool) and registers it in `monitored_addresses`.
+///    held a charm), the API seeds its current UTXO set from Esplora
+///    (mempool.space) and registers it in `monitored_addresses`.
 ///    From that point on, the indexer keeps the UTXO set current as new
 ///    blocks arrive.
 ///
@@ -207,24 +105,11 @@ pub async fn get_wallet_balance(
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let network = params.network.as_str();
-    let qn = quicknode_url(&state).to_string();
-    let mk = maestro_key(&state).to_string();
 
-    // Step 1: Ensure address is monitored (seeds from Maestro/QuickNode if needed)
-    let monitored = AddressMonitorService::ensure_monitored(
-        &state.repositories.monitored_addresses,
-        &state.repositories.utxo,
-        &state.repositories.address_transactions,
-        &state.http_client,
-        &qn,
-        &mk,
-        &address,
-        network,
-    )
-    .await
-    .unwrap_or(false);
+    // Step 1: Ensure address is monitored (seeds from Esplora if needed)
+    let monitored = ensure_monitored(&state, &address, network).await;
 
-    // Step 2-5: Compute balance using live Maestro UTXOs (same as balance/batch)
+    // Step 2: Compute balance from the seeded/indexed UTXO set
     let mut balance = resolve_balance_for_batch(&state, &address, network).await;
     if let Some(obj) = balance.as_object_mut() {
         obj.insert("monitored".to_string(), serde_json::json!(monitored));
@@ -233,16 +118,13 @@ pub async fn get_wallet_balance(
 }
 
 /// GET /wallet/tx/{txid}
-/// RPC (primary for verbose TX data) — Maestro esplora doesn't return the same verbose format
-/// TODO: Add Maestro esplora TX lookup when format normalization is implemented
+/// Esplora /tx/:id normalised to the bitcoind-verbose-like shape.
 pub async fn get_wallet_transaction(
     State(state): State<AppState>,
     Path(txid): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let client = rpc_client(&state, &params.network);
-
-    match WalletService::get_transaction(client, &txid).await {
+    match state.esplora.get_transaction(&params.network, &txid).await {
         Ok(tx) => Ok(Json(serde_json::json!(tx))),
         Err(e) => {
             tracing::error!("Wallet: failed to get transaction {}: {}", txid, e);
@@ -255,34 +137,23 @@ pub async fn get_wallet_transaction(
 }
 
 /// GET /wallet/tx/{txid}/hex
-/// Returns raw transaction hex via Maestro → QuickNode fallback.
+/// Raw transaction hex via Esplora /tx/:id/hex.
 /// Used by DEX order builders to construct prev_txs for spell proofs.
 pub async fn get_wallet_tx_hex(
     State(state): State<AppState>,
     Path(txid): Path<String>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let network = params.network.clone();
-    // Try Maestro first
-    if maestro_available(&state) {
-        let mk = maestro_key(&state).to_string();
-        match maestro_service::get_tx_hex(&state.http_client, &mk, &network, &txid).await {
-            Ok(hex) => {
-                state.maestro_cb.record_success();
-                return Ok(Json(serde_json::json!({ "txid": txid, "hex": hex })));
-            }
-            Err(e) => {
-                state.maestro_cb.record_failure();
-                tracing::warn!("TX hex: Maestro failed for {}: {}", txid, e);
-            }
+    match state.esplora.get_tx_hex(&params.network, &txid).await {
+        Ok(hex) => Ok(Json(serde_json::json!({ "txid": txid, "hex": hex }))),
+        Err(e) => {
+            tracing::warn!("TX hex: Esplora failed for {}: {}", txid, e);
+            Err(ExplorerError::NotFound(format!(
+                "Transaction {} hex not available",
+                txid
+            )))
         }
     }
-
-    // Fallback: RPC getrawtransaction (requires txindex)
-    Err(ExplorerError::NotFound(format!(
-        "Transaction {} hex not available",
-        txid
-    )))
 }
 
 /// POST /wallet/prev-txs
@@ -315,27 +186,15 @@ pub async fn get_wallet_prev_txs(
         return Ok(Json(serde_json::json!({ "transactions": {} })));
     }
 
-    let mk = maestro_key(&state).to_string();
-    let has_maestro = maestro_available(&state) && !mk.is_empty();
-
     // Fetch all TX hexes concurrently
     let tasks: Vec<_> = txids
-        .iter()
+        .into_iter()
         .map(|txid| {
-            let state = state.clone();
-            let txid = txid.clone();
-            let mk = mk.clone();
+            let esplora = state.esplora.clone();
             let network = network.clone();
             tokio::spawn(async move {
-                if has_maestro {
-                    match maestro_service::get_tx_hex(&state.http_client, &mk, &network, &txid).await {
-                        Ok(hex) => return (txid, Ok(hex)),
-                        Err(e) => {
-                            tracing::warn!("prev-txs: Maestro failed for {}: {}", txid, e);
-                        }
-                    }
-                }
-                (txid, Err("not available".to_string()))
+                let res = esplora.get_tx_hex(&network, &txid).await;
+                (txid, res)
             })
         })
         .collect();
@@ -359,82 +218,36 @@ pub async fn get_wallet_prev_txs(
 }
 
 /// POST /wallet/broadcast
-/// mempool.space (primary) → Maestro (backup) → local RPC (last resort)
+/// Broadcast via Esplora POST /tx (mempool.space).
 pub async fn broadcast_wallet_transaction(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
     Json(body): Json<BroadcastRequest>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let raw_tx = &body.raw_tx;
-    let network = params.network.as_str();
-
-    // Primary: mempool.space
-    match mempool_space_service::broadcast(&state.http_client, raw_tx, network).await {
+    match state.esplora.broadcast(&params.network, &body.raw_tx).await {
         Ok(txid) => {
             tracing::info!("Broadcast: mempool.space accepted {}", txid);
-            return Ok(Json(serde_json::json!({ "txid": txid })));
+            Ok(Json(serde_json::json!({ "txid": txid })))
         }
-        Err(e) => tracing::warn!("Broadcast: mempool.space failed, trying Maestro: {}", e),
-    }
-
-    // Backup: Maestro
-    if maestro_available(&state) {
-        let mk = maestro_key(&state).to_string();
-        match maestro_service::broadcast_transaction(&state.http_client, &mk, network, raw_tx).await {
-            Ok(txid) => {
-                state.maestro_cb.record_success();
-                tracing::info!("Broadcast: Maestro accepted {}", txid);
-                return Ok(Json(serde_json::json!({ "txid": txid })));
-            }
-            Err(e) => {
-                state.maestro_cb.record_failure();
-                tracing::warn!("Broadcast: Maestro failed, trying RPC: {}", e);
-            }
-        }
-    }
-
-    // Last resort: local RPC node
-    let client = rpc_client(&state, &params.network);
-    match WalletService::broadcast_transaction(client, raw_tx).await {
-        Ok(result) => Ok(Json(serde_json::json!(result))),
         Err(e) => {
-            tracing::error!("Broadcast: all paths failed: {}", e);
-            Err(ExplorerError::InternalError(e))
+            tracing::error!("Broadcast: mempool.space rejected: {}", e);
+            Err(ExplorerError::InternalError(e.to_string()))
         }
     }
 }
 
 /// GET /wallet/fee-estimate?blocks=6
-/// Maestro (primary) → RPC (fallback)
+/// Esplora fee estimates, returned as BTC/kvB (estimatesmartfee units).
 pub async fn get_wallet_fee_estimate(
     State(state): State<AppState>,
     Query(params): Query<FeeEstimateQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let blocks = params.blocks.unwrap_or(6);
-    let network = params.network.clone();
-
-    // Try Maestro first
-    if maestro_available(&state) {
-        let mk = maestro_key(&state).to_string();
-        match maestro_service::get_fee_estimate(&state.http_client, &mk, &network, blocks).await {
-            Ok(estimate) => {
-                state.maestro_cb.record_success();
-                return Ok(Json(serde_json::json!(estimate)));
-            }
-            Err(e) => {
-                state.maestro_cb.record_failure();
-                tracing::warn!("FeeEstimate: Maestro failed, trying RPC: {}", e);
-            }
-        }
-    }
-
-    // Fallback: RPC
-    let client = rpc_client(&state, &params.network);
-    match WalletService::get_fee_estimate(client, params.blocks).await {
+    match state.esplora.get_fee_estimate(&params.network, blocks).await {
         Ok(estimate) => Ok(Json(serde_json::json!(estimate))),
         Err(e) => {
             tracing::error!("Wallet: failed to get fee estimate: {}", e);
-            Err(ExplorerError::InternalError(e))
+            Err(ExplorerError::InternalError(e.to_string()))
         }
     }
 }
@@ -590,7 +403,7 @@ pub async fn get_wallet_charm_balances(
 }
 
 /// POST /wallet/charms/batch — DEPRECATED, use POST /wallet/balance/batch
-/// Live charm balances: DB charms cross-checked against real UTXOs from Maestro.
+/// Live charm balances: DB charms cross-checked against real UTXOs from Esplora.
 /// Only counts charms whose UTXO actually exists on-chain (mempool-aware).
 /// Body: { "addresses": ["bc1p...", "bc1p..."], "network": "mainnet" }
 /// Response: same shape as indexed batch — { "results": { "addr": { balances, count } } }
@@ -670,7 +483,7 @@ pub async fn get_wallet_charm_balances_batch(
 }
 
 /// POST /wallet/charms/batch/indexed
-/// Charm balances from indexed DB only (fast, no Maestro calls).
+/// Charm balances from indexed DB only (fast, no Esplora calls).
 /// May be slightly stale if indexer hasn't caught up with mempool.
 pub async fn get_wallet_charm_balances_batch_indexed(
     State(state): State<AppState>,
@@ -777,34 +590,14 @@ pub async fn get_wallet_utxos_batch(
         return Ok((dep_headers(), Json(serde_json::json!({ "results": {} }))));
     }
 
-    let qn = quicknode_url(&state).to_string();
-
     let tasks: Vec<_> = addresses
         .iter()
         .map(|addr| {
-            let state = state.clone();
+            let esplora = state.esplora.clone();
             let address = addr.clone();
             let network = network.clone();
-            let qn = qn.clone();
             tokio::spawn(async move {
-                // Maestro first (if available and circuit breaker closed)
-                let result = if maestro_available(&state) {
-                    let mk = maestro_key(&state).to_string();
-                    match maestro_service::get_utxos(&state.http_client, &mk, &network, &address, min_value, Some(&qn)).await {
-                        Ok(utxos) => {
-                            state.maestro_cb.record_success();
-                            Ok(utxos)
-                        }
-                        Err(e) => {
-                            if e.contains("401") || e.contains("429") || e.contains("500") || e.contains("503") {
-                                state.maestro_cb.record_failure();
-                            }
-                            fallback_utxos(&state, &qn, &address, &network).await
-                        }
-                    }
-                } else {
-                    fallback_utxos(&state, &qn, &address, &network).await
-                };
+                let result = esplora.get_utxos(&network, &address, min_value).await;
                 (address, result)
             })
         })
@@ -989,8 +782,8 @@ async fn resolve_charm_balances_for_address(
     }))
 }
 
-/// Live charm balance resolver: gets real UTXOs from Maestro, crosses with DB charms.
-/// Only counts charms whose UTXO actually exists in Maestro (mempool-aware).
+/// Live charm balance resolver: gets real UTXOs from Esplora, crosses with DB charms.
+/// Only counts charms whose UTXO actually exists on-chain (mempool-aware).
 async fn resolve_charm_balances_live(
     state: &AppState,
     address: &str,
@@ -1014,23 +807,16 @@ async fn resolve_charm_balances_live(
         }));
     }
 
-    // 2. Get real UTXOs from Maestro (mempool-aware)
-    let real_utxos: std::collections::HashSet<(String, u32)> = if maestro_available(state) {
-        let mk = maestro_key(state).to_string();
-        match maestro_service::get_utxos(
-            &state.http_client, &mk, network, address, None,
-            Some(&state.config.bitcoin_mainnet_quicknode_endpoint),
-        ).await {
+    // 2. Get real UTXOs from Esplora (mempool-aware)
+    let real_utxos: std::collections::HashSet<(String, u32)> =
+        match state.esplora.get_utxos(network, address, None).await {
             Ok(utxos) => utxos.iter().map(|u| (u.txid.clone(), u.vout)).collect(),
             Err(e) => {
-                tracing::warn!("Live charms: Maestro UTXOs failed for {}: {}", address, e);
+                tracing::warn!("Live charms: Esplora UTXOs failed for {}: {}", address, e);
                 // Fall back to DB-only
                 return resolve_charm_balances_for_address(state, address, network).await;
             }
-        }
-    } else {
-        return resolve_charm_balances_for_address(state, address, network).await;
-    };
+        };
 
     // 3. Look up symbols
     let app_ids: Vec<String> = charms.iter().map(|c| c.app_id.clone()).collect();
@@ -1053,7 +839,7 @@ async fn resolve_charm_balances_live(
         .await
         .unwrap_or_default();
 
-    // 5. Cross-check: only include charms whose UTXO exists in Maestro
+    // 5. Cross-check: only include charms whose UTXO exists on-chain
     let mut balance_map: std::collections::HashMap<
         String,
         (String, String, i64, i64, Vec<serde_json::Value>),
@@ -1145,46 +931,16 @@ async fn resolve_charm_balances_live(
 }
 
 /// GET /wallet/tip
-/// Maestro (primary, circuit-breakered) → RPC fallback → QuickNode fallback
+/// Esplora tip height + hash + block time.
 pub async fn get_wallet_chain_tip(
     State(state): State<AppState>,
     Query(params): Query<NetworkQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
-    let http = state.http_client.clone();
-    let network = params.network.clone();
-
-    // Try Maestro first
-    if maestro_available(&state) {
-        let mk = maestro_key(&state).to_string();
-        match maestro_service::get_chain_tip(&http, &mk, &network).await {
-            Ok(tip) => {
-                state.maestro_cb.record_success();
-                return Ok(Json(serde_json::json!(tip)));
-            }
-            Err(e) => {
-                state.maestro_cb.record_failure();
-                tracing::warn!("Tip: Maestro failed, trying RPC: {}", e);
-            }
-        }
-    }
-
-    // Fallback: RPC → QuickNode
-    let client = rpc_client(&state, &params.network);
-    let qn = quicknode_url(&state).to_string();
-
-    let result = rpc_with_fallback(
-        WalletService::get_chain_tip(client),
-        WalletService::get_chain_tip_quicknode(&http, &qn),
-        &qn,
-        "Tip",
-    )
-    .await;
-
-    match result {
+    match state.esplora.get_chain_tip(&params.network, true).await {
         Ok(tip) => Ok(Json(serde_json::json!(tip))),
         Err(e) => {
             tracing::error!("Wallet: failed to get chain tip: {}", e);
-            Err(ExplorerError::InternalError(e))
+            Err(ExplorerError::InternalError(e.to_string()))
         }
     }
 }
@@ -1215,21 +971,9 @@ pub async fn get_wallet_transactions(
     Query(params): Query<TransactionsQuery>,
 ) -> ExplorerResult<Json<serde_json::Value>> {
     let network = params.network.as_str();
-    let qn = quicknode_url(&state).to_string();
-    let mk = maestro_key(&state).to_string();
 
     // Ensure address is monitored and seeded
-    let _ = AddressMonitorService::ensure_monitored(
-        &state.repositories.monitored_addresses,
-        &state.repositories.utxo,
-        &state.repositories.address_transactions,
-        &state.http_client,
-        &qn,
-        &mk,
-        &address,
-        network,
-    )
-    .await;
+    let _ = ensure_monitored(&state, &address, network).await;
 
     // Cap page_size to 100
     let page_size = params.page_size.min(100);
@@ -1441,7 +1185,7 @@ async fn resolve_balance_for_batch(
 
 /// POST /wallet/balance/batch
 /// Batch fetch unified BTC + charm balances for up to 50 addresses in one request.
-/// Auto-monitors each address on first call (lazy seeding via Maestro/QuickNode).
+/// Auto-monitors each address on first call (lazy seeding via Esplora).
 /// Body: { "addresses": ["bc1p...", ...], "network": "mainnet" }
 /// Response: { "results": { "bc1p...": { address, network, monitored, btc, charms }, ... } }
 pub async fn get_wallet_balance_batch(
@@ -1476,20 +1220,7 @@ pub async fn get_wallet_balance_batch(
             let address = addr.clone();
             let network = network.clone();
             tokio::spawn(async move {
-                let qn = quicknode_url(&state).to_string();
-                let mk = maestro_key(&state).to_string();
-                let monitored = AddressMonitorService::ensure_monitored(
-                    &state.repositories.monitored_addresses,
-                    &state.repositories.utxo,
-                    &state.repositories.address_transactions,
-                    &state.http_client,
-                    &qn,
-                    &mk,
-                    &address,
-                    &network,
-                )
-                .await
-                .unwrap_or(false);
+                let monitored = ensure_monitored(&state, &address, &network).await;
 
                 let mut balance =
                     resolve_balance_for_batch(&state, &address, &network).await;
@@ -1560,20 +1291,7 @@ pub async fn get_wallet_transactions_batch(
             let address = addr.clone();
             let network = network.clone();
             tokio::spawn(async move {
-                let qn = quicknode_url(&state).to_string();
-                let mk = maestro_key(&state).to_string();
-
-                let _ = AddressMonitorService::ensure_monitored(
-                    &state.repositories.monitored_addresses,
-                    &state.repositories.utxo,
-                    &state.repositories.address_transactions,
-                    &state.http_client,
-                    &qn,
-                    &mk,
-                    &address,
-                    &network,
-                )
-                .await;
+                let _ = ensure_monitored(&state, &address, &network).await;
 
                 let (txs, total) = match state
                     .repositories

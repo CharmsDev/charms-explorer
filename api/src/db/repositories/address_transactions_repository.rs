@@ -7,7 +7,7 @@ use sea_orm::{
 
 use crate::entity::address_transactions;
 
-/// A single address transaction to insert (used by seeding from QuickNode)
+/// A single address transaction to insert (used by seeding from Esplora)
 pub struct AddressTxInsert {
     pub txid: String,
     pub address: String,
@@ -109,7 +109,7 @@ impl AddressTransactionsRepository {
         Ok((results, total))
     }
 
-    /// Insert a batch of address transactions (used by seeding from QuickNode bb_getAddress)
+    /// Insert a batch of address transactions (used by seeding from Esplora address history)
     pub async fn insert_batch(&self, txs: &[AddressTxInsert]) -> Result<usize, String> {
         if txs.is_empty() {
             return Ok(0);

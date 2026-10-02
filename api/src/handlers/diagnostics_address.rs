@@ -3,7 +3,7 @@
 //! `GET /internal/diagnostics/address/:network/:addr` — returns the full
 //! reconciliation state of a monitored address: seed cursor, indexer view,
 //! UTXO/tx counts, balance breakdown. Used during the mainnet-from-genesis
-//! test to manually verify that the indexer + Maestro handoff is hermetic.
+//! test to manually verify that the indexer + seed handoff is hermetic.
 
 use axum::{
     extract::{Path, State},
