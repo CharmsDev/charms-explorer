@@ -44,44 +44,41 @@ impl std::fmt::Display for NetworkId {
     }
 }
 
-/// Provider type for Bitcoin networks
-#[derive(Debug, Clone, PartialEq)]
-pub enum ProviderType {
-    QuickNode,
-    BitcoinNode,
-}
-
-impl ProviderType {
-    /// Parse a provider name (case-insensitive). Unknown values default to
-    /// `BitcoinNode`. Not exposed as `FromStr` because parsing is infallible.
-    pub fn parse(s: &str) -> Self {
-        match s.to_lowercase().as_str() {
-            "quicknode" => ProviderType::QuickNode,
-            "bitcoin_node" => ProviderType::BitcoinNode,
-            _ => ProviderType::BitcoinNode, // Default to Bitcoin node
-        }
-    }
-}
-
 /// Configuration for the Bitcoin client
 #[derive(Debug, Clone)]
 pub struct BitcoinConfig {
-    /// Bitcoin RPC host
-    pub host: String,
-    /// Bitcoin RPC port
-    pub port: String,
-    /// Bitcoin RPC username
-    pub username: String,
-    /// Bitcoin RPC password
-    pub password: String,
     /// Network name (e.g., "mainnet", "testnet4")
     pub network: String,
     /// Genesis block height
     pub genesis_block_height: u64,
-    /// Optional QuickNode endpoint for fallback
-    pub quicknode_endpoint: Option<String>,
-    /// Provider type to use for this network
-    pub provider_type: ProviderType,
+    /// Esplora REST base (mempool.space by default)
+    pub esplora_url: String,
+    /// mempool.space websocket for the live mempool feed
+    pub ws_url: String,
+}
+
+impl BitcoinConfig {
+    /// Build from `BITCOIN_<NET>_*` env vars; only the genesis height is required.
+    fn from_env(network: &str) -> Self {
+        use crate::infrastructure::bitcoin::esplora::{default_esplora_url, default_ws_url};
+        let prefix = format!("BITCOIN_{}", network.to_uppercase());
+        let genesis_key = format!("{}_GENESIS_BLOCK_HEIGHT", prefix);
+        Self {
+            network: network.to_string(),
+            genesis_block_height: env::var(&genesis_key)
+                .unwrap_or_else(|_| panic!("{} environment variable is required", genesis_key))
+                .parse::<u64>()
+                .unwrap_or_else(|_| panic!("{} must be a valid u64", genesis_key)),
+            esplora_url: env::var(format!("{}_ESPLORA_URL", prefix))
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| default_esplora_url(network)),
+            ws_url: env::var(format!("{}_MEMPOOL_WS_URL", prefix))
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .unwrap_or_else(|| default_ws_url(network)),
+        }
+    }
 }
 
 /// Configuration for the Cardano client
@@ -122,19 +119,17 @@ pub struct IndexerConfig {
     pub enable_bitcoin_mainnet: bool,
     /// Enable Cardano networks
     pub enable_cardano: bool,
-    /// BTC auto-seeder: proactively pull historical UTXOs via Maestro for
+    /// BTC auto-seeder: proactively pull historical UTXOs via mempool.space for
     /// every monitored (charm-holder) address that has not been seeded yet.
     pub btc_auto_seeder_enabled: bool,
     /// How many unseeded addresses the worker pulls per loop iteration.
     pub btc_auto_seeder_batch_size: u64,
-    /// Maximum concurrent Maestro requests in-flight.
+    /// Maximum concurrent gateway requests in-flight.
     pub btc_auto_seeder_concurrency: usize,
     /// Sleep between batches when work exists, milliseconds.
     pub btc_auto_seeder_batch_interval_ms: u64,
     /// Sleep when no unseeded addresses remain, milliseconds.
     pub btc_auto_seeder_idle_interval_ms: u64,
-    /// Maestro API key (PRIVATE). Empty disables the seeder.
-    pub private_maestro_api_key: String,
 }
 
 /// Application configuration
@@ -170,31 +165,7 @@ impl AppConfig {
             .unwrap_or(false);
 
         if enable_bitcoin_testnet4 {
-            let provider_type = ProviderType::parse(
-                &env::var("BITCOIN_TESTNET4_PROVIDER")
-                    .unwrap_or_else(|_| "bitcoin_node".to_string())
-            );
-            
-            bitcoin_configs.insert(
-                "testnet4".to_string(),
-                BitcoinConfig {
-                    host: env::var("BITCOIN_TESTNET4_RPC_HOST")
-                        .expect("BITCOIN_TESTNET4_RPC_HOST environment variable is required"),
-                    port: env::var("BITCOIN_TESTNET4_RPC_PORT")
-                        .expect("BITCOIN_TESTNET4_RPC_PORT environment variable is required"),
-                    username: env::var("BITCOIN_TESTNET4_RPC_USER")
-                        .expect("BITCOIN_TESTNET4_RPC_USER environment variable is required"),
-                    password: env::var("BITCOIN_TESTNET4_RPC_PASSWORD")
-                        .expect("BITCOIN_TESTNET4_RPC_PASSWORD environment variable is required"),
-                    network: "testnet4".to_string(),
-                    genesis_block_height: env::var("BITCOIN_TESTNET4_GENESIS_BLOCK_HEIGHT")
-                        .expect("BITCOIN_TESTNET4_GENESIS_BLOCK_HEIGHT environment variable is required")
-                        .parse::<u64>()
-                        .expect("BITCOIN_TESTNET4_GENESIS_BLOCK_HEIGHT must be a valid u64"),
-                    quicknode_endpoint: None, // Testnet4 uses local node only
-                    provider_type,
-                },
-            );
+            bitcoin_configs.insert("testnet4".to_string(), BitcoinConfig::from_env("testnet4"));
         }
 
         // Load Bitcoin mainnet configuration if enabled. Default ON: this is
@@ -205,31 +176,7 @@ impl AppConfig {
             .unwrap_or(true);
 
         if enable_bitcoin_mainnet {
-            let provider_type = ProviderType::parse(
-                &env::var("BITCOIN_MAINNET_PROVIDER")
-                    .unwrap_or_else(|_| "bitcoin_node".to_string())
-            );
-            
-            bitcoin_configs.insert(
-                "mainnet".to_string(),
-                BitcoinConfig {
-                    host: env::var("BITCOIN_MAINNET_RPC_HOST")
-                        .expect("BITCOIN_MAINNET_RPC_HOST environment variable is required"),
-                    port: env::var("BITCOIN_MAINNET_RPC_PORT")
-                        .expect("BITCOIN_MAINNET_RPC_PORT environment variable is required"),
-                    username: env::var("BITCOIN_MAINNET_RPC_USER")
-                        .expect("BITCOIN_MAINNET_RPC_USER environment variable is required"),
-                    password: env::var("BITCOIN_MAINNET_RPC_PASSWORD")
-                        .expect("BITCOIN_MAINNET_RPC_PASSWORD environment variable is required"),
-                    network: "mainnet".to_string(),
-                    genesis_block_height: env::var("BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT")
-                        .expect("BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT environment variable is required")
-                        .parse::<u64>()
-                        .expect("BITCOIN_MAINNET_GENESIS_BLOCK_HEIGHT must be a valid u64"),
-                    quicknode_endpoint: env::var("BITCOIN_MAINNET_QUICKNODE_ENDPOINT").ok(),
-                    provider_type,
-                },
-            );
+            bitcoin_configs.insert("mainnet".to_string(), BitcoinConfig::from_env("mainnet"));
         }
 
         // Create Cardano configurations map
@@ -316,9 +263,9 @@ impl AppConfig {
                 .parse::<u64>()
                 .unwrap_or(10),
             btc_auto_seeder_concurrency: env::var("BTC_AUTO_SEEDER_CONCURRENCY")
-                .unwrap_or_else(|_| "5".to_string())
+                .unwrap_or_else(|_| "2".to_string())
                 .parse::<usize>()
-                .unwrap_or(5),
+                .unwrap_or(2),
             btc_auto_seeder_batch_interval_ms: env::var("BTC_AUTO_SEEDER_BATCH_INTERVAL_MS")
                 .unwrap_or_else(|_| "5000".to_string())
                 .parse::<u64>()
@@ -327,7 +274,6 @@ impl AppConfig {
                 .unwrap_or_else(|_| "30000".to_string())
                 .parse::<u64>()
                 .unwrap_or(30000),
-            private_maestro_api_key: env::var("PRIVATE_MAESTRO_API_KEY").unwrap_or_default(),
         };
 
         Self {

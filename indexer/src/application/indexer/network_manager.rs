@@ -11,7 +11,7 @@ use crate::application::indexer::supervisor;
 use crate::config::{AppConfig, NetworkId, NetworkType};
 use crate::domain::errors::BlockProcessorError;
 use crate::domain::services::CharmService;
-use crate::infrastructure::bitcoin::{BitcoinClient, ProviderFactory, SimpleBitcoinClient};
+use crate::infrastructure::bitcoin::BitcoinClient;
 use crate::infrastructure::persistence::Repositories;
 use crate::utils::logging;
 
@@ -76,11 +76,7 @@ impl NetworkManager {
             }
         };
 
-        // Create network ID
-        let network_id = NetworkId::new(NetworkType::Bitcoin, network);
-
-        // Create SimpleBitcoinClient using the new provider system
-        let simple_client = match SimpleBitcoinClient::new(bitcoin_config) {
+        let bitcoin_client = match BitcoinClient::new(bitcoin_config) {
             Ok(client) => client,
             Err(e) => {
                 logging::log_error(&format!(
@@ -90,16 +86,7 @@ impl NetworkManager {
                 return Err(BlockProcessorError::BitcoinClientError(e));
             }
         };
-
-        // Log which provider is being used
-        let provider_name = ProviderFactory::get_provider_name(bitcoin_config);
-        logging::log_info(&format!(
-            "[{}] 🔧 Using {} provider",
-            network_id.name, provider_name
-        ));
-
-        // Wrap in legacy BitcoinClient interface for compatibility
-        let bitcoin_client = BitcoinClient::from_simple_client(simple_client);
+        let mempool_client = bitcoin_client.clone();
 
         // Create charm service (synchronous, no queue)
         let charm_service = CharmService::new(
@@ -128,51 +115,51 @@ impl NetworkManager {
         // poll cycle restarts the worker instead of silently killing it
         // (root cause of the bloque 946,620 incident). The shutdown token
         // lets `stop_all` wind it down cleanly.
-        match BitcoinClient::new(bitcoin_config) {
-            Ok(mempool_client) => {
-                let db_conn = repos.mempool_spends.get_connection();
-                let mempool_proc = Arc::new(MempoolProcessor::new(
-                    mempool_client,
-                    db_conn,
-                    repos.mempool_spends.clone(),
-                    repos.utxo.clone(),
-                    repos.monitored_addresses.clone(),
-                    network_id.clone(),
-                ));
-                let supervisor_name = format!("mempool/{}", network_id.name);
-                let cancel = self.shutdown.clone();
-                let handle = tokio::spawn(async move {
-                    let proc = mempool_proc;
-                    supervisor::supervise(&supervisor_name, move || {
-                        let proc = proc.clone();
-                        let cancel = cancel.clone();
-                        async move { proc.run(cancel).await }
-                    })
-                    .await;
-                });
-                self.background_tasks.push(handle);
-                logging::log_info(&format!(
-                    "[{}] 🔍 MempoolProcessor spawned under supervisor",
-                    network_id.name
-                ));
-            }
-            Err(e) => {
-                logging::log_warning(&format!(
-                    "[{}] ⚠️ Could not create mempool RPC client, mempool indexing disabled: {}",
-                    network, e
-                ));
-            }
+        {
+            let stream = mempool_client.spawn_mempool_stream();
+            let db_conn = repos.mempool_spends.get_connection();
+            let mempool_proc = Arc::new(MempoolProcessor::new(
+                mempool_client,
+                stream,
+                db_conn,
+                repos.mempool_spends.clone(),
+                repos.utxo.clone(),
+                repos.monitored_addresses.clone(),
+                network_id.clone(),
+            ));
+            let supervisor_name = format!("mempool/{}", network_id.name);
+            let cancel = self.shutdown.clone();
+            let handle = tokio::spawn(async move {
+                let proc = mempool_proc;
+                supervisor::supervise(&supervisor_name, move || {
+                    let proc = proc.clone();
+                    let cancel = cancel.clone();
+                    async move { proc.run(cancel).await }
+                })
+                .await;
+            });
+            self.background_tasks.push(handle);
+            logging::log_info(&format!(
+                "[{}] 🔍 MempoolProcessor spawned under supervisor",
+                network_id.name
+            ));
         }
 
         // Spawn the BTC AddressSeeder under the same supervise() so a panic
         // restarts it instead of silently leaving charm-holder addresses
-        // un-seeded. Disabled cleanly via env when Maestro is not configured.
-        self.spawn_btc_seeder_if_enabled(network_id.clone(), repos);
+        // un-seeded. Disabled via ENABLE_BTC_AUTO_SEEDER=false.
+        let esplora_url = bitcoin_config.esplora_url.clone();
+        self.spawn_btc_seeder_if_enabled(network_id.clone(), repos, &esplora_url);
 
         Ok(())
     }
 
-    fn spawn_btc_seeder_if_enabled(&mut self, network_id: NetworkId, repos: &Repositories) {
+    fn spawn_btc_seeder_if_enabled(
+        &mut self,
+        network_id: NetworkId,
+        repos: &Repositories,
+        esplora_url: &str,
+    ) {
         if !self.config.indexer.btc_auto_seeder_enabled {
             logging::log_info(&format!(
                 "[{}] 🌱 AddressSeeder disabled (ENABLE_BTC_AUTO_SEEDER=false)",
@@ -180,16 +167,8 @@ impl NetworkManager {
             ));
             return;
         }
-        let api_key = self.config.indexer.private_maestro_api_key.clone();
-        if api_key.is_empty() {
-            logging::log_warning(&format!(
-                "[{}] 🌱 AddressSeeder skipped: PRIVATE_MAESTRO_API_KEY is empty",
-                network_id.name
-            ));
-            return;
-        }
         use crate::application::indexer::seeder::{AddressSeeder, SeederConfig};
-        use crate::infrastructure::maestro::MaestroClient;
+        use crate::infrastructure::address_source::AddressClient;
         use std::time::Duration;
 
         let cfg = SeederConfig {
@@ -202,7 +181,7 @@ impl NetworkManager {
                 self.config.indexer.btc_auto_seeder_batch_interval_ms,
             ),
         };
-        let maestro = MaestroClient::new(api_key);
+        let client = AddressClient::new(esplora_url);
         let cancel = self.shutdown.clone();
         let supervisor_name = format!("seeder/{}", network_id.name);
         let network_name = network_id.name.clone();
@@ -212,7 +191,7 @@ impl NetworkManager {
                 let seeder = AddressSeeder::new(
                     network_name.clone(),
                     repos.clone(),
-                    maestro.clone(),
+                    client.clone(),
                     cfg.clone(),
                 );
                 let cancel = cancel.clone();
