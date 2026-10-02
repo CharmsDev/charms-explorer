@@ -4,7 +4,6 @@ import { Suspense, useState, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { getCharmByTxId, fetchTransactionByTxid } from '@/services/apiServices';
-import { getTransaction, isQuickNodeAvailable } from '@/services/quicknodeService';
 import { 
     analyzeTransaction, 
     TRANSACTION_TYPES,
@@ -131,27 +130,31 @@ function TransactionPageContent() {
                 } catch (charmErr) {
                     // If charm not found, try to get Bitcoin transaction data
                     try {
-                        let btcTx;
-                        
-                        // Try QuickNode first if available
-                        if (isQuickNodeAvailable()) {
-                            btcTx = await getTransaction(txid);
-                        } else {
-                            // Fallback to Mempool.space
-                            const response = await fetch(`https://mempool.space/api/tx/${txid}`);
-                            if (!response.ok) {
-                                throw new Error('Transaction not found');
+                        // Bitcoin tx lookup via mempool.space public Esplora API (mainnet, then testnet4)
+                        let btcTx = null;
+                        let btcNetwork = 'mainnet';
+                        for (const [net, base] of [['mainnet', 'https://mempool.space/api'], ['testnet4', 'https://mempool.space/testnet4/api']]) {
+                            const response = await fetch(`${base}/tx/${txid}`);
+                            if (response.ok) {
+                                btcTx = await response.json();
+                                btcNetwork = net;
+                                break;
                             }
-                            btcTx = await response.json();
                         }
-                        
+                        if (!btcTx) {
+                            throw new Error('Transaction not found');
+                        }
+
                         // Transform Bitcoin transaction to charm-like format for display
                         setCharm({
                             txid: btcTx.txid,
                             asset_type: 'bitcoin',
                             name: 'Bitcoin Transaction',
-                            date_created: new Date(btcTx.status.block_time * 1000).toISOString(),
-                            block_height: btcTx.status.block_height,
+                            date_created: btcTx.status?.block_time
+                                ? new Date(btcTx.status.block_time * 1000).toISOString()
+                                : null,
+                            block_height: btcTx.status?.block_height ?? null,
+                            network: btcNetwork,
                             vout: 0,
                             data: btcTx,
                             isBitcoinTx: true, // Flag to identify Bitcoin-only transactions

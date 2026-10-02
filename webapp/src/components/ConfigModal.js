@@ -4,8 +4,6 @@ import { useState } from 'react';
 import { API_BASE_URL } from '../services/apiConfig';
 import { version as explorerVersion } from '../../package.json';
 
-const QUICKNODE_URL = process.env.NEXT_PUBLIC_QUICKNODE_BITCOIN_MAINNET_URL || '';
-
 const DATA_SOURCES = [
     { data: 'Charms', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/charms' },
     { data: 'Transactions', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/transactions' },
@@ -15,8 +13,8 @@ const DATA_SOURCES = [
     { data: 'Wallet Balance', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/wallet/balance/<addr>' },
     { data: 'Token Balances', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/wallet/charms/<addr>' },
     { data: 'Fee Estimates', source: 'Explorer API', badge: 'explorer', endpoint: '/v1/wallet/fee-estimate' },
-    { data: 'Broadcast TX', source: 'Explorer → Maestro → QuickNode', badge: 'multi', endpoint: '/v1/wallet/broadcast (failover)' },
-    { data: 'TX Lookup', source: 'Explorer → Maestro → QuickNode', badge: 'multi', endpoint: '/v1/wallet/tx/<txid> (failover)' },
+    { data: 'Broadcast TX', source: 'Explorer → mempool.space', badge: 'multi', endpoint: '/v1/wallet/broadcast' },
+    { data: 'TX Lookup', source: 'Explorer → mempool.space', badge: 'multi', endpoint: '/v1/wallet/tx/<txid>' },
 ];
 
 function truncate(str, len = 20) {
@@ -31,7 +29,6 @@ export default function ConfigModal({ isOpen, onClose }) {
     if (!isOpen) return null;
 
     const explorerApiUrl = API_BASE_URL || '—';
-    const hasQuickNode = !!QUICKNODE_URL;
 
     const badgeClasses = {
         explorer: 'bg-blue-500/15 text-blue-400',
@@ -134,17 +131,8 @@ export default function ConfigModal({ isOpen, onClose }) {
                                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
                                             </svg>
                                             <div className="min-w-0">
-                                                <span className="text-xs text-dark-400">Maestro (primary)</span>
-                                                <span className="block text-xs font-mono text-dark-200">xbt-mainnet.gomaestro-api.org</span>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-start gap-3">
-                                            <svg className="h-4 w-4 text-primary-400 mt-0.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-                                            </svg>
-                                            <div className="min-w-0">
-                                                <span className="text-xs text-dark-400">QuickNode (fallback)</span>
-                                                <span className="block text-xs font-mono text-dark-200 break-all">{hasQuickNode ? truncate(QUICKNODE_URL, 22) : '—'}</span>
+                                                <span className="text-xs text-dark-400">mempool.space (public API)</span>
+                                                <span className="block text-xs font-mono text-dark-200">mempool.space/api</span>
                                             </div>
                                         </div>
                                     </div>
@@ -193,8 +181,7 @@ export default function ConfigModal({ isOpen, onClose }) {
                                             </svg>
                                             <div>
                                                 <span className="text-xs text-dark-400">Bitcoin Blockchain</span>
-                                                <span className="block text-xs text-dark-200">Maestro API (primary)</span>
-                                                <span className="block text-xs text-dark-300">QuickNode RPC (fallback)</span>
+                                                <span className="block text-xs text-dark-200">mempool.space public API</span>
                                             </div>
                                         </div>
                                     </div>

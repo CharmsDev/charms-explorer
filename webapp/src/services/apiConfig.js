@@ -28,7 +28,7 @@ export const ENDPOINTS = {
 
   // Wallet endpoints
   // On-demand address monitoring: the first balance request for a new address
-  // seeds its BTC UTXOs from QuickNode and registers it in monitored_addresses.
+  // seeds its BTC UTXOs from mempool.space and registers it in monitored_addresses.
   // From that point on, the Indexer keeps the UTXO set up to date in real time.
   // Charm-holding addresses are auto-registered by the Indexer during block processing.
   WALLET_UTXOS: (address) => `${API_BASE_URL}/wallet/utxos/${address}`,
